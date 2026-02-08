@@ -1,0 +1,92 @@
+# LiteLLM Proxy Configuration for Modal.com AI Workers
+#
+# Usage: litellm --config litellm/config.yaml
+#
+# Model naming convention for consumers:
+#   Embeddings:  openai/<model-name>  (e.g. openai/qwen3-embedding-0.6b)
+#   Rerankers:   cohere/<model-name>  (e.g. cohere/qwen3-reranker-0.6b)
+#   OCR:         openai/<model-name>  (e.g. openai/deepseek-ocr-2)
+#   ASR:         openai/<model-name>  (e.g. openai/whisper-large-v3)
+#
+# Replace <your-modal-workspace> with your actual Modal workspace name.
+# Endpoint pattern: https://<workspace>--<app-name>-<class>-serve.modal.run
+
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY}
+
+model_list:
+  # --- Qwen3 Embedding (OpenAI-compatible /v1/embeddings) ---
+  - model_name: qwen3-embedding-0.6b
+    litellm_params:
+      model: openai/qwen3-embedding-0.6b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-embedding-0-6b-embeddinglightserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  - model_name: qwen3-embedding-8b
+    litellm_params:
+      model: openai/qwen3-embedding-8b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-embedding-8b-embeddingheavyserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  # --- Qwen3 Reranker (Cohere-compatible /v1/rerank) ---
+  - model_name: qwen3-reranker-0.6b
+    litellm_params:
+      model: cohere/qwen3-reranker-0.6b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-reranker-0-6b-rerankerlightserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  - model_name: qwen3-reranker-8b
+    litellm_params:
+      model: cohere/qwen3-reranker-8b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-reranker-8b-rerankerheavyserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  # --- Qwen3 VL Embedding (OpenAI-compatible /v1/embeddings) ---
+  - model_name: qwen3-vl-embedding-2b
+    litellm_params:
+      model: openai/qwen3-vl-embedding-2b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-embedding-2b-vlembeddinglightserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  - model_name: qwen3-vl-embedding-8b
+    litellm_params:
+      model: openai/qwen3-vl-embedding-8b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-embedding-8b-vlembeddingheavyserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  # --- Qwen3 VL Reranker (Cohere-compatible /v1/rerank) ---
+  - model_name: qwen3-vl-reranker-2b
+    litellm_params:
+      model: cohere/qwen3-vl-reranker-2b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-reranker-2b-vlrerankerlightserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  - model_name: qwen3-vl-reranker-8b
+    litellm_params:
+      model: cohere/qwen3-vl-reranker-8b
+      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-reranker-8b-vlrerankerheavyserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  # --- DeepSeek OCR v2 (OpenAI Vision-compatible /v1/chat/completions) ---
+  - model_name: deepseek-ocr-2
+    litellm_params:
+      model: openai/deepseek-ocr-2
+      api_base: https://<your-modal-workspace>--ai-workers-deepseek-ocr-2-ocrserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+  # --- Whisper Large v3 (OpenAI-compatible /v1/audio/transcriptions) ---
+  - model_name: whisper-large-v3
+    litellm_params:
+      model: openai/whisper-large-v3
+      api_base: https://<your-modal-workspace>--ai-workers-whisper-large-v3-asrserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
+
+# Logging (optional — integrate with Langfuse)
+# litellm_settings:
+#   success_callback: ["langfuse"]
+#   failure_callback: ["langfuse"]
+#
+# environment_variables:
+#   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+#   LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+#   LANGFUSE_HOST: ${LANGFUSE_HOST}

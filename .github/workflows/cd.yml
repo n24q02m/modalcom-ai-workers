@@ -1,0 +1,90 @@
+name: Deploy Workers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ai_workers/workers/**'
+      - 'src/ai_workers/common/**'
+
+  workflow_dispatch:
+    inputs:
+      worker:
+        description: 'Worker module to deploy (e.g. embedding, reranker, all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - embedding
+          - reranker
+          - vl_embedding
+          - vl_reranker
+          - ocr
+          - asr
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+
+      - name: Setup Python & uv
+        run: |
+          mise install python uv
+          eval "$(mise env)"
+
+      - name: Install dependencies
+        run: |
+          eval "$(mise env)"
+          uv sync --group deploy
+
+      - name: Setup Modal
+        run: |
+          eval "$(mise env)"
+          uv run modal token set \
+            --token-id ${{ secrets.MODAL_TOKEN_ID }} \
+            --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Detect changed workers
+        if: github.event_name == 'push'
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- src/ai_workers/workers/ | xargs -I{} basename {} .py | sort -u | tr '\n' ' ')
+          COMMON_CHANGED=$(git diff --name-only HEAD~1 HEAD -- src/ai_workers/common/ | wc -l)
+          if [ "$COMMON_CHANGED" -gt 0 ]; then
+            echo "workers=all" >> "$GITHUB_OUTPUT"
+          else
+            echo "workers=$CHANGED" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy workers
+        run: |
+          eval "$(mise env)"
+          WORKER="${{ github.event.inputs.worker || steps.changes.outputs.workers || 'all' }}"
+
+          if [ "$WORKER" = "all" ]; then
+            echo "Deploying ALL workers..."
+            uv run python -m ai_workers deploy all
+          else
+            for w in $WORKER; do
+              echo "Deploying worker: $w"
+              uv run modal deploy "src/ai_workers/workers/${w}.py"
+            done
+          fi
+        env:
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}

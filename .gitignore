@@ -1,0 +1,22 @@
+# Dependencies
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Local conversion output
+converted/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+.env
+.env.*
+!.env.example
