@@ -1,17 +1,12 @@
-# 🧪 Tests: Add tests for OCR image content processing
+# 🔧 Fix CI and local setup dependency installation
 
 ## 🎯 What
-Added comprehensive unit tests for `OCRServer._process_image_content` in `src/ai_workers/workers/ocr.py`. This method parses the OpenAI-compatible content array to extract text prompts and image URLs.
+Updated `.github/workflows/ci.yml` and `.mise.toml` to use `uv sync --extra dev` instead of `uv sync --all-groups` or `uv sync --group dev`.
 
-## 📊 Coverage
-The new tests in `tests/test_ocr.py` cover:
-- Single text extraction
-- Single image URL extraction
-- Combined text and image extraction
-- Empty text handling
-- Multiple text/image parts (verifying "last write wins" behavior)
-- Unknown content types
-- Missing fields in content parts
+## 🔍 Why
+The project uses `[project.optional-dependencies]` (standard Python extras) to define the `dev` environment, not the newer PEP 735 `[dependency-groups]`. `uv sync --all-groups` or `--group dev` looks for dependency groups and does not install extras, causing CI to fail when tools like `ruff` (defined in `dev` extra) are missing.
 
 ## ✨ Result
-Improved test coverage for the OCR worker logic, ensuring robust handling of various input formats.
+- CI workflow `lint-and-test` now correctly installs `ruff`, `ty`, `pytest`, and other dev dependencies.
+- Local setup via `mise install` or `mise run setup` now correctly installs the dev environment.
+- Verified locally that `uv sync --extra dev` works and all tests pass (including those requiring `torch` which is now installed via `dev` extra).
