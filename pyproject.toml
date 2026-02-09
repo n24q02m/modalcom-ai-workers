@@ -79,8 +79,10 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# 'src' must be a struct with an 'include' list
+src = { include = ["src"] }
+# 'environment' configuration instead of 'python-version'
+environment = { python = ".venv/bin/python" }
 
 # --- pytest ---
 [tool.pytest.ini_options]
