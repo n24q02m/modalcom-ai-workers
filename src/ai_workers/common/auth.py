@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, Request, status
+from typing import TYPE_CHECKING
+
+from fastapi import HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from loguru import logger
+
+if TYPE_CHECKING:
+    from starlette.middleware.base import RequestResponseEndpoint
 
 
 async def verify_api_key(request: Request) -> None:
@@ -35,3 +41,23 @@ async def verify_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def auth_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    """Middleware to enforce Bearer token authentication.
+
+    Bypasses /health and / endpoints.
+    Catches HTTPException raised by verify_api_key and returns JSONResponse.
+    """
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+
+    try:
+        await verify_api_key(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+
+    return await call_next(request)
