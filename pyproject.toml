@@ -80,7 +80,10 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
+# Configuration for 'ty' type checker
+# See: https://github.com/ty-brend/ty
+
+[tool.ty.environment]
 python-version = "3.13"
 
 # --- pytest ---

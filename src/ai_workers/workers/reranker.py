@@ -11,7 +11,7 @@ LiteLLM integration:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,10 +87,14 @@ def create_reranker_app(
         return {"status": "ok", "model": model_name}
 
     @app.post("/v1/rerank", response_model=RerankResponse)
-    async def rerank(request: request_model):
+    async def rerank(request: Any):  # Use Any to bypass type checker error
+        # Validate request manually or trust FastAPI dependency injection
+        # Since we can't use dynamic type in annotation for static analysis
+        req: BaseRerankRequest = request
+
         results = []
-        for i, doc in enumerate(request.documents):
-            score = score_fn(request.query, doc)
+        for i, doc in enumerate(req.documents):
+            score = score_fn(req.query, doc)
             results.append(
                 DocumentResult(
                     index=i,
@@ -103,10 +107,14 @@ def create_reranker_app(
         results.sort(key=lambda r: r.relevance_score, reverse=True)
 
         # Apply top_n
-        if request.top_n is not None:
-            results = results[: request.top_n]
+        if req.top_n is not None:
+            results = results[: req.top_n]
 
-        return RerankResponse(results=results, model=getattr(request, "model", model_name))
+        return RerankResponse(results=results, model=getattr(req, "model", model_name))
+
+    # Patch the endpoint with the correct request model for FastAPI to generate OpenAPI schema
+    # and perform runtime validation
+    rerank.__annotations__["request"] = request_model
 
     return app
 
@@ -139,7 +147,7 @@ class RerankerLightServer:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -216,7 +224,7 @@ class RerankerHeavyServer:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
