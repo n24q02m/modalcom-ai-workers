@@ -80,12 +80,14 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src.include = ["src"]
+# Configuration for ty type checker
+
+[tool.ty.environment]
+
+[tool.ty.src]
+include = ["src"]
 
 # --- pytest ---
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-[tool.ty.environment]
-[tool.ty.environment]
-python = "3.13"
