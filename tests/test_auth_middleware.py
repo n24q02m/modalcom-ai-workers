@@ -1,11 +1,13 @@
 """Tests for authentication middleware."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import Request
 
 # This import assumes auth_middleware is added to ai_workers.common.auth
 from ai_workers.common.auth import auth_middleware
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_bypass_health():
