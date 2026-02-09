@@ -11,11 +11,14 @@ class MockHTTPError(Exception):
         self.detail = detail
         super().__init__(detail)
 
+
 class MockStatus:
     HTTP_401_UNAUTHORIZED = 401
 
+
 class MockRequest:
     pass
+
 
 @pytest.fixture
 def auth_module():
@@ -37,7 +40,9 @@ def auth_module():
             del sys.modules["ai_workers.common.auth"]
 
         import ai_workers.common.auth
+
         yield ai_workers.common.auth
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_dev_mode(auth_module, monkeypatch):
@@ -48,6 +53,7 @@ async def test_verify_api_key_dev_mode(auth_module, monkeypatch):
     # Should not raise exception and return None
     result = await auth_module.verify_api_key(request)
     assert result is None
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_missing_header(auth_module, monkeypatch):
@@ -61,6 +67,7 @@ async def test_verify_api_key_missing_header(auth_module, monkeypatch):
 
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail == "Missing Bearer token"
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_invalid_header_scheme(auth_module, monkeypatch):
@@ -76,6 +83,7 @@ async def test_verify_api_key_invalid_header_scheme(auth_module, monkeypatch):
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail == "Missing Bearer token"
 
+
 @pytest.mark.asyncio
 async def test_verify_api_key_invalid_token(auth_module, monkeypatch):
     monkeypatch.setenv("WORKER_API_KEY", "secret-key")
@@ -89,6 +97,7 @@ async def test_verify_api_key_invalid_token(auth_module, monkeypatch):
 
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail == "Invalid API key"
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_success(auth_module, monkeypatch):
