@@ -24,6 +24,7 @@ async def test_auth_middleware_bypass_health():
     call_next.assert_called_once_with(request)
     mock_verify.assert_not_called()
 
+
 @pytest.mark.asyncio
 async def test_auth_middleware_bypass_root():
     """Test that / endpoint bypasses authentication."""
@@ -37,6 +38,7 @@ async def test_auth_middleware_bypass_root():
     assert response == "response"
     call_next.assert_called_once_with(request)
     mock_verify.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_enforce_auth():
