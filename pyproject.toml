@@ -41,6 +41,10 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.115",
+  "pillow>=10.0",
+  "librosa>=0.10",
+  "soundfile>=0.12",
 ]
 
 [build-system]
