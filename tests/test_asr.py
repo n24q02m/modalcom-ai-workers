@@ -1,7 +1,9 @@
 import sys
 from unittest.mock import MagicMock, patch
-import pytest
+
 import numpy as np
+import pytest
+
 
 # We need to mock modal before importing the worker module because
 # the worker module uses modal decorators at the module level.
@@ -17,6 +19,7 @@ def mock_asr_worker_modules():
         def identity_decorator(*args, **kwargs):
             def wrapper(obj):
                 return obj
+
             return wrapper
 
         mock_app.cls.side_effect = identity_decorator
@@ -41,7 +44,9 @@ def mock_asr_worker_modules():
             del sys.modules["ai_workers.workers.asr"]
 
         import ai_workers.workers.asr
+
         yield ai_workers.workers.asr
+
 
 def test_load_audio(mock_asr_worker_modules):
     """Test _load_audio method."""
@@ -69,7 +74,7 @@ def test_load_audio(mock_asr_worker_modules):
     # Verify librosa.load was called correctly
     args, kwargs = librosa.load.call_args
     # args[0] should be a BytesIO object
-    assert args[0].read() == file_bytes # Check if BytesIO contains correct bytes
+    assert args[0].read() == file_bytes  # Check if BytesIO contains correct bytes
     assert kwargs["sr"] == 16000
     assert kwargs["mono"] is True
 
