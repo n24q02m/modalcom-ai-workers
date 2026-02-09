@@ -184,10 +184,10 @@ class RerankerLightServer:
             results = []
 
             # Process in batches to avoid OOM
-            BATCH_SIZE = 32
+            batch_size = 32
 
-            for i in range(0, len(request.documents), BATCH_SIZE):
-                batch_docs = request.documents[i : i + BATCH_SIZE]
+            for i in range(0, len(request.documents), batch_size):
+                batch_docs = request.documents[i : i + batch_size]
                 scores = self._score_batch(request.query, batch_docs)
 
                 for j, score in enumerate(scores):
@@ -358,10 +358,10 @@ class RerankerHeavyServer:
             results = []
 
             # Process in batches to avoid OOM
-            BATCH_SIZE = 32
+            batch_size = 32
 
-            for i in range(0, len(request.documents), BATCH_SIZE):
-                batch_docs = request.documents[i : i + BATCH_SIZE]
+            for i in range(0, len(request.documents), batch_size):
+                batch_docs = request.documents[i : i + batch_size]
                 scores = self._score_batch(request.query, batch_docs)
 
                 for j, score in enumerate(scores):
