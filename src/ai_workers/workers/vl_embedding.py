@@ -11,7 +11,10 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+import asyncio
+
 import modal
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -24,6 +27,24 @@ r2_mount = get_modal_cloud_bucket_mount()
 
 
 # ---------------------------------------------------------------------------
+# Shared Models
+# ---------------------------------------------------------------------------
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    embedding: list[float]
+    index: int
+
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: list[EmbeddingData]
+    model: str
+    usage: dict[str, int]
+
+
+# ---------------------------------------------------------------------------
 # VL Embedding Light (Qwen3-VL-Embedding-2B, T4)
 # ---------------------------------------------------------------------------
 
@@ -33,6 +54,12 @@ vl_embedding_light_app = modal.App(
 )
 
 MODEL_LIGHT = "qwen3-vl-embedding-2b"
+
+
+class EmbeddingRequestLight(BaseModel):
+    model: str = MODEL_LIGHT
+    input: list[str] | str
+    encoding_format: str = "float"
 
 
 @vl_embedding_light_app.cls(
@@ -85,25 +112,8 @@ class VLEmbeddingLightServer:
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Light")
-
-        class EmbeddingRequest(BaseModel):
-            model: str = MODEL_LIGHT
-            input: list[str] | str
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -119,9 +129,9 @@ class VLEmbeddingLightServer:
             return {"status": "ok", "model": MODEL_LIGHT}
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
+        async def create_embeddings(request: EmbeddingRequestLight):
             texts = request.input if isinstance(request.input, list) else [request.input]
-            embeddings = self._embed_texts(texts)
+            embeddings = await asyncio.to_thread(self._embed_texts, texts)
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
 
@@ -144,6 +154,12 @@ vl_embedding_heavy_app = modal.App(
 )
 
 MODEL_HEAVY = "qwen3-vl-embedding-8b"
+
+
+class EmbeddingRequestHeavy(BaseModel):
+    model: str = MODEL_HEAVY
+    input: list[str] | str
+    encoding_format: str = "float"
 
 
 @vl_embedding_heavy_app.cls(
@@ -193,25 +209,8 @@ class VLEmbeddingHeavyServer:
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Heavy")
-
-        class EmbeddingRequest(BaseModel):
-            model: str = MODEL_HEAVY
-            input: list[str] | str
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -227,9 +226,9 @@ class VLEmbeddingHeavyServer:
             return {"status": "ok", "model": MODEL_HEAVY}
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
+        async def create_embeddings(request: EmbeddingRequestHeavy):
             texts = request.input if isinstance(request.input, list) else [request.input]
-            embeddings = self._embed_texts(texts)
+            embeddings = await asyncio.to_thread(self._embed_texts, texts)
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
 
