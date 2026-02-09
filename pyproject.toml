@@ -37,6 +37,9 @@ deploy = [
 # All local tools
 dev = [
   "ai-workers[convert,storage,deploy]",
+  "fastapi>=0.115",
+  "librosa>=0.10",
+  "pillow>=10.0",
   "ruff>=0.9",
   "ty>=0.0.1a6",
   "pytest>=8.0",
