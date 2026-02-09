@@ -41,6 +41,12 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.115", # Added for type checking
+  "uvicorn>=0.32",
+  "librosa>=0.10", # For asr
+  "pillow>=11.0", # For ocr
+  "soundfile>=0.13",
+  "python-multipart>=0.0.20",
 ]
 
 [build-system]
@@ -79,8 +85,9 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+environment = { python = ".venv/bin/python" }
+[tool.ty.src]
+include = ["src"]
 
 # --- pytest ---
 [tool.pytest.ini_options]
