@@ -53,7 +53,7 @@ class EmbeddingLightServer:
     @modal.enter()
     def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM # type: ignore
+        from vllm import LLM  # type: ignore
 
         config = get_model(MODEL_LIGHT)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
@@ -152,7 +152,7 @@ class EmbeddingHeavyServer:
 
     @modal.enter()
     def start_engine(self) -> None:
-        from vllm import LLM # type: ignore
+        from vllm import LLM  # type: ignore
 
         config = get_model(MODEL_HEAVY)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
