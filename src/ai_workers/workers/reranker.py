@@ -82,8 +82,13 @@ class RerankerLightServer:
         import torch
 
         # Ensure model and tokenizer are loaded
-        if self.tokenizer is None or self.model is None or self.yes_token_id is None or self.no_token_id is None:
-             raise RuntimeError("Model or tokenizer not initialized")
+        if (
+            self.tokenizer is None
+            or self.model is None
+            or self.yes_token_id is None
+            or self.no_token_id is None
+        ):
+            raise RuntimeError("Model or tokenizer not initialized")
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -218,8 +223,13 @@ class RerankerHeavyServer:
         import torch
 
         # Ensure model and tokenizer are loaded
-        if self.tokenizer is None or self.model is None or self.yes_token_id is None or self.no_token_id is None:
-             raise RuntimeError("Model or tokenizer not initialized")
+        if (
+            self.tokenizer is None
+            or self.model is None
+            or self.yes_token_id is None
+            or self.no_token_id is None
+        ):
+            raise RuntimeError("Model or tokenizer not initialized")
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
