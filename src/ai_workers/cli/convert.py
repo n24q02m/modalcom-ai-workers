@@ -164,7 +164,7 @@ def _convert_single(model_name: str, output_dir: Path, *, force: bool = False) -
         # Save as SafeTensors
         console.print(f"[dim]Saving SafeTensors to {model_output}...[/dim]")
         model.save_pretrained(model_output, safe_serialization=True)
-        processor.save_pretrained(model_output)
+        processor.save_pretrained(model_output)  # type: ignore
 
         # Report file sizes
         total_size = 0.0
