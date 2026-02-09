@@ -78,11 +78,12 @@ class OCRServer:
                 image_url = url_data.get("url", "")
         return text, image_url
 
-    def _load_image_from_url(self, url: str):
+    async def _load_image_from_url(self, url: str):
         """Load image from URL or base64 data URI."""
         import base64
         import io
 
+        import httpx
         from PIL import Image
 
         if url.startswith("data:"):
@@ -92,10 +93,11 @@ class OCRServer:
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # Regular URL
-        import urllib.request
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            image_bytes = resp.content
 
-        with urllib.request.urlopen(url) as resp:
-            image_bytes = resp.read()
         return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
     def _run_ocr(self, image, prompt: str = "") -> str:
@@ -201,7 +203,7 @@ class OCRServer:
                     if isinstance(msg.content, list):
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
-                            image = self._load_image_from_url(image_url)
+                            image = await self._load_image_from_url(image_url)
                     elif isinstance(msg.content, str):
                         text_prompt = msg.content
                     break
