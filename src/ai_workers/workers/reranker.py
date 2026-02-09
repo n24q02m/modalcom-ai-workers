@@ -68,8 +68,8 @@ class RerankerLightServer:
         self.model.eval()
 
         # Pre-compute token IDs for "yes" and "no"
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         """Score a single query-document pair using yes/no logits."""
@@ -82,10 +82,10 @@ class RerankerLightServer:
                 "content": f"Query: {query}\nDocument: {document}",
             },
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -195,8 +195,8 @@ class RerankerHeavyServer:
             device_map="auto",
         )
         self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         import torch
@@ -205,10 +205,10 @@ class RerankerHeavyServer:
             {"role": "system", "content": RERANKER_PREFIX},
             {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
