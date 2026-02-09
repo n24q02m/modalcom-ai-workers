@@ -11,13 +11,27 @@ LiteLLM integration:
 
 from __future__ import annotations
 
-import modal
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+import modal
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
+
+from ai_workers.common.auth import verify_api_key
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
+# ---------------------------------------------------------------------------
+# Shared constants & Models
+# ---------------------------------------------------------------------------
+
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
+MODEL_LIGHT = "qwen3-reranker-0.6b"
+MODEL_HEAVY = "qwen3-reranker-8b"
 
 r2_mount = get_modal_cloud_bucket_mount()
 
@@ -28,6 +42,83 @@ RERANKER_PREFIX = (
 )
 
 
+class DocumentResult(BaseModel):
+    index: int
+    relevance_score: float
+    document: dict[str, str]
+
+
+class RerankResponse(BaseModel):
+    results: list[DocumentResult]
+    model: str
+
+
+class BaseRerankRequest(BaseModel):
+    query: str
+    documents: list[str]
+    top_n: int | None = None
+
+
+class RerankRequestLight(BaseRerankRequest):
+    model: str = MODEL_LIGHT
+
+
+class RerankRequestHeavy(BaseRerankRequest):
+    model: str = MODEL_HEAVY
+
+
+def create_reranker_app(
+    title: str,
+    model_name: str,
+    request_model: type[BaseRerankRequest],
+    score_fn: Callable[[str, str], float],
+) -> FastAPI:
+    app = FastAPI(title=title)
+
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next):
+        if request.url.path in ("/health", "/"):
+            return await call_next(request)
+        await verify_api_key(request)
+        return await call_next(request)
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok", "model": model_name}
+
+    @app.post("/v1/rerank", response_model=RerankResponse)
+    async def rerank(request: Any):  # Use Any to bypass type checker error
+        # Validate request manually or trust FastAPI dependency injection
+        # Since we can't use dynamic type in annotation for static analysis
+        req: BaseRerankRequest = request
+
+        results = []
+        for i, doc in enumerate(req.documents):
+            score = score_fn(req.query, doc)
+            results.append(
+                DocumentResult(
+                    index=i,
+                    relevance_score=score,
+                    document={"text": doc},
+                )
+            )
+
+        # Sort by score descending
+        results.sort(key=lambda r: r.relevance_score, reverse=True)
+
+        # Apply top_n
+        if req.top_n is not None:
+            results = results[: req.top_n]
+
+        return RerankResponse(results=results, model=getattr(req, "model", model_name))
+
+    # Patch the endpoint with the correct request model for FastAPI to generate OpenAPI schema
+    # and perform runtime validation
+    rerank.__annotations__["request"] = request_model
+
+    return app
+
+
 # ---------------------------------------------------------------------------
 # Reranker Light (Qwen3-Reranker-0.6B, T4)
 # ---------------------------------------------------------------------------
@@ -36,8 +127,6 @@ reranker_light_app = modal.App(
     "ai-workers-qwen3-reranker-0.6b",
     secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
 )
-
-MODEL_LIGHT = "qwen3-reranker-0.6b"
 
 
 @reranker_light_app.cls(
@@ -58,7 +147,7 @@ class RerankerLightServer:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -99,62 +188,12 @@ class RerankerLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 Reranker Light")
-
-        class RerankRequest(BaseModel):
-            model: str = MODEL_LIGHT
-            query: str
-            documents: list[str]
-            top_n: int | None = None
-
-        class DocumentResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: dict[str, str]
-
-        class RerankResponse(BaseModel):
-            results: list[DocumentResult]
-            model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_LIGHT}
-
-        @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(request: RerankRequest):
-            results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
-                    )
-                )
-
-            # Sort by score descending
-            results.sort(key=lambda r: r.relevance_score, reverse=True)
-
-            # Apply top_n
-            if request.top_n is not None:
-                results = results[: request.top_n]
-
-            return RerankResponse(results=results, model=request.model)
-
-        return app
+        return create_reranker_app(
+            title="Qwen3 Reranker Light",
+            model_name=MODEL_LIGHT,
+            request_model=RerankRequestLight,
+            score_fn=self._score_pair,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +204,6 @@ reranker_heavy_app = modal.App(
     "ai-workers-qwen3-reranker-8b",
     secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
 )
-
-MODEL_HEAVY = "qwen3-reranker-8b"
 
 
 @reranker_heavy_app.cls(
@@ -187,7 +224,7 @@ class RerankerHeavyServer:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -221,54 +258,9 @@ class RerankerHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 Reranker Heavy")
-
-        class RerankRequest(BaseModel):
-            model: str = MODEL_HEAVY
-            query: str
-            documents: list[str]
-            top_n: int | None = None
-
-        class DocumentResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: dict[str, str]
-
-        class RerankResponse(BaseModel):
-            results: list[DocumentResult]
-            model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_HEAVY}
-
-        @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(request: RerankRequest):
-            results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
-                    )
-                )
-            results.sort(key=lambda r: r.relevance_score, reverse=True)
-            if request.top_n is not None:
-                results = results[: request.top_n]
-            return RerankResponse(results=results, model=request.model)
-
-        return app
+        return create_reranker_app(
+            title="Qwen3 Reranker Heavy",
+            model_name=MODEL_HEAVY,
+            request_model=RerankRequestHeavy,
+            score_fn=self._score_pair,
+        )

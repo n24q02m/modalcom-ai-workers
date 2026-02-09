@@ -41,6 +41,7 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.115",
 ]
 
 [build-system]
@@ -79,7 +80,10 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
+# Configuration for 'ty' type checker
+# See: https://github.com/ty-brend/ty
+
+[tool.ty.environment]
 python-version = "3.13"
 
 # --- pytest ---
