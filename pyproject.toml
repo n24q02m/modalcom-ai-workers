@@ -79,8 +79,9 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Configuration for ty type checker
+src = { include = ["src"] }
+environment = { python = ".venv/bin/python" }
 
 # --- pytest ---
 [tool.pytest.ini_options]
