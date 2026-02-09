@@ -6,9 +6,11 @@ from unittest.mock import MagicMock
 mock_modal = MagicMock()
 sys.modules["modal"] = mock_modal
 
+
 # Mock modal.App and its decorators
 def identity(x, **kwargs):
     return x
+
 
 mock_app_instance = MagicMock()
 mock_app_instance.cls.return_value = identity
@@ -45,6 +47,7 @@ if isinstance(sys.modules.get("pydantic"), MagicMock):
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
                 setattr(self, k, v)
+
     sys.modules["pydantic"].BaseModel = MockBaseModel
 
 # --- End mocking ---
@@ -61,11 +64,13 @@ def test_inheritance():
     assert issubclass(VLRerankerLightServer, VLRerankerBase)
     assert issubclass(VLRerankerHeavyServer, VLRerankerBase)
 
+
 def test_model_names():
     assert VLRerankerLightServer.model_name == "qwen3-vl-reranker-2b"
     assert VLRerankerHeavyServer.model_name == "qwen3-vl-reranker-8b"
     assert VLRerankerLightServer.display_name == "Light"
     assert VLRerankerHeavyServer.display_name == "Heavy"
+
 
 def test_pydantic_models():
     # Verify models are available and have expected fields
@@ -73,6 +78,7 @@ def test_pydantic_models():
     assert req.query == "q"
     assert req.documents == ["d"]
     assert req.model == "m"
+
 
 def test_base_methods():
     # Test that base class has the expected methods
