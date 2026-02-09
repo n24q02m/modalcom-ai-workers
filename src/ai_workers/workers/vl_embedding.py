@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 import modal
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
 from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image

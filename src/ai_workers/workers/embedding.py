@@ -52,7 +52,7 @@ class EmbeddingLightServer:
     @modal.enter()
     def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM
+        from vllm import LLM  # ty:ignore[unresolved-import]
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
         self.engine = LLM(
@@ -68,7 +68,7 @@ class EmbeddingLightServer:
     def serve(self):
         """Expose OpenAI-compatible /v1/embeddings endpoint."""
 
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 Embedding Light")
@@ -150,7 +150,7 @@ class EmbeddingHeavyServer:
 
     @modal.enter()
     def start_engine(self) -> None:
-        from vllm import LLM
+        from vllm import LLM  # ty:ignore[unresolved-import]
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
         self.engine = LLM(
@@ -164,7 +164,7 @@ class EmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 Embedding Heavy")
