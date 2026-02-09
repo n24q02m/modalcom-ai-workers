@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import typer
+import typer  # type: ignore
 
 from ai_workers.cli.convert import app as convert_app
 from ai_workers.cli.deploy import app as deploy_app
