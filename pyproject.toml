@@ -41,6 +41,10 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.100.0",
+  # "librosa>=0.10.0", <- Remove due to build failure on Python 3.14 locally
+  "pillow>=10.0.0",
+  # "vllm>=0.3.0",  <- Remove due to Python 3.14 incompatibility locally
 ]
 
 [build-system]
@@ -79,8 +83,10 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# src = ["src"] -> src must be a struct with include
+src = { include = ["src"] }
+# python-version = "3.13" -> use environment table
+environment = { python = ".venv/bin/python" }
 
 # --- pytest ---
 [tool.pytest.ini_options]
