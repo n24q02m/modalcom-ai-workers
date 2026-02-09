@@ -1,9 +1,12 @@
 """Tests for authentication middleware."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from fastapi import Request, HTTPException, status
-from ai_workers.common.auth import verify_api_key, auth_middleware
+from fastapi import HTTPException, Request, status
+
+from ai_workers.common.auth import auth_middleware, verify_api_key
+
 
 # Mock Request object
 def create_mock_request(path="/", headers=None):
@@ -13,6 +16,7 @@ def create_mock_request(path="/", headers=None):
     request.client = "test_client"
     return request
 
+
 @pytest.mark.asyncio
 async def test_verify_api_key_dev_mode():
     """Test verify_api_key when WORKER_API_KEY is not set (dev mode)."""
@@ -21,12 +25,14 @@ async def test_verify_api_key_dev_mode():
         # Should not raise exception
         await verify_api_key(request)
 
+
 @pytest.mark.asyncio
 async def test_verify_api_key_success():
     """Test verify_api_key with correct key."""
     with patch("os.getenv", return_value="secret_key"):
         request = create_mock_request(headers={"Authorization": "Bearer secret_key"})
         await verify_api_key(request)
+
 
 @pytest.mark.asyncio
 async def test_verify_api_key_missing_header():
@@ -38,6 +44,7 @@ async def test_verify_api_key_missing_header():
         assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert excinfo.value.detail == "Missing Bearer token"
 
+
 @pytest.mark.asyncio
 async def test_verify_api_key_invalid_format():
     """Test verify_api_key with invalid Authorization header format."""
@@ -48,6 +55,7 @@ async def test_verify_api_key_invalid_format():
         assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert excinfo.value.detail == "Missing Bearer token"
 
+
 @pytest.mark.asyncio
 async def test_verify_api_key_invalid_key():
     """Test verify_api_key with wrong key."""
@@ -57,6 +65,7 @@ async def test_verify_api_key_invalid_key():
             await verify_api_key(request)
         assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert excinfo.value.detail == "Invalid API key"
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_skip_health():
@@ -70,6 +79,7 @@ async def test_auth_middleware_skip_health():
         mock_verify.assert_not_called()
         call_next.assert_called_once_with(request)
 
+
 @pytest.mark.asyncio
 async def test_auth_middleware_skip_root():
     """Test auth_middleware skips auth for root path."""
@@ -80,6 +90,7 @@ async def test_auth_middleware_skip_root():
         await auth_middleware(request, call_next)
         mock_verify.assert_not_called()
         call_next.assert_called_once_with(request)
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_enforce_auth():
