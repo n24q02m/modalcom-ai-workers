@@ -11,6 +11,7 @@ LiteLLM integration:
 from __future__ import annotations
 
 import modal
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -23,6 +24,25 @@ SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 
 r2_mount = get_modal_cloud_bucket_mount()
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    embedding: list[float]
+    index: int
+
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: list[EmbeddingData]
+    model: str
+    usage: dict[str, int]
+
+
+class BaseEmbeddingRequest(BaseModel):
+    input: str | list[str]
+    encoding_format: str = "float"
+
 
 # ---------------------------------------------------------------------------
 # Embedding Light (Qwen3-Embedding-0.6B, T4)
@@ -69,25 +89,11 @@ class EmbeddingLightServer:
         """Expose OpenAI-compatible /v1/embeddings endpoint."""
 
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 Embedding Light")
 
-        class EmbeddingRequest(BaseModel):
+        class EmbeddingRequest(BaseEmbeddingRequest):
             model: str = MODEL_LIGHT
-            input: str | list[str]
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -164,27 +170,12 @@ class EmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 Embedding Heavy")
 
-        class EmbeddingRequest(BaseModel):
+        class EmbeddingRequest(BaseEmbeddingRequest):
             model: str = MODEL_HEAVY
-            input: str | list[str]
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
