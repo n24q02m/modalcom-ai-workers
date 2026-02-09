@@ -102,7 +102,7 @@ class VLRerankerLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Reranker Light")
@@ -231,7 +231,7 @@ class VLRerankerHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Reranker Heavy")

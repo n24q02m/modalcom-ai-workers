@@ -11,7 +11,14 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 import modal
+from fastapi import FastAPI, Request  # ty:ignore[unresolved-import]
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -19,6 +26,63 @@ from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
 EMBEDDING_DIM = 1024
+
+
+class EmbeddingRequest(BaseModel):
+    model: str | None = None
+    input: list[str] | str
+    encoding_format: str = "float"
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    embedding: list[float]
+    index: int
+
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: list[EmbeddingData]
+    model: str
+    usage: dict[str, int]
+
+
+def create_vl_embedding_app(
+    model_name: str,
+    app_title: str,
+    embedder: Callable[[list[str]], list[list[float]]],
+) -> FastAPI:
+    """Create FastAPI app for VL embedding worker."""
+    app = FastAPI(title=app_title)
+
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next):
+        if request.url.path in ("/health", "/"):
+            return await call_next(request)
+        from ai_workers.common.auth import verify_api_key
+
+        await verify_api_key(request)
+        return await call_next(request)
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok", "model": model_name}
+
+    @app.post("/v1/embeddings", response_model=EmbeddingResponse)
+    async def create_embeddings(request: EmbeddingRequest):
+        texts = request.input if isinstance(request.input, list) else [request.input]
+        embeddings = embedder(texts)
+
+        data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
+
+        return EmbeddingResponse(
+            data=data,
+            model=request.model or model_name,
+            usage={"prompt_tokens": 0, "total_tokens": 0},
+        )
+
+    return app
+
 
 r2_mount = get_modal_cloud_bucket_mount()
 
@@ -84,54 +148,11 @@ class VLEmbeddingLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 VL Embedding Light")
-
-        class EmbeddingRequest(BaseModel):
-            model: str = MODEL_LIGHT
-            input: list[str] | str
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_LIGHT}
-
-        @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
-            texts = request.input if isinstance(request.input, list) else [request.input]
-            embeddings = self._embed_texts(texts)
-
-            data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
-
-            return EmbeddingResponse(
-                data=data,
-                model=request.model,
-                usage={"prompt_tokens": 0, "total_tokens": 0},
-            )
-
-        return app
+        return create_vl_embedding_app(
+            model_name=MODEL_LIGHT,
+            app_title="Qwen3 VL Embedding Light",
+            embedder=self._embed_texts,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -192,51 +213,8 @@ class VLEmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 VL Embedding Heavy")
-
-        class EmbeddingRequest(BaseModel):
-            model: str = MODEL_HEAVY
-            input: list[str] | str
-            encoding_format: str = "float"
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-            usage: dict[str, int]
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_HEAVY}
-
-        @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
-            texts = request.input if isinstance(request.input, list) else [request.input]
-            embeddings = self._embed_texts(texts)
-
-            data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
-
-            return EmbeddingResponse(
-                data=data,
-                model=request.model,
-                usage={"prompt_tokens": 0, "total_tokens": 0},
-            )
-
-        return app
+        return create_vl_embedding_app(
+            model_name=MODEL_HEAVY,
+            app_title="Qwen3 VL Embedding Heavy",
+            embedder=self._embed_texts,
+        )

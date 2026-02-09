@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, status  # ty:ignore[unresolved-import]
 from loguru import logger
 
 
