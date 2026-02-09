@@ -40,6 +40,9 @@ dev = [
   "ruff>=0.9",
   "ty>=0.0.1a6",
   "pytest>=8.0",
+  "pillow>=10.0.0",
+  "librosa>=0.10.0",
+  "fastapi>=0.100",
   "pytest-asyncio>=0.24",
 ]
 
@@ -78,9 +81,6 @@ ignore = [
 known-first-party = ["ai_workers"]
 
 # --- ty ---
-[tool.ty]
-src = ["src"]
-python-version = "3.13"
 
 # --- pytest ---
 [tool.pytest.ini_options]
