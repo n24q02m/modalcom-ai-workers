@@ -52,6 +52,12 @@ MODEL_LIGHT = "qwen3-reranker-0.6b"
 class RerankerLightServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
 
+    def __init__(self):
+        self.tokenizer = None
+        self.model = None
+        self.yes_token_id = None
+        self.no_token_id = None
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
@@ -68,12 +74,16 @@ class RerankerLightServer:
         self.model.eval()
 
         # Pre-compute token IDs for "yes" and "no"
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         """Score a single query-document pair using yes/no logits."""
         import torch
+
+        # Ensure model and tokenizer are loaded
+        if self.tokenizer is None or self.model is None or self.yes_token_id is None or self.no_token_id is None:
+             raise RuntimeError("Model or tokenizer not initialized")
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -181,6 +191,12 @@ MODEL_HEAVY = "qwen3-reranker-8b"
 class RerankerHeavyServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-8B."""
 
+    def __init__(self):
+        self.tokenizer = None
+        self.model = None
+        self.yes_token_id = None
+        self.no_token_id = None
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
@@ -195,11 +211,15 @@ class RerankerHeavyServer:
             device_map="auto",
         )
         self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         import torch
+
+        # Ensure model and tokenizer are loaded
+        if self.tokenizer is None or self.model is None or self.yes_token_id is None or self.no_token_id is None:
+             raise RuntimeError("Model or tokenizer not initialized")
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
