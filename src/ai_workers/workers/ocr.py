@@ -16,7 +16,11 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+import uuid
+
 import modal
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -26,6 +30,34 @@ KEEP_WARM = 0
 MODEL_NAME = "deepseek-ocr-2"
 
 r2_mount = get_modal_cloud_bucket_mount()
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str | list[dict]
+
+class ChatCompletionRequest(BaseModel):
+    model: str = MODEL_NAME
+    messages: list[ChatMessage]
+    max_tokens: int = 4096
+    temperature: float = 0.0
+
+class Choice(BaseModel):
+    index: int = 0
+    message: dict[str, str]
+    finish_reason: str = "stop"
+
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    model: str
+    choices: list[Choice]
+    usage: Usage
+
 
 ocr_app = modal.App(
     "ai-workers-deepseek-ocr-2",
@@ -143,97 +175,68 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
+        return create_ocr_app(self)
 
-        app = FastAPI(title="DeepSeek OCR v2")
+def create_ocr_app(server: OCRServer) -> FastAPI:
+    app = FastAPI(title="DeepSeek OCR v2")
 
-        class ChatMessage(BaseModel):
-            role: str
-            content: str | list[dict]
-
-        class ChatCompletionRequest(BaseModel):
-            model: str = MODEL_NAME
-            messages: list[ChatMessage]
-            max_tokens: int = 4096
-            temperature: float = 0.0
-
-        class Choice(BaseModel):
-            index: int = 0
-            message: dict[str, str]
-            finish_reason: str = "stop"
-
-        class Usage(BaseModel):
-            prompt_tokens: int = 0
-            completion_tokens: int = 0
-            total_tokens: int = 0
-
-        class ChatCompletionResponse(BaseModel):
-            id: str
-            object: str = "chat.completion"
-            model: str
-            choices: list[Choice]
-            usage: Usage
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next):
+        if request.url.path in ("/health", "/"):
             return await call_next(request)
+        from ai_workers.common.auth import verify_api_key
 
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_NAME}
+        await verify_api_key(request)
+        return await call_next(request)
 
-        @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-        async def chat_completions(request: ChatCompletionRequest):
-            import uuid
+    @app.get("/health")
+    async def health():
+        return {"status": "ok", "model": MODEL_NAME}
 
-            # Extract the last user message with image
-            text_prompt = ""
-            image = None
+    @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+    async def chat_completions(request: ChatCompletionRequest):
+        # Extract the last user message with image
+        text_prompt = ""
+        image = None
 
-            for msg in reversed(request.messages):
-                if msg.role == "user":
-                    if isinstance(msg.content, list):
-                        text_prompt, image_url = self._process_image_content(msg.content)
-                        if image_url:
-                            image = self._load_image_from_url(image_url)
-                    elif isinstance(msg.content, str):
-                        text_prompt = msg.content
-                    break
+        for msg in reversed(request.messages):
+            if msg.role == "user":
+                if isinstance(msg.content, list):
+                    text_prompt, image_url = server._process_image_content(msg.content)
+                    if image_url:
+                        image = server._load_image_from_url(image_url)
+                elif isinstance(msg.content, str):
+                    text_prompt = msg.content
+                break
 
-            if image is None:
-                return ChatCompletionResponse(
-                    id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                    model=request.model,
-                    choices=[
-                        Choice(
-                            message={
-                                "role": "assistant",
-                                "content": "Error: No image provided. Please send an image for OCR.",
-                            },
-                            finish_reason="stop",
-                        )
-                    ],
-                    usage=Usage(),
-                )
-
-            result = self._run_ocr(image, text_prompt)
-
+        if image is None:
             return ChatCompletionResponse(
                 id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
                 model=request.model,
                 choices=[
                     Choice(
-                        message={"role": "assistant", "content": result},
+                        message={
+                            "role": "assistant",
+                            "content": "Error: No image provided. Please send an image for OCR.",
+                        },
                         finish_reason="stop",
                     )
                 ],
                 usage=Usage(),
             )
 
-        return app
+        result = server._run_ocr(image, text_prompt)
+
+        return ChatCompletionResponse(
+            id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            model=request.model,
+            choices=[
+                Choice(
+                    message={"role": "assistant", "content": result},
+                    finish_reason="stop",
+                )
+            ],
+            usage=Usage(),
+        )
+
+    return app
