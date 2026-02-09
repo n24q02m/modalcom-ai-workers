@@ -58,8 +58,9 @@ def _is_vl_model(task: Task) -> bool:
 
 @app.callback(invoke_without_command=True)
 def convert(
+    ctx: typer.Context,
     model: str = typer.Argument(
-        ...,
+        None,
         help="Model registry name (e.g. 'qwen3-embedding-0.6b') or 'all'",
     ),
     output_dir: Path = typer.Option(
@@ -77,6 +78,17 @@ def convert(
 ) -> None:
     """Convert a HuggingFace model to SafeTensors at target precision."""
     warnings.filterwarnings("ignore")
+
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if model == "list":
+        list_available()
+        return
+
+    if model is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
     if model == "all":
         models = list_models()
