@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import modal
 
-from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
 from ai_workers.common.config import get_model
+from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 # ---------------------------------------------------------------------------
