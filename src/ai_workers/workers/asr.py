@@ -12,6 +12,7 @@ LiteLLM integration:
 from __future__ import annotations
 
 import modal
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_audio_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -26,6 +27,18 @@ asr_app = modal.App(
     "ai-workers-whisper-large-v3",
     secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
 )
+
+
+class TranscriptionResponse(BaseModel):
+    text: str
+
+
+class VerboseTranscriptionResponse(BaseModel):
+    task: str = "transcribe"
+    language: str
+    duration: float
+    text: str
+    segments: list[dict] | None = None
 
 
 @asr_app.cls(
@@ -76,22 +89,70 @@ class ASRServer:
         audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
         return {"raw": audio, "sampling_rate": sr}
 
+    def process_transcription(
+        self,
+        file_bytes: bytes,
+        language: str | None = None,
+        prompt: str | None = None,
+        temperature: float = 0.0,
+        response_format: str = "json",
+    ) -> TranscriptionResponse | VerboseTranscriptionResponse | str:
+        """Process audio bytes and return the transcription result."""
+        audio_input = self._load_audio(file_bytes)
+
+        # Build generate_kwargs
+        generate_kwargs: dict = {}
+        if language:
+            generate_kwargs["language"] = language
+        if prompt:
+            generate_kwargs["initial_prompt"] = prompt
+        if temperature > 0:
+            generate_kwargs["temperature"] = temperature
+            generate_kwargs["do_sample"] = True
+
+        result = self.pipe(
+            audio_input,
+            chunk_length_s=30,
+            batch_size=8,
+            return_timestamps=response_format == "verbose_json",
+            generate_kwargs=generate_kwargs,
+        )
+
+        text = result.get("text", "").strip()
+
+        if response_format == "verbose_json":
+            chunks = result.get("chunks", [])
+            segments = []
+            for i, chunk in enumerate(chunks):
+                ts = chunk.get("timestamp", (0, 0))
+                segments.append(
+                    {
+                        "id": i,
+                        "start": ts[0] if ts[0] is not None else 0.0,
+                        "end": ts[1] if ts[1] is not None else 0.0,
+                        "text": chunk.get("text", ""),
+                    }
+                )
+            duration = segments[-1]["end"] if segments else 0.0
+            return VerboseTranscriptionResponse(
+                language=language or "auto",
+                duration=duration,
+                text=text,
+                segments=segments,
+            )
+
+        if response_format == "text":
+            return text
+
+        # Default: json
+        return TranscriptionResponse(text=text)
+
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, File, Form, Request, UploadFile
-        from pydantic import BaseModel
+        from fastapi.responses import PlainTextResponse
 
         app = FastAPI(title="Whisper Large v3")
-
-        class TranscriptionResponse(BaseModel):
-            text: str
-
-        class VerboseTranscriptionResponse(BaseModel):
-            task: str = "transcribe"
-            language: str
-            duration: float
-            text: str
-            segments: list[dict] | None = None
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -121,55 +182,17 @@ class ASRServer:
             Supports formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg.
             """
             file_bytes = await file.read()
-            audio_input = self._load_audio(file_bytes)
-
-            # Build generate_kwargs
-            generate_kwargs: dict = {}
-            if language:
-                generate_kwargs["language"] = language
-            if prompt:
-                generate_kwargs["initial_prompt"] = prompt
-            if temperature > 0:
-                generate_kwargs["temperature"] = temperature
-                generate_kwargs["do_sample"] = True
-
-            result = self.pipe(
-                audio_input,
-                chunk_length_s=30,
-                batch_size=8,
-                return_timestamps=response_format == "verbose_json",
-                generate_kwargs=generate_kwargs,
+            result = self.process_transcription(
+                file_bytes,
+                language=language,
+                prompt=prompt,
+                temperature=temperature,
+                response_format=response_format,
             )
 
-            text = result.get("text", "").strip()
+            if isinstance(result, str):
+                return PlainTextResponse(result)
 
-            if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
-                segments = []
-                for i, chunk in enumerate(chunks):
-                    ts = chunk.get("timestamp", (0, 0))
-                    segments.append(
-                        {
-                            "id": i,
-                            "start": ts[0] if ts[0] is not None else 0.0,
-                            "end": ts[1] if ts[1] is not None else 0.0,
-                            "text": chunk.get("text", ""),
-                        }
-                    )
-                duration = segments[-1]["end"] if segments else 0.0
-                return VerboseTranscriptionResponse(
-                    language=language or "auto",
-                    duration=duration,
-                    text=text,
-                    segments=segments,
-                )
-
-            if response_format == "text":
-                from fastapi.responses import PlainTextResponse
-
-                return PlainTextResponse(text)
-
-            # Default: json
-            return TranscriptionResponse(text=text)
+            return result
 
         return app
