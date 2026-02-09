@@ -80,10 +80,12 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+src.include = ["src"]
 
 # --- pytest ---
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+[tool.ty.environment]
+[tool.ty.environment]
+python = "3.13"
