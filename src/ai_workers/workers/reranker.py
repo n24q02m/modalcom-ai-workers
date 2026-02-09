@@ -28,15 +28,18 @@ RERANKER_PREFIX = (
     "Answer only 'yes' or 'no'."
 )
 
+
 # Shared Pydantic models
 class DocumentResult(BaseModel):
     index: int
     relevance_score: float
     document: dict[str, str]
 
+
 class RerankResponse(BaseModel):
     results: list[DocumentResult]
     model: str
+
 
 class RerankRequest(BaseModel):
     model: str | None = None
@@ -155,7 +158,7 @@ class RerankerBase:
             scores = self._score_batch(request.query, request.documents)
 
             results = []
-            for i, (doc, score) in enumerate(zip(request.documents, scores)):
+            for i, (doc, score) in enumerate(zip(request.documents, scores, strict=True)):
                 results.append(
                     DocumentResult(
                         index=i,
@@ -199,6 +202,7 @@ MODEL_LIGHT = "qwen3-reranker-0.6b"
 )
 class RerankerLightServer(RerankerBase):
     """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
+
     model_name = MODEL_LIGHT
     app_title = "Qwen3 Reranker Light"
 
@@ -226,5 +230,6 @@ MODEL_HEAVY = "qwen3-reranker-8b"
 )
 class RerankerHeavyServer(RerankerBase):
     """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
+
     model_name = MODEL_HEAVY
     app_title = "Qwen3 Reranker Heavy"
