@@ -50,26 +50,31 @@ class EmbeddingLightServer:
     """vLLM-based embedding server for Qwen3-Embedding-0.6B."""
 
     @modal.enter()
-    def start_engine(self) -> None:
+    async def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM
+        from vllm.engine.arg_utils import AsyncEngineArgs
+        from vllm.engine.async_llm_engine import AsyncLLMEngine
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.engine = LLM(
+        engine_args = AsyncEngineArgs(
             model=model_path,
-            task="embed",
             dtype="float16",
             trust_remote_code=True,
             max_model_len=8192,
             enforce_eager=True,  # Avoid CUDA graph overhead for embedding
         )
+        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
 
     @modal.asgi_app()
     def serve(self):
         """Expose OpenAI-compatible /v1/embeddings endpoint."""
 
+        import asyncio
+        import uuid
+
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
+        from vllm.pooling_params import PoolingParams
 
         app = FastAPI(title="Qwen3 Embedding Light")
 
@@ -106,7 +111,21 @@ class EmbeddingLightServer:
         async def create_embeddings(request: EmbeddingRequest):
             texts = request.input if isinstance(request.input, list) else [request.input]
 
-            outputs = self.engine.embed(texts)
+            request_id = f"req-{uuid.uuid4()}"
+            pooling_params = PoolingParams()
+
+            async def get_embedding(i: int, text: str):
+                req_id = f"{request_id}-{i}"
+                results_generator = self.engine.encode(req_id, text, pooling_params)
+
+                final_output = None
+                async for output in results_generator:
+                    final_output = output
+
+                return final_output
+
+            tasks = [get_embedding(i, text) for i, text in enumerate(texts)]
+            outputs = await asyncio.gather(*tasks)
 
             data = []
             total_tokens = 0
@@ -149,24 +168,28 @@ class EmbeddingHeavyServer:
     """vLLM-based embedding server for Qwen3-Embedding-8B."""
 
     @modal.enter()
-    def start_engine(self) -> None:
-        from vllm import LLM
+    async def start_engine(self) -> None:
+        from vllm.engine.arg_utils import AsyncEngineArgs
+        from vllm.engine.async_llm_engine import AsyncLLMEngine
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.engine = LLM(
+        engine_args = AsyncEngineArgs(
             model=model_path,
-            task="embed",
             dtype="float16",
             trust_remote_code=True,
             max_model_len=8192,
             enforce_eager=True,
         )
+        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+        import uuid
 
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
+        from vllm.pooling_params import PoolingParams
 
         app = FastAPI(title="Qwen3 Embedding Heavy")
 
@@ -203,7 +226,21 @@ class EmbeddingHeavyServer:
         async def create_embeddings(request: EmbeddingRequest):
             texts = request.input if isinstance(request.input, list) else [request.input]
 
-            outputs = self.engine.embed(texts)
+            request_id = f"req-{uuid.uuid4()}"
+            pooling_params = PoolingParams()
+
+            async def get_embedding(i: int, text: str):
+                req_id = f"{request_id}-{i}"
+                results_generator = self.engine.encode(req_id, text, pooling_params)
+
+                final_output = None
+                async for output in results_generator:
+                    final_output = output
+
+                return final_output
+
+            tasks = [get_embedding(i, text) for i, text in enumerate(texts)]
+            outputs = await asyncio.gather(*tasks)
 
             data = []
             total_tokens = 0
