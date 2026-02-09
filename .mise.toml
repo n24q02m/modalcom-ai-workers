@@ -6,7 +6,7 @@ uv = "latest"
 description = "Setup development environment"
 run = [
   "mise install",
-  "uv sync --group dev",
+  "uv sync --extra dev",
   "uv pip install pre-commit",
   "uv run pre-commit install",
   "echo 'Setup complete!'"
