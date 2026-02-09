@@ -66,7 +66,7 @@ mise install
 mise run setup
 
 # Or manually
-uv sync --all-groups
+uv sync --all-extras
 ```
 
 ### Pipeline: Convert → Upload → Deploy
