@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           eval "$(mise env)"
-          uv sync --group deploy
+          uv sync --extra deploy
 
       - name: Setup Modal
         run: |
