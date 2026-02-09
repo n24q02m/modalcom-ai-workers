@@ -109,7 +109,7 @@ class BaseEmbeddingServer:
     @modal.enter()
     def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM
+        from vllm import LLM  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{self.model_name}"
         self.engine = LLM(
