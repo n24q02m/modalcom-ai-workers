@@ -85,7 +85,7 @@ class RerankerLightServer:
         input_text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -208,7 +208,7 @@ class RerankerHeavyServer:
         input_text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
