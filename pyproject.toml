@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Self-hosted AI model workers on Modal.com with LiteLLM-compatible endpoints"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.13"
+requires-python = "~=3.13"
 dependencies = [
   "loguru>=0.7",
   "pydantic>=2.0",
@@ -41,6 +41,11 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.115",
+  "librosa>=0.10",
+  "pillow>=10.0",
+  "vllm>=0.8",
+  "soundfile>=0.12",
 ]
 
 [build-system]
