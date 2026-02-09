@@ -2,6 +2,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 
+from fastapi import FastAPI
+
 # Mock modal before importing reranker
 sys.modules["modal"] = MagicMock()
 
@@ -14,14 +16,14 @@ sys.modules["ai_workers.common.auth"] = MagicMock()
 # We need to ensure that when 'ai_workers.workers.reranker' is imported,
 # it can access 'ai_workers' package. Assuming PYTHONPATH includes src.
 
-from ai_workers.workers.reranker import (
-    create_reranker_app,
-    RerankRequestLight,
-    RerankRequestHeavy,
+from ai_workers.workers.reranker import (  # noqa: E402
+    MODEL_HEAVY,
     MODEL_LIGHT,
-    MODEL_HEAVY
+    RerankRequestHeavy,
+    RerankRequestLight,
+    create_reranker_app,
 )
-from fastapi import FastAPI
+
 
 class TestRerankerRefactor(unittest.TestCase):
     def test_create_app(self):
@@ -30,7 +32,7 @@ class TestRerankerRefactor(unittest.TestCase):
             title="Test App",
             model_name="test-model",
             request_model=RerankRequestLight,
-            score_fn=score_fn
+            score_fn=score_fn,
         )
         self.assertIsInstance(app, FastAPI)
         self.assertEqual(app.title, "Test App")
@@ -41,6 +43,7 @@ class TestRerankerRefactor(unittest.TestCase):
 
         req_heavy = RerankRequestHeavy(query="q", documents=["d"])
         self.assertEqual(req_heavy.model, MODEL_HEAVY)
+
 
 if __name__ == "__main__":
     unittest.main()
