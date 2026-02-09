@@ -6,6 +6,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.13"
 dependencies = [
+  "fastapi>=0.115",
   "loguru>=0.7",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
@@ -14,6 +15,8 @@ dependencies = [
 [project.optional-dependencies]
 # Local model conversion (CPU/GPU)
 convert = [
+  "librosa>=0.10",
+  "pillow>=10.0",
   "torch>=2.4",
   "transformers>=4.47",
   "safetensors>=0.4",
@@ -79,8 +82,8 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# src = ["src"]
+environment = { python = ".venv/bin/python3" }
 
 # --- pytest ---
 [tool.pytest.ini_options]
