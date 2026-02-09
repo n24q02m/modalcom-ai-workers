@@ -31,9 +31,11 @@ MODEL_NAME = "deepseek-ocr-2"
 
 r2_mount = get_modal_cloud_bucket_mount()
 
+
 class ChatMessage(BaseModel):
     role: str
     content: str | list[dict]
+
 
 class ChatCompletionRequest(BaseModel):
     model: str = MODEL_NAME
@@ -41,15 +43,18 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.0
 
+
 class Choice(BaseModel):
     index: int = 0
     message: dict[str, str]
     finish_reason: str = "stop"
 
+
 class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+
 
 class ChatCompletionResponse(BaseModel):
     id: str
@@ -176,6 +181,7 @@ class OCRServer:
     @modal.asgi_app()
     def serve(self):
         return create_ocr_app(self)
+
 
 def create_ocr_app(server: OCRServer) -> FastAPI:
     app = FastAPI(title="DeepSeek OCR v2")
