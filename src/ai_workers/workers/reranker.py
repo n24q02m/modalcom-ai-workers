@@ -61,6 +61,7 @@ class RerankerBase:
 
         model_path = f"{MODELS_MOUNT_PATH}/{self.model_name}"
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        assert self.tokenizer is not None
 
         # Ensure padding token is set for batched inference
         if self.tokenizer.pad_token is None:
@@ -99,12 +100,12 @@ class RerankerBase:
                     },
                 ]
                 prompts.append(
-                    self.tokenizer.apply_chat_template(
+                    self.tokenizer.apply_chat_template(  # type: ignore
                         messages, tokenize=False, add_generation_prompt=True
                     )
                 )
 
-            inputs = self.tokenizer(
+            inputs = self.tokenizer(  # type: ignore
                 prompts,
                 return_tensors="pt",
                 padding=True,

@@ -1,11 +1,12 @@
 """Text Embedding workers using vLLM.
 
-vLLM natively serves OpenAI-compatible /v1/embeddings endpoint.
+Qwen3-Embedding uses standard transformers/vLLM architecture.
+Exposes OpenAI-compatible /v1/embeddings endpoint.
 Two apps: embedding_light (0.6B, T4) and embedding_heavy (8B, A10G).
 
 LiteLLM integration:
   model: openai/qwen3-embedding-0.6b
-  api_base: https://<modal-url>
+  api_base: https://<modal-url>/v1
 """
 
 from __future__ import annotations
@@ -15,14 +16,11 @@ import modal
 from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
-# ---------------------------------------------------------------------------
-# Shared configuration
-# ---------------------------------------------------------------------------
-
-SCALEDOWN_WINDOW = 300  # 5 minutes
-KEEP_WARM = 0  # Scale to zero when idle
+SCALEDOWN_WINDOW = 300
+KEEP_WARM = 0
 
 r2_mount = get_modal_cloud_bucket_mount()
+
 
 # ---------------------------------------------------------------------------
 # Embedding Light (Qwen3-Embedding-0.6B, T4)
@@ -34,7 +32,6 @@ embedding_light_app = modal.App(
 )
 
 MODEL_LIGHT = "qwen3-embedding-0.6b"
-EMBEDDING_DIM = 1024
 
 
 @embedding_light_app.cls(
@@ -52,7 +49,7 @@ class EmbeddingLightServer:
     @modal.enter()
     def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM
+        from vllm import LLM  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
         self.engine = LLM(
@@ -60,8 +57,8 @@ class EmbeddingLightServer:
             task="embed",
             dtype="float16",
             trust_remote_code=True,
-            max_model_len=8192,
-            enforce_eager=True,  # Avoid CUDA graph overhead for embedding
+            enforce_eager=True,  # Often needed for embedding models in vLLM
+            gpu_memory_utilization=0.9,
         )
 
     @modal.asgi_app()
@@ -74,18 +71,17 @@ class EmbeddingLightServer:
         app = FastAPI(title="Qwen3 Embedding Light")
 
         class EmbeddingRequest(BaseModel):
-            model: str = MODEL_LIGHT
             input: str | list[str]
-            encoding_format: str = "float"
+            model: str = MODEL_LIGHT
 
-        class EmbeddingData(BaseModel):
+        class EmbeddingObject(BaseModel):
             object: str = "embedding"
-            embedding: list[float]
             index: int
+            embedding: list[float]
 
         class EmbeddingResponse(BaseModel):
             object: str = "list"
-            data: list[EmbeddingData]
+            data: list[EmbeddingObject]
             model: str
             usage: dict[str, int]
 
@@ -103,22 +99,33 @@ class EmbeddingLightServer:
             return {"status": "ok", "model": MODEL_LIGHT}
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
-            texts = request.input if isinstance(request.input, list) else [request.input]
+        async def embed(request: EmbeddingRequest):
+            inputs = [request.input] if isinstance(request.input, str) else request.input
 
-            outputs = self.engine.embed(texts)
+            outputs = self.engine.encode(inputs)
 
             data = []
             total_tokens = 0
+
             for i, output in enumerate(outputs):
-                embedding = output.outputs.embedding[:EMBEDDING_DIM]
-                data.append(EmbeddingData(embedding=embedding, index=i))
-                total_tokens += len(output.prompt_token_ids)
+                data.append(
+                    EmbeddingObject(
+                        index=i,
+                        embedding=output.outputs.embedding,
+                    )
+                )
+                # vLLM embedding output might not have token usage directly exposed in same way as generation
+                # Assuming prompt_token_ids length if available
+                if hasattr(output, "prompt_token_ids"):
+                    total_tokens += len(output.prompt_token_ids)
 
             return EmbeddingResponse(
                 data=data,
                 model=request.model,
-                usage={"prompt_tokens": total_tokens, "total_tokens": total_tokens},
+                usage={
+                    "prompt_tokens": total_tokens,
+                    "total_tokens": total_tokens,
+                },
             )
 
         return app
@@ -150,7 +157,7 @@ class EmbeddingHeavyServer:
 
     @modal.enter()
     def start_engine(self) -> None:
-        from vllm import LLM
+        from vllm import LLM  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
         self.engine = LLM(
@@ -158,8 +165,8 @@ class EmbeddingHeavyServer:
             task="embed",
             dtype="float16",
             trust_remote_code=True,
-            max_model_len=8192,
             enforce_eager=True,
+            gpu_memory_utilization=0.9,
         )
 
     @modal.asgi_app()
@@ -171,18 +178,17 @@ class EmbeddingHeavyServer:
         app = FastAPI(title="Qwen3 Embedding Heavy")
 
         class EmbeddingRequest(BaseModel):
-            model: str = MODEL_HEAVY
             input: str | list[str]
-            encoding_format: str = "float"
+            model: str = MODEL_HEAVY
 
-        class EmbeddingData(BaseModel):
+        class EmbeddingObject(BaseModel):
             object: str = "embedding"
-            embedding: list[float]
             index: int
+            embedding: list[float]
 
         class EmbeddingResponse(BaseModel):
             object: str = "list"
-            data: list[EmbeddingData]
+            data: list[EmbeddingObject]
             model: str
             usage: dict[str, int]
 
@@ -200,22 +206,31 @@ class EmbeddingHeavyServer:
             return {"status": "ok", "model": MODEL_HEAVY}
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(request: EmbeddingRequest):
-            texts = request.input if isinstance(request.input, list) else [request.input]
+        async def embed(request: EmbeddingRequest):
+            inputs = [request.input] if isinstance(request.input, str) else request.input
 
-            outputs = self.engine.embed(texts)
+            outputs = self.engine.encode(inputs)
 
             data = []
             total_tokens = 0
+
             for i, output in enumerate(outputs):
-                embedding = output.outputs.embedding[:EMBEDDING_DIM]
-                data.append(EmbeddingData(embedding=embedding, index=i))
-                total_tokens += len(output.prompt_token_ids)
+                data.append(
+                    EmbeddingObject(
+                        index=i,
+                        embedding=output.outputs.embedding,
+                    )
+                )
+                if hasattr(output, "prompt_token_ids"):
+                    total_tokens += len(output.prompt_token_ids)
 
             return EmbeddingResponse(
                 data=data,
                 model=request.model,
-                usage={"prompt_tokens": total_tokens, "total_tokens": total_tokens},
+                usage={
+                    "prompt_tokens": total_tokens,
+                    "total_tokens": total_tokens,
+                },
             )
 
         return app
