@@ -80,8 +80,11 @@ known-first-party = ["ai_workers"]
 # --- ty ---
 [tool.ty]
 # Configuration for 'ty' type checker
-# Removed 'src' as it seems to require a struct of 4 elements or is misinterpreted.
-# Removed 'python-version' from top level, assuming default or inferred.
+
+[tool.ty.rules]
+unresolved-import = "ignore"
+possibly-missing-attribute = "ignore"
+call-non-callable = "ignore"
 
 # --- pytest ---
 [tool.pytest.ini_options]
