@@ -6,7 +6,10 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.13"
 dependencies = [
+  "fastapi[dev]>=0.128.5",
+  "librosa[dev]>=0.11.0",
   "loguru>=0.7",
+  "pillow[dev]>=12.1.0",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
 ]
@@ -79,10 +82,12 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
 
 # --- pytest ---
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+[tool.ty.src]
+include = ["src"]
+[tool.ty.environment]
+python = ".venv/bin/python"
