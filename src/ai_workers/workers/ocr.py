@@ -87,7 +87,7 @@ class OCRServer:
         import base64
         import io
 
-        from PIL import Image
+        from PIL import Image # type: ignore
 
         if url.startswith("data:"):
             # data:image/png;base64,<base64-data>
