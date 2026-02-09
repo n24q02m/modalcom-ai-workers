@@ -36,7 +36,7 @@ deploy = [
 ]
 # All local tools
 dev = [
-  "ai-workers[convert,storage,deploy]",
+  "ai-workers[convert,storage,deploy]", "fastapi", "pillow", "librosa",
   "ruff>=0.9",
   "ty>=0.0.1a6",
   "pytest>=8.0",
@@ -79,8 +79,8 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+src = { include = ["src"] }
+environment = { python = ".venv/bin/python3" }
 
 # --- pytest ---
 [tool.pytest.ini_options]

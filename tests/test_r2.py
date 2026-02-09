@@ -4,6 +4,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+
 from ai_workers.common.r2 import R2Config
 
 
