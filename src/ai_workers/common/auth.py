@@ -10,15 +10,20 @@ async def verify_api_key(request: Request) -> None:
     """Verify Bearer token from Authorization header.
 
     The expected token is set via Modal Secret "worker-api-key".
-    If WORKER_API_KEY env var is empty, authentication is skipped (dev mode).
+    Authentication is MANDATORY. If WORKER_API_KEY is not set, the server will
+    reject all requests with 500 Internal Server Error to prevent insecure access.
     """
     import os
 
     expected_key = os.getenv("WORKER_API_KEY", "")
 
-    # Skip auth in dev mode (no key configured)
+    # Fail securely if no key is configured
     if not expected_key:
-        return
+        logger.error("WORKER_API_KEY is not set. Authentication cannot be verified.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server misconfiguration: Missing API key",
+        )
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
