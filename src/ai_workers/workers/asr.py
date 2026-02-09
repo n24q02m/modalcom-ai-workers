@@ -14,6 +14,7 @@ from __future__ import annotations
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_audio_image
+from ai_workers.common.config import get_model
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 SCALEDOWN_WINDOW = 300
@@ -49,13 +50,17 @@ class ASRServer:
         import torch
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
+        config = get_model(MODEL_NAME)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
-        self.processor = AutoProcessor.from_pretrained(model_path)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             device_map="auto",
+            trust_remote_code=config.trust_remote_code,
         )
 
         self.pipe = pipeline(

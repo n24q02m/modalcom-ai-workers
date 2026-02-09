@@ -75,7 +75,7 @@ class ModelConfig:
     model_class: ModelClassType = ModelClassType.AUTO_MODEL
 
     # Transformers options
-    trust_remote_code: bool = True
+    trust_remote_code: bool = False
 
     # R2 storage path (auto-derived from name if not set)
     r2_prefix: str = ""
@@ -120,6 +120,7 @@ _register(
         gpu=GPU.T4,
         serving_engine=ServingEngine.VLLM,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.embedding",
     )
 )
@@ -134,6 +135,7 @@ _register(
         gpu=GPU.A10G,
         serving_engine=ServingEngine.VLLM,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.embedding",
     )
 )
@@ -149,6 +151,7 @@ _register(
         gpu=GPU.T4,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.CAUSAL_LM,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.reranker",
     )
 )
@@ -163,6 +166,7 @@ _register(
         gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.CAUSAL_LM,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.reranker",
     )
 )
@@ -178,6 +182,7 @@ _register(
         gpu=GPU.T4,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.vl_embedding",
     )
 )
@@ -192,6 +197,7 @@ _register(
         gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.vl_embedding",
     )
 )
@@ -207,6 +213,7 @@ _register(
         gpu=GPU.T4,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.vl_reranker",
     )
 )
@@ -221,6 +228,7 @@ _register(
         gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
+        trust_remote_code=True,
         worker_module="ai_workers.workers.vl_reranker",
     )
 )

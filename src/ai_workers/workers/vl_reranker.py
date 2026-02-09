@@ -15,6 +15,7 @@ from __future__ import annotations
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
+from ai_workers.common.config import get_model
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 SCALEDOWN_WINDOW = 300
@@ -58,12 +59,15 @@ class VLRerankerLightServer:
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
 
+        config = get_model(MODEL_LIGHT)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             device_map="auto",
         )
         self.model.eval()
@@ -189,12 +193,15 @@ class VLRerankerHeavyServer:
         import torch
         from transformers import AutoModelForCausalLM, AutoProcessor
 
+        config = get_model(MODEL_HEAVY)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             device_map="auto",
         )
         self.model.eval()

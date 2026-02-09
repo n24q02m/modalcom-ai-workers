@@ -13,6 +13,7 @@ from __future__ import annotations
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
+from ai_workers.common.config import get_model
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 # ---------------------------------------------------------------------------
@@ -54,12 +55,13 @@ class EmbeddingLightServer:
         """Initialize vLLM engine at container startup."""
         from vllm import LLM
 
+        config = get_model(MODEL_LIGHT)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
         self.engine = LLM(
             model=model_path,
             task="embed",
             dtype="float16",
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             max_model_len=8192,
             enforce_eager=True,  # Avoid CUDA graph overhead for embedding
         )
@@ -152,12 +154,13 @@ class EmbeddingHeavyServer:
     def start_engine(self) -> None:
         from vllm import LLM
 
+        config = get_model(MODEL_HEAVY)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
         self.engine = LLM(
             model=model_path,
             task="embed",
             dtype="float16",
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             max_model_len=8192,
             enforce_eager=True,
         )

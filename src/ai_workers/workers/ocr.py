@@ -19,6 +19,7 @@ from __future__ import annotations
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
+from ai_workers.common.config import get_model
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 SCALEDOWN_WINDOW = 300
@@ -55,12 +56,15 @@ class OCRServer:
         import torch
         from transformers import AutoModel, AutoProcessor
 
+        config = get_model(MODEL_NAME)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
-        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         self.model = AutoModel.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             device_map="auto",
             use_safetensors=True,
         )
