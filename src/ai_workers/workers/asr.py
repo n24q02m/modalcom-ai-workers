@@ -67,14 +67,19 @@ class ASRServer:
             device_map="auto",
         )
 
-    def _load_audio(self, file_bytes: bytes) -> dict:
+    async def _load_audio(self, file_bytes: bytes) -> dict:
         """Load audio bytes into the format expected by the pipeline."""
-        import io
+        import asyncio
 
-        import librosa
+        def load_sync():
+            import io
 
-        audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
-        return {"raw": audio, "sampling_rate": sr}
+            import librosa
+
+            audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
+            return {"raw": audio, "sampling_rate": sr}
+
+        return await asyncio.to_thread(load_sync)
 
     @modal.asgi_app()
     def serve(self):
@@ -121,7 +126,7 @@ class ASRServer:
             Supports formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg.
             """
             file_bytes = await file.read()
-            audio_input = self._load_audio(file_bytes)
+            audio_input = await self._load_audio(file_bytes)
 
             # Build generate_kwargs
             generate_kwargs: dict = {}
