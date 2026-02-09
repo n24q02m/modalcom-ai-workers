@@ -147,10 +147,10 @@ class ASRServer:
                 generate_kwargs=generate_kwargs,
             )
 
-            text = result.get("text", "").strip()
+            text = result.get("text", "").strip()  # type: ignore
 
             if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
+                chunks = result.get("chunks", [])  # type: ignore
                 segments = []
                 for i, chunk in enumerate(chunks):
                     ts = chunk.get("timestamp", (0, 0))
