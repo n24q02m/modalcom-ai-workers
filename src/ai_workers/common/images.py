@@ -33,9 +33,7 @@ TRANSFORMERS_PACKAGES = [
 
 def _base_image() -> modal.Image:
     """Base image configuration shared across all worker types."""
-    return modal.Image.debian_slim(python_version=PYTHON_VERSION).env(
-        {"HF_HUB_OFFLINE": "1"}
-    )
+    return modal.Image.debian_slim(python_version=PYTHON_VERSION).env({"HF_HUB_OFFLINE": "1"})
 
 
 def vllm_image() -> modal.Image:
@@ -67,8 +65,4 @@ def transformers_audio_image() -> modal.Image:
         "soundfile>=0.12",
         "python-multipart>=0.0.9",
     ]
-    return (
-        _base_image()
-        .apt_install("ffmpeg", "libsndfile1")
-        .pip_install(*packages)
-    )
+    return _base_image().apt_install("ffmpeg", "libsndfile1").pip_install(*packages)
