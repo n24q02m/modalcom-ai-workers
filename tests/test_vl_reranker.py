@@ -2,6 +2,7 @@ import sys
 from unittest.mock import MagicMock
 
 # --- Mocking infrastructure ---
+# Mocks must be installed before imports
 mock_modal = MagicMock()
 sys.modules["modal"] = mock_modal
 
@@ -26,32 +27,19 @@ mock_image.apt_install.return_value = mock_image
 # Mock CloudBucketMount
 mock_modal.CloudBucketMount = MagicMock()
 
-# Mock torch if not present
-try:
-    import torch
-except ImportError:
-    sys.modules["torch"] = MagicMock()
+# Mock modules that might be missing in minimal environments
+for module_name in ["torch", "transformers", "fastapi", "pydantic", "loguru"]:
+    try:
+        __import__(module_name)
+    except ImportError:
+        sys.modules[module_name] = MagicMock()
 
-# Mock transformers if not present
-try:
-    import transformers
-except ImportError:
-    sys.modules["transformers"] = MagicMock()
+# Specific mocks for attributes used by the code
+if isinstance(sys.modules.get("fastapi"), MagicMock):
+    sys.modules["fastapi"].FastAPI.return_value = MagicMock()
+    sys.modules["fastapi"].Request = MagicMock()
 
-# Mock fastapi if not present
-try:
-    import fastapi
-except ImportError:
-    sys.modules["fastapi"] = MagicMock()
-    mock_fastapi = sys.modules["fastapi"]
-    mock_fastapi.FastAPI.return_value = MagicMock()
-    mock_fastapi.Request = MagicMock()
-
-# Mock pydantic if not present
-try:
-    import pydantic
-except ImportError:
-    sys.modules["pydantic"] = MagicMock()
+if isinstance(sys.modules.get("pydantic"), MagicMock):
     # Mock BaseModel to be subclassable
     class MockBaseModel:
         def __init__(self, **kwargs):
@@ -59,21 +47,15 @@ except ImportError:
                 setattr(self, k, v)
     sys.modules["pydantic"].BaseModel = MockBaseModel
 
-# Mock loguru if not present
-try:
-    import loguru
-except ImportError:
-    sys.modules["loguru"] = MagicMock()
-
 # --- End mocking ---
 
-from ai_workers.workers.vl_reranker import (
-    VLRerankerBase,
-    VLRerankerLightServer,
-    VLRerankerHeavyServer,
+from ai_workers.workers.vl_reranker import (  # noqa: E402
     RerankRequest,
-    RerankResponse
+    VLRerankerBase,
+    VLRerankerHeavyServer,
+    VLRerankerLightServer,
 )
+
 
 def test_inheritance():
     assert issubclass(VLRerankerLightServer, VLRerankerBase)
