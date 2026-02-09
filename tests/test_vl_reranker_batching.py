@@ -1,14 +1,20 @@
 import sys
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Define mocks
 mock_modal = MagicMock()
 mock_app = MagicMock()
+
+
 def cls_decorator(*args, **kwargs):
     def wrapper(cls):
         return cls
+
     return wrapper
+
+
 mock_app.cls.side_effect = cls_decorator
 mock_modal.App.return_value = mock_app
 mock_modal.asgi_app.return_value = lambda f: f
@@ -17,22 +23,32 @@ mock_modal.enter.return_value = lambda f: f
 # Mock FastAPI
 mock_fastapi = MagicMock()
 captured_handlers = {}
+
+
 def post_decorator(path, **kwargs):
     def decorator(func):
         captured_handlers[path] = func
         return func
+
     return decorator
+
+
 mock_fastapi.FastAPI.return_value.post.side_effect = post_decorator
 mock_fastapi.FastAPI.return_value.get.side_effect = lambda path, **kwargs: lambda func: func
 mock_fastapi.FastAPI.return_value.middleware.return_value = lambda f: f
 
 # Mock Pydantic
 mock_pydantic = MagicMock()
+
+
 class MockBaseModel:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
 mock_pydantic.BaseModel = MockBaseModel
+
 
 @pytest.mark.asyncio
 async def test_rerank_batching():
@@ -74,7 +90,7 @@ async def test_rerank_batching():
         # Reset captured handlers
         captured_handlers.clear()
 
-        app = server.serve()
+        _ = server.serve()
         rerank_handler = captured_handlers.get("/v1/rerank")
 
         assert rerank_handler is not None
@@ -88,14 +104,17 @@ async def test_rerank_batching():
             documents=[f"doc {i}" for i in range(10)],
             top_n=None,
             model="test",
-            return_documents=True
+            return_documents=True,
         )
 
         # Run handler
         await rerank_handler(request)
 
         # Verify
-        assert call_stats["count"] == 1, f"Expected 1 call to _score_batch, got {call_stats['count']}"
+        assert call_stats["count"] == 1, (
+            f"Expected 1 call to _score_batch, got {call_stats['count']}"
+        )
+
 
 if __name__ == "__main__":
     # Allow running as script too (install pytest-asyncio or just run with pytest)
