@@ -1,4 +1,5 @@
 import base64
+import binascii
 import io
 import sys
 import unittest
@@ -92,7 +93,7 @@ class TestOCRServer(unittest.TestCase):
         """Test loading invalid base64 data."""
         url = "data:image/png;base64,invalid_base64_data"
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(binascii.Error):
             self.server._load_image_from_url(url)
 
     @patch("urllib.request.urlopen")
