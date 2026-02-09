@@ -141,7 +141,31 @@ class MyNewServer:
         async def health():
             return {"status": "ok", "model": MODEL_NAME}
 
-        # TODO: Them cac endpoint cu the cho task cua model
+        # --- SAMPLE ENDPOINT: Chat Completion (Text Generation / Vision) ---
+        #
+        # class ChatCompletionRequest(BaseModel):
+        #     model: str
+        #     messages: list[dict]
+        #     max_tokens: int = 1024
+        #
+        # @app.post("/v1/chat/completions")
+        # async def chat(request: ChatCompletionRequest):
+        #     # Implement model inference logic here
+        #     # ...
+        #     return {
+        #         "id": "chatcmpl-123",
+        #         "object": "chat.completion",
+        #         "created": 1677652288,
+        #         "model": request.model,
+        #         "choices": [{
+        #             "index": 0,
+        #             "message": {"role": "assistant", "content": "Hello!"},
+        #             "finish_reason": "stop"
+        #         }],
+        #         "usage": {"prompt_tokens": 9, "completion_tokens": 12, "total_tokens": 21}
+        #     }
+        #
+        # Note: Check table below for specific endpoint formats (Embeddings, Reranker, etc.)
 
         return app
 ```
