@@ -27,6 +27,7 @@ SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
 EMBEDDING_DIM = 1024
 
+
 class EmbeddingRequest(BaseModel):
     model: str | None = None
     input: list[str] | str
@@ -44,6 +45,7 @@ class EmbeddingResponse(BaseModel):
     data: list[EmbeddingData]
     model: str
     usage: dict[str, int]
+
 
 def create_vl_embedding_app(
     model_name: str,
@@ -80,6 +82,7 @@ def create_vl_embedding_app(
         )
 
     return app
+
 
 r2_mount = get_modal_cloud_bucket_mount()
 
