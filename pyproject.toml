@@ -79,8 +79,8 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Configuration for 'ty' type checker
+# Invalid keys 'src' and 'python-version' removed as they caused CI failure
 
 # --- pytest ---
 [tool.pytest.ini_options]
