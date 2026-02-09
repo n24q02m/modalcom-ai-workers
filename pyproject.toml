@@ -9,6 +9,7 @@ dependencies = [
   "loguru>=0.7",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
+  "fastapi>=0.100", # Explicitly add fastapi as a dependency
 ]
 
 [project.optional-dependencies]
@@ -79,8 +80,8 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Configuration for 'ty' type checker
+# src = ["src"]  # Removed due to schema validation error
 
 # --- pytest ---
 [tool.pytest.ini_options]
