@@ -86,6 +86,8 @@ def upload_directory(
     count = 0
 
     for file_path in sorted(local_dir.rglob("*")):
+        if file_path.is_symlink():
+            continue
         if not file_path.is_file():
             continue
         relative = file_path.relative_to(local_dir)
