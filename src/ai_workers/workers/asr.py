@@ -18,6 +18,8 @@ from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
+TIMEOUT_SECONDS = 600
+CONCURRENT_INPUTS = 5
 MODEL_NAME = "whisper-large-v3"
 
 r2_mount = get_modal_cloud_bucket_mount()
@@ -34,8 +36,8 @@ asr_app = modal.App(
     volumes={MODELS_MOUNT_PATH: r2_mount},
     scaledown_window=SCALEDOWN_WINDOW,
     keep_warm=KEEP_WARM,
-    timeout=600,
-    allow_concurrent_inputs=5,
+    timeout=TIMEOUT_SECONDS,
+    allow_concurrent_inputs=CONCURRENT_INPUTS,
 )
 class ASRServer:
     """Custom FastAPI ASR server for Whisper Large v3.

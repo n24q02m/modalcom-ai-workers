@@ -9,6 +9,7 @@ dependencies = [
   "loguru>=0.7",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
+  "fastapi>=0.100",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,8 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "pillow>=10.0",
+  "librosa>=0.10",
 ]
 
 [build-system]
@@ -79,8 +82,6 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
 
 # --- pytest ---
 [tool.pytest.ini_options]

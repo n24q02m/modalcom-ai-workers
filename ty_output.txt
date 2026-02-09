@@ -1,0 +1,133 @@
+warning[possibly-missing-attribute]: Attribute `save_pretrained` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/cli/convert.py:155:9
+    |
+153 |         console.print(f"[dim]Saving SafeTensors to {model_output}...[/dim]")
+154 |         model.save_pretrained(model_output, safe_serialization=True)
+155 |         processor.save_pretrained(model_output)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+156 |
+157 |         # Report file sizes
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `get` may be missing on object of type `Unknown | list[dict[str, Any]]`
+   --> src/ai_workers/workers/asr.py:146:20
+    |
+144 |             )
+145 |
+146 |             text = result.get("text", "").strip()
+    |                    ^^^^^^^^^^
+147 |
+148 |             if response_format == "verbose_json":
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `get` may be missing on object of type `Unknown | list[dict[str, Any]]`
+   --> src/ai_workers/workers/asr.py:149:26
+    |
+148 |             if response_format == "verbose_json":
+149 |                 chunks = result.get("chunks", [])
+    |                          ^^^^^^^^^^
+150 |                 segments = []
+151 |                 for i, chunk in enumerate(chunks):
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:71:29
+   |
+70 |         # Pre-compute token IDs for "yes" and "no"
+71 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+72 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:72:28
+   |
+70 |         # Pre-compute token IDs for "yes" and "no"
+71 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+72 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+73 |
+74 |     def _score_pair(self, query: str, document: str) -> float:
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `apply_chat_template` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:85:22
+   |
+83 |             },
+84 |         ]
+85 |         input_text = self.tokenizer.apply_chat_template(
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+86 |             messages, tokenize=False, add_generation_prompt=True
+87 |         )
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[call-non-callable]: Object of type `None` is not callable
+  --> src/ai_workers/workers/reranker.py:88:18
+   |
+86 |             messages, tokenize=False, add_generation_prompt=True
+87 |         )
+88 |         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+89 |
+90 |         with torch.no_grad():
+   |
+info: Union variant `None` is incompatible with this call site
+info: Attempted to call union type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+info: rule `call-non-callable` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:198:29
+    |
+196 |         )
+197 |         self.model.eval()
+198 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+199 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:199:28
+    |
+197 |         self.model.eval()
+198 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+199 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+200 |
+201 |     def _score_pair(self, query: str, document: str) -> float:
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `apply_chat_template` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:208:22
+    |
+206 |             {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
+207 |         ]
+208 |         input_text = self.tokenizer.apply_chat_template(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+209 |             messages, tokenize=False, add_generation_prompt=True
+210 |         )
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[call-non-callable]: Object of type `None` is not callable
+   --> src/ai_workers/workers/reranker.py:211:18
+    |
+209 |             messages, tokenize=False, add_generation_prompt=True
+210 |         )
+211 |         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+212 |
+213 |         with torch.no_grad():
+    |
+info: Union variant `None` is incompatible with this call site
+info: Attempted to call union type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+info: rule `call-non-callable` is enabled by default
+
+Found 11 diagnostics
