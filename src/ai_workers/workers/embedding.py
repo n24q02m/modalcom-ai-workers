@@ -52,8 +52,8 @@ class EmbeddingLightServer:
     @modal.enter()
     async def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm.engine.arg_utils import AsyncEngineArgs
-        from vllm.engine.async_llm_engine import AsyncLLMEngine
+        from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
+        from vllm.engine.async_llm_engine import AsyncLLMEngine  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
         engine_args = AsyncEngineArgs(
@@ -74,7 +74,7 @@ class EmbeddingLightServer:
 
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
-        from vllm.pooling_params import PoolingParams
+        from vllm.pooling_params import PoolingParams  # type: ignore
 
         app = FastAPI(title="Qwen3 Embedding Light")
 
@@ -169,8 +169,8 @@ class EmbeddingHeavyServer:
 
     @modal.enter()
     async def start_engine(self) -> None:
-        from vllm.engine.arg_utils import AsyncEngineArgs
-        from vllm.engine.async_llm_engine import AsyncLLMEngine
+        from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
+        from vllm.engine.async_llm_engine import AsyncLLMEngine  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
         engine_args = AsyncEngineArgs(
@@ -189,7 +189,7 @@ class EmbeddingHeavyServer:
 
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
-        from vllm.pooling_params import PoolingParams
+        from vllm.pooling_params import PoolingParams  # type: ignore
 
         app = FastAPI(title="Qwen3 Embedding Heavy")
 
