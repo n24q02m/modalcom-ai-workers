@@ -82,10 +82,10 @@ class RerankerLightServer:
                 "content": f"Query: {query}\nDocument: {document}",
             },
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -200,10 +200,10 @@ class RerankerHeavyServer:
             {"role": "system", "content": RERANKER_PREFIX},
             {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)

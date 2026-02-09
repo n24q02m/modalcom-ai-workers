@@ -71,7 +71,7 @@ class ASRServer:
         """Load audio bytes into the format expected by the pipeline."""
         import io
 
-        import librosa
+        import librosa  # type: ignore
 
         audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
         return {"raw": audio, "sampling_rate": sr}
