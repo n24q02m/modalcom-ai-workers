@@ -1,12 +1,11 @@
-# 🔧 Fix CI and local setup dependency installation
+# 🔧 Fix `ty` configuration in `pyproject.toml`
 
 ## 🎯 What
-Updated `.github/workflows/ci.yml` and `.mise.toml` to use `uv sync --extra dev` instead of `uv sync --all-groups` or `uv sync --group dev`.
+Updated `[tool.ty]` configuration in `pyproject.toml` to use `environment = { python = ".venv/bin/python3" }` instead of the invalid `python-version = "3.13"`.
 
 ## 🔍 Why
-The project uses `[project.optional-dependencies]` (standard Python extras) to define the `dev` environment, not the newer PEP 735 `[dependency-groups]`. `uv sync --all-groups` or `--group dev` looks for dependency groups and does not install extras, causing CI to fail when tools like `ruff` (defined in `dev` extra) are missing.
+The previous configuration caused `ty` to fail with a TOML parse error: `unknown field 'python-version'`. The correct field for specifying the python environment in `ty` is `environment`. Additionally, pointing it to the virtualenv python executable ensures `ty` can resolve installed dependencies correctly.
 
 ## ✨ Result
-- CI workflow `lint-and-test` now correctly installs `ruff`, `ty`, `pytest`, and other dev dependencies.
-- Local setup via `mise install` or `mise run setup` now correctly installs the dev environment.
-- Verified locally that `uv sync --extra dev` works and all tests pass (including those requiring `torch` which is now installed via `dev` extra).
+- `ty check` now runs successfully without configuration errors.
+- CI workflow `lint-and-test` should now proceed past the type check step.

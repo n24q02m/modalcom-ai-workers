@@ -79,8 +79,8 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# src = ["src"]
+environment = { python = ".venv/bin/python3" }
 
 # --- pytest ---
 [tool.pytest.ini_options]
