@@ -105,14 +105,8 @@ class VLEmbeddingLightServer:
             model: str
             usage: dict[str, int]
 
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
+        from ai_workers.common.auth import auth_middleware
+        app.middleware("http")(auth_middleware)
 
         @app.get("/health")
         async def health():
@@ -213,14 +207,8 @@ class VLEmbeddingHeavyServer:
             model: str
             usage: dict[str, int]
 
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
+        from ai_workers.common.auth import auth_middleware
+        app.middleware("http")(auth_middleware)
 
         @app.get("/health")
         async def health():
