@@ -102,7 +102,7 @@ class VLRerankerLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Reranker Light")
@@ -124,6 +124,7 @@ class VLRerankerLightServer:
             model: str
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")
@@ -225,7 +226,7 @@ class VLRerankerHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Reranker Heavy")
@@ -247,6 +248,7 @@ class VLRerankerHeavyServer:
             model: str
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")

@@ -78,7 +78,7 @@ class ASRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, File, Form, Request, UploadFile
+        from fastapi import FastAPI, File, Form, UploadFile
         from pydantic import BaseModel
 
         app = FastAPI(title="Whisper Large v3")
@@ -94,6 +94,7 @@ class ASRServer:
             segments: list[dict] | None = None
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")

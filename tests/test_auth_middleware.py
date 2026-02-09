@@ -1,8 +1,10 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi import Request
 
 from ai_workers.common.auth import auth_middleware
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_health_check():
@@ -19,6 +21,7 @@ async def test_auth_middleware_health_check():
         call_next.assert_called_once_with(request)
         assert response == "response"
 
+
 @pytest.mark.asyncio
 async def test_auth_middleware_root_check():
     """Test that root path skips authentication."""
@@ -32,6 +35,7 @@ async def test_auth_middleware_root_check():
         mock_verify.assert_not_called()
         call_next.assert_called_once_with(request)
         assert response == "response"
+
 
 @pytest.mark.asyncio
 async def test_auth_middleware_protected_route():

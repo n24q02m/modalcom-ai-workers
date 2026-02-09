@@ -84,7 +84,7 @@ class VLEmbeddingLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Light")
@@ -106,6 +106,7 @@ class VLEmbeddingLightServer:
             usage: dict[str, int]
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")
@@ -186,7 +187,7 @@ class VLEmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Heavy")
@@ -208,6 +209,7 @@ class VLEmbeddingHeavyServer:
             usage: dict[str, int]
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")

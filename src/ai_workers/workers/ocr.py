@@ -143,7 +143,7 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="DeepSeek OCR v2")
@@ -176,6 +176,7 @@ class OCRServer:
             usage: Usage
 
         from ai_workers.common.auth import auth_middleware
+
         app.middleware("http")(auth_middleware)
 
         @app.get("/health")
