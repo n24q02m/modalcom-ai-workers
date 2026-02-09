@@ -12,6 +12,7 @@ LiteLLM integration:
 from __future__ import annotations
 
 import modal
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -29,35 +30,45 @@ RERANKER_PREFIX = (
 
 
 # ---------------------------------------------------------------------------
-# Reranker Light (Qwen3-Reranker-0.6B, T4)
+# Shared Pydantic Models
 # ---------------------------------------------------------------------------
 
-reranker_light_app = modal.App(
-    "ai-workers-qwen3-reranker-0.6b",
-    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
-)
 
-MODEL_LIGHT = "qwen3-reranker-0.6b"
+class RerankRequest(BaseModel):
+    model: str | None = None
+    query: str
+    documents: list[str]
+    top_n: int | None = None
 
 
-@reranker_light_app.cls(
-    gpu="T4",
-    image=transformers_image(),
-    volumes={MODELS_MOUNT_PATH: r2_mount},
-    scaledown_window=SCALEDOWN_WINDOW,
-    keep_warm=KEEP_WARM,
-    timeout=600,
-    allow_concurrent_inputs=10,
-)
-class RerankerLightServer:
-    """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
+class DocumentResult(BaseModel):
+    index: int
+    relevance_score: float
+    document: dict[str, str]
+
+
+class RerankResponse(BaseModel):
+    results: list[DocumentResult]
+    model: str
+
+
+# ---------------------------------------------------------------------------
+# Base Reranker Server
+# ---------------------------------------------------------------------------
+
+
+class BaseRerankerServer:
+    """Base class for Reranker servers."""
+
+    model_name: str
+    app_title: str
 
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
+        model_path = f"{MODELS_MOUNT_PATH}/{self.model_name}"
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
@@ -100,24 +111,8 @@ class RerankerLightServer:
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
-        app = FastAPI(title="Qwen3 Reranker Light")
-
-        class RerankRequest(BaseModel):
-            model: str = MODEL_LIGHT
-            query: str
-            documents: list[str]
-            top_n: int | None = None
-
-        class DocumentResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: dict[str, str]
-
-        class RerankResponse(BaseModel):
-            results: list[DocumentResult]
-            model: str
+        app = FastAPI(title=self.app_title)
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -130,7 +125,7 @@ class RerankerLightServer:
 
         @app.get("/health")
         async def health():
-            return {"status": "ok", "model": MODEL_LIGHT}
+            return {"status": "ok", "model": self.model_name}
 
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(request: RerankRequest):
@@ -152,9 +147,37 @@ class RerankerLightServer:
             if request.top_n is not None:
                 results = results[: request.top_n]
 
-            return RerankResponse(results=results, model=request.model)
+            return RerankResponse(results=results, model=request.model or self.model_name)
 
         return app
+
+
+# ---------------------------------------------------------------------------
+# Reranker Light (Qwen3-Reranker-0.6B, T4)
+# ---------------------------------------------------------------------------
+
+reranker_light_app = modal.App(
+    "ai-workers-qwen3-reranker-0.6b",
+    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
+)
+
+MODEL_LIGHT = "qwen3-reranker-0.6b"
+
+
+@reranker_light_app.cls(
+    gpu="T4",
+    image=transformers_image(),
+    volumes={MODELS_MOUNT_PATH: r2_mount},
+    scaledown_window=SCALEDOWN_WINDOW,
+    keep_warm=KEEP_WARM,
+    timeout=600,
+    allow_concurrent_inputs=10,
+)
+class RerankerLightServer(BaseRerankerServer):
+    """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
+
+    model_name = MODEL_LIGHT
+    app_title = "Qwen3 Reranker Light"
 
 
 # ---------------------------------------------------------------------------
@@ -178,97 +201,8 @@ MODEL_HEAVY = "qwen3-reranker-8b"
     timeout=600,
     allow_concurrent_inputs=10,
 )
-class RerankerHeavyServer:
+class RerankerHeavyServer(BaseRerankerServer):
     """Custom FastAPI reranker server for Qwen3-Reranker-8B."""
 
-    @modal.enter()
-    def load_model(self) -> None:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-            device_map="auto",
-        )
-        self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
-
-    def _score_pair(self, query: str, document: str) -> float:
-        import torch
-
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
-        ]
-        input_text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits = outputs.logits[:, -1, :]
-            yes_logit = logits[0, self.yes_token_id].float()
-            no_logit = logits[0, self.no_token_id].float()
-            score = torch.sigmoid(yes_logit - no_logit).item()
-
-        return score
-
-    @modal.asgi_app()
-    def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 Reranker Heavy")
-
-        class RerankRequest(BaseModel):
-            model: str = MODEL_HEAVY
-            query: str
-            documents: list[str]
-            top_n: int | None = None
-
-        class DocumentResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: dict[str, str]
-
-        class RerankResponse(BaseModel):
-            results: list[DocumentResult]
-            model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_HEAVY}
-
-        @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(request: RerankRequest):
-            results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
-                    )
-                )
-            results.sort(key=lambda r: r.relevance_score, reverse=True)
-            if request.top_n is not None:
-                results = results[: request.top_n]
-            return RerankResponse(results=results, model=request.model)
-
-        return app
+    model_name = MODEL_HEAVY
+    app_title = "Qwen3 Reranker Heavy"
