@@ -84,10 +84,13 @@ class VLEmbeddingLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
+        from ai_workers.common.auth import auth_middleware
+
         app = FastAPI(title="Qwen3 VL Embedding Light")
+        app.middleware("http")(auth_middleware)
 
         class EmbeddingRequest(BaseModel):
             model: str = MODEL_LIGHT
@@ -104,15 +107,6 @@ class VLEmbeddingLightServer:
             data: list[EmbeddingData]
             model: str
             usage: dict[str, int]
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
 
         @app.get("/health")
         async def health():
@@ -192,10 +186,13 @@ class VLEmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
+        from ai_workers.common.auth import auth_middleware
+
         app = FastAPI(title="Qwen3 VL Embedding Heavy")
+        app.middleware("http")(auth_middleware)
 
         class EmbeddingRequest(BaseModel):
             model: str = MODEL_HEAVY
@@ -212,15 +209,6 @@ class VLEmbeddingHeavyServer:
             data: list[EmbeddingData]
             model: str
             usage: dict[str, int]
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
 
         @app.get("/health")
         async def health():

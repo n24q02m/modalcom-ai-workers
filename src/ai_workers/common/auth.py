@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import HTTPException, Request, status
+from typing import TYPE_CHECKING
+
+from fastapi import HTTPException, Request, Response, status
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 async def verify_api_key(request: Request) -> None:
@@ -35,3 +40,15 @@ async def verify_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def auth_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Middleware to verify API key for all requests except health checks."""
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+
+    await verify_api_key(request)
+    return await call_next(request)

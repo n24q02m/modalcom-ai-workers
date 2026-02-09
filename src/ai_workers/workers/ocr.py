@@ -143,10 +143,13 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
+        from ai_workers.common.auth import auth_middleware
+
         app = FastAPI(title="DeepSeek OCR v2")
+        app.middleware("http")(auth_middleware)
 
         class ChatMessage(BaseModel):
             role: str
@@ -174,15 +177,6 @@ class OCRServer:
             model: str
             choices: list[Choice]
             usage: Usage
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
 
         @app.get("/health")
         async def health():
