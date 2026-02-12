@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import modal
 
+from ai_workers.common.config import get_model
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
@@ -57,19 +58,22 @@ class RerankerLightServer:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        config = get_model(MODEL_LIGHT)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             device_map="auto",
         )
         self.model.eval()
 
         # Pre-compute token IDs for "yes" and "no"
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         """Score a single query-document pair using yes/no logits."""
@@ -82,10 +86,10 @@ class RerankerLightServer:
                 "content": f"Query: {query}\nDocument: {document}",
             },
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -186,17 +190,20 @@ class RerankerHeavyServer:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        config = get_model(MODEL_HEAVY)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
-            trust_remote_code=True,
+            trust_remote_code=config.trust_remote_code,
             device_map="auto",
         )
         self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")  # type: ignore
+        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")  # type: ignore
 
     def _score_pair(self, query: str, document: str) -> float:
         import torch
@@ -205,10 +212,10 @@ class RerankerHeavyServer:
             {"role": "system", "content": RERANKER_PREFIX},
             {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
         ]
-        input_text = self.tokenizer.apply_chat_template(
+        input_text = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)  # type: ignore
 
         with torch.no_grad():
             outputs = self.model(**inputs)

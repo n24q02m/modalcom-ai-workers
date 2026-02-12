@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import modal
 
+from ai_workers.common.config import get_model
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_audio_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
@@ -49,13 +50,17 @@ class ASRServer:
         import torch
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
+        config = get_model(MODEL_NAME)
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
-        self.processor = AutoProcessor.from_pretrained(model_path)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=config.trust_remote_code
+        )
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             device_map="auto",
+            trust_remote_code=config.trust_remote_code,
         )
 
         self.pipe = pipeline(
@@ -71,7 +76,7 @@ class ASRServer:
         """Load audio bytes into the format expected by the pipeline."""
         import io
 
-        import librosa
+        import librosa  # type: ignore
 
         audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
         return {"raw": audio, "sampling_rate": sr}
@@ -141,10 +146,10 @@ class ASRServer:
                 generate_kwargs=generate_kwargs,
             )
 
-            text = result.get("text", "").strip()
+            text = result.get("text", "").strip()  # type: ignore
 
             if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
+                chunks = result.get("chunks", [])  # type: ignore
                 segments = []
                 for i, chunk in enumerate(chunks):
                     ts = chunk.get("timestamp", (0, 0))
