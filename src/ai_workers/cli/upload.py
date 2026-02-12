@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import typer
+import typer  # type: ignore
 from rich.console import Console
 
 from ai_workers.common.config import get_model, list_models

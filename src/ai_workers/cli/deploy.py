@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import subprocess
 
-import typer
+import typer  # type: ignore
 from rich.console import Console
 
 from ai_workers.common.config import MODEL_REGISTRY, get_model, list_models
