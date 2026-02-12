@@ -84,7 +84,7 @@ class VLEmbeddingLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # type: ignore
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Light")
@@ -192,7 +192,7 @@ class VLEmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI, Request  # type: ignore
         from pydantic import BaseModel
 
         app = FastAPI(title="Qwen3 VL Embedding Heavy")
