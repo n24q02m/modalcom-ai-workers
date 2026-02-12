@@ -16,7 +16,10 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+import asyncio
+
 import modal
+from pydantic import BaseModel
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
@@ -31,6 +34,38 @@ ocr_app = modal.App(
     "ai-workers-deepseek-ocr-2",
     secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
 )
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str | list[dict]
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str = MODEL_NAME
+    messages: list[ChatMessage]
+    max_tokens: int = 4096
+    temperature: float = 0.0
+
+
+class Choice(BaseModel):
+    index: int = 0
+    message: dict[str, str]
+    finish_reason: str = "stop"
+
+
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    model: str
+    choices: list[Choice]
+    usage: Usage
 
 
 @ocr_app.cls(
@@ -144,36 +179,8 @@ class OCRServer:
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, Request
-        from pydantic import BaseModel
 
         app = FastAPI(title="DeepSeek OCR v2")
-
-        class ChatMessage(BaseModel):
-            role: str
-            content: str | list[dict]
-
-        class ChatCompletionRequest(BaseModel):
-            model: str = MODEL_NAME
-            messages: list[ChatMessage]
-            max_tokens: int = 4096
-            temperature: float = 0.0
-
-        class Choice(BaseModel):
-            index: int = 0
-            message: dict[str, str]
-            finish_reason: str = "stop"
-
-        class Usage(BaseModel):
-            prompt_tokens: int = 0
-            completion_tokens: int = 0
-            total_tokens: int = 0
-
-        class ChatCompletionResponse(BaseModel):
-            id: str
-            object: str = "chat.completion"
-            model: str
-            choices: list[Choice]
-            usage: Usage
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -201,7 +208,7 @@ class OCRServer:
                     if isinstance(msg.content, list):
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
-                            image = self._load_image_from_url(image_url)
+                            image = await asyncio.to_thread(self._load_image_from_url, image_url)
                     elif isinstance(msg.content, str):
                         text_prompt = msg.content
                     break
@@ -222,7 +229,7 @@ class OCRServer:
                     usage=Usage(),
                 )
 
-            result = self._run_ocr(image, text_prompt)
+            result = await asyncio.to_thread(self._run_ocr, image, text_prompt)
 
             return ChatCompletionResponse(
                 id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
