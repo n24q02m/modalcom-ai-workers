@@ -133,7 +133,7 @@ class ASRServer:
                 generate_kwargs["temperature"] = temperature
                 generate_kwargs["do_sample"] = True
 
-            result = self.pipe(
+            result: dict = self.pipe(  # type: ignore
                 audio_input,
                 chunk_length_s=30,
                 batch_size=8,
