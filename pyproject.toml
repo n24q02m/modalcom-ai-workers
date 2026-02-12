@@ -41,6 +41,10 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.110.0",
+  "httpx>=0.27.0",
+  "librosa>=0.10.0",
+  "pillow>=10.0.0",
 ]
 
 [build-system]
@@ -79,8 +83,9 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Configuration for ty type checker
+src = { include = ["src"] }
+environment = { python = ".venv/bin/python" }
 
 # --- pytest ---
 [tool.pytest.ini_options]

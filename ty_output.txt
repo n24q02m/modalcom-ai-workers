@@ -1,0 +1,427 @@
+warning[possibly-missing-attribute]: Attribute `save_pretrained` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/cli/convert.py:155:9
+    |
+153 |         console.print(f"[dim]Saving SafeTensors to {model_output}...[/dim]")
+154 |         model.save_pretrained(model_output, safe_serialization=True)
+155 |         processor.save_pretrained(model_output)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+156 |
+157 |         # Report file sizes
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+ --> src/ai_workers/common/auth.py:5:6
+  |
+3 | from __future__ import annotations
+4 |
+5 | from fastapi import HTTPException, Request, status
+  |      ^^^^^^^
+6 | from loguru import logger
+  |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `librosa`
+  --> src/ai_workers/workers/asr.py:74:16
+   |
+72 |         import io
+73 |
+74 |         import librosa
+   |                ^^^^^^^
+75 |
+76 |         audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+  --> src/ai_workers/workers/asr.py:81:14
+   |
+79 |     @modal.asgi_app()
+80 |     def serve(self):
+81 |         from fastapi import FastAPI, File, Form, Request, UploadFile
+   |              ^^^^^^^
+82 |         from pydantic import BaseModel
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `get` may be missing on object of type `Unknown | list[dict[str, Any]]`
+   --> src/ai_workers/workers/asr.py:144:20
+    |
+142 |             )
+143 |
+144 |             text = result.get("text", "").strip()
+    |                    ^^^^^^^^^^
+145 |
+146 |             if response_format == "verbose_json":
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `get` may be missing on object of type `Unknown | list[dict[str, Any]]`
+   --> src/ai_workers/workers/asr.py:147:26
+    |
+146 |             if response_format == "verbose_json":
+147 |                 chunks = result.get("chunks", [])
+    |                          ^^^^^^^^^^
+148 |                 segments = []
+149 |                 for i, chunk in enumerate(chunks):
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi.responses`
+   --> src/ai_workers/workers/asr.py:168:22
+    |
+167 |             if response_format == "text":
+168 |                 from fastapi.responses import PlainTextResponse
+    |                      ^^^^^^^^^^^^^^^^^
+169 |
+170 |                 return PlainTextResponse(text)
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `vllm`
+  --> src/ai_workers/workers/embedding.py:55:14
+   |
+53 |     def start_engine(self) -> None:
+54 |         """Initialize vLLM engine at container startup."""
+55 |         from vllm import LLM
+   |              ^^^^
+56 |
+57 |         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+  --> src/ai_workers/workers/embedding.py:71:14
+   |
+69 |         """Expose OpenAI-compatible /v1/embeddings endpoint."""
+70 |
+71 |         from fastapi import FastAPI, Request
+   |              ^^^^^^^
+72 |         from pydantic import BaseModel
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `vllm`
+   --> src/ai_workers/workers/embedding.py:153:14
+    |
+151 |     @modal.enter()
+152 |     def start_engine(self) -> None:
+153 |         from vllm import LLM
+    |              ^^^^
+154 |
+155 |         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/embedding.py:168:14
+    |
+166 |     def serve(self):
+167 |
+168 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+169 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `PIL`
+  --> src/ai_workers/workers/ocr.py:86:14
+   |
+84 |         import io
+85 |
+86 |         from PIL import Image
+   |              ^^^
+87 |
+88 |         if url.startswith("data:"):
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/ocr.py:146:14
+    |
+144 |     @modal.asgi_app()
+145 |     def serve(self):
+146 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+147 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:71:29
+   |
+70 |         # Pre-compute token IDs for "yes" and "no"
+71 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+72 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:72:28
+   |
+70 |         # Pre-compute token IDs for "yes" and "no"
+71 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+72 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+73 |
+74 |     def _score_pair(self, query: str, document: str) -> float:
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `apply_chat_template` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+  --> src/ai_workers/workers/reranker.py:85:22
+   |
+83 |             },
+84 |         ]
+85 |         input_text = self.tokenizer.apply_chat_template(
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+86 |             messages, tokenize=False, add_generation_prompt=True
+87 |         )
+   |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[call-non-callable]: Object of type `None` is not callable
+  --> src/ai_workers/workers/reranker.py:88:18
+   |
+86 |             messages, tokenize=False, add_generation_prompt=True
+87 |         )
+88 |         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+89 |
+90 |         with torch.no_grad():
+   |
+info: Union variant `None` is incompatible with this call site
+info: Attempted to call union type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+info: rule `call-non-callable` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/reranker.py:102:14
+    |
+100 |     @modal.asgi_app()
+101 |     def serve(self):
+102 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+103 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:198:29
+    |
+196 |         )
+197 |         self.model.eval()
+198 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+199 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `convert_tokens_to_ids` may be missing on object of type `TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:199:28
+    |
+197 |         self.model.eval()
+198 |         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
+199 |         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+200 |
+201 |     def _score_pair(self, query: str, document: str) -> float:
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+warning[possibly-missing-attribute]: Attribute `apply_chat_template` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/workers/reranker.py:208:22
+    |
+206 |             {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
+207 |         ]
+208 |         input_text = self.tokenizer.apply_chat_template(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+209 |             messages, tokenize=False, add_generation_prompt=True
+210 |         )
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+error[call-non-callable]: Object of type `None` is not callable
+   --> src/ai_workers/workers/reranker.py:211:18
+    |
+209 |             messages, tokenize=False, add_generation_prompt=True
+210 |         )
+211 |         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+212 |
+213 |         with torch.no_grad():
+    |
+info: Union variant `None` is incompatible with this call site
+info: Attempted to call union type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+info: rule `call-non-callable` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/reranker.py:224:14
+    |
+222 |     @modal.asgi_app()
+223 |     def serve(self):
+224 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+225 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/vl_embedding.py:122:14
+    |
+120 |     @modal.asgi_app()
+121 |     def serve(self):
+122 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+123 |
+124 |         app = FastAPI(title="Qwen3 VL Embedding Light")
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/vl_embedding.py:213:14
+    |
+211 |     @modal.asgi_app()
+212 |     def serve(self):
+213 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+214 |
+215 |         app = FastAPI(title="Qwen3 VL Embedding Heavy")
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/vl_reranker.py:105:14
+    |
+103 |     @modal.asgi_app()
+104 |     def serve(self):
+105 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+106 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `fastapi`
+   --> src/ai_workers/workers/vl_reranker.py:234:14
+    |
+232 |     @modal.asgi_app()
+233 |     def serve(self):
+234 |         from fastapi import FastAPI, Request
+    |              ^^^^^^^
+235 |         from pydantic import BaseModel
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+Found 27 diagnostics

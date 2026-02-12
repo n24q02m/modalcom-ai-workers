@@ -1,0 +1,13 @@
+warning[possibly-missing-attribute]: Attribute `save_pretrained` may be missing on object of type `Unknown | TokenizersBackend | None | SentencePieceBackend`
+   --> src/ai_workers/cli/convert.py:155:9
+    |
+153 |         console.print(f"[dim]Saving SafeTensors to {model_output}...[/dim]")
+154 |         model.save_pretrained(model_output, safe_serialization=True)
+155 |         processor.save_pretrained(model_output)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+156 |
+157 |         # Report file sizes
+    |
+info: rule `possibly-missing-attribute` is enabled by default
+
+Found 1 diagnostic
