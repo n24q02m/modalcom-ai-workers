@@ -41,6 +41,10 @@ dev = [
   "ty>=0.0.1a6",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "librosa>=0.10",
+  "pillow>=10.0",
 ]
 
 [build-system]
@@ -79,8 +83,9 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Configure ty to analyze src/ directory using local venv python
+environment = { python = ".venv/bin/python" }
+src = { include = ["src"] }
 
 # --- pytest ---
 [tool.pytest.ini_options]
