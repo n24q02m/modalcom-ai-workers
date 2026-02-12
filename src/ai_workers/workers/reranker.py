@@ -71,6 +71,53 @@ class RerankerLightServer:
         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
 
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    def _score_batch(self, query: str, documents: list[str]) -> list[float]:
+        """Score a batch of query-document pairs using yes/no logits."""
+        import torch
+
+        input_texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_PREFIX},
+                {
+                    "role": "user",
+                    "content": f"Query: {query}\nDocument: {doc}",
+                },
+            ]
+            input_texts.append(
+                self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            )
+
+        batch_inputs = self.tokenizer(
+            input_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=2048,
+        ).to(self.model.device)
+
+        with torch.no_grad():
+            outputs = self.model(**batch_inputs)
+            # Use attention mask to find the last token index for each sequence
+            last_token_indices = batch_inputs.attention_mask.sum(1) - 1
+            batch_indices = torch.arange(last_token_indices.shape[0], device=self.model.device)
+
+            # Extract logits for the last token
+            last_token_logits = outputs.logits[batch_indices, last_token_indices, :]
+
+            yes_logits = last_token_logits[:, self.yes_token_id].float()
+            no_logits = last_token_logits[:, self.no_token_id].float()
+
+            # Sigmoid of (yes - no) gives relevance score in [0, 1]
+            scores = torch.sigmoid(yes_logits - no_logits)
+
+        return scores.tolist()
+
     def _score_pair(self, query: str, document: str) -> float:
         """Score a single query-document pair using yes/no logits."""
         import torch
@@ -135,15 +182,23 @@ class RerankerLightServer:
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(request: RerankRequest):
             results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
+
+            # Process in batches to avoid OOM
+            batch_size = 32
+
+            for i in range(0, len(request.documents), batch_size):
+                batch_docs = request.documents[i : i + batch_size]
+                scores = self._score_batch(request.query, batch_docs)
+
+                for j, score in enumerate(scores):
+                    global_idx = i + j
+                    results.append(
+                        DocumentResult(
+                            index=global_idx,
+                            relevance_score=score,
+                            document={"text": batch_docs[j]},
+                        )
                     )
-                )
 
             # Sort by score descending
             results.sort(key=lambda r: r.relevance_score, reverse=True)
@@ -197,6 +252,50 @@ class RerankerHeavyServer:
         self.model.eval()
         self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
         self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    def _score_batch(self, query: str, documents: list[str]) -> list[float]:
+        """Score a batch of query-document pairs using yes/no logits."""
+        import torch
+
+        input_texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_PREFIX},
+                {
+                    "role": "user",
+                    "content": f"Query: {query}\nDocument: {doc}",
+                },
+            ]
+            input_texts.append(
+                self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            )
+
+        batch_inputs = self.tokenizer(
+            input_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=4096,
+        ).to(self.model.device)
+
+        with torch.no_grad():
+            outputs = self.model(**batch_inputs)
+            last_token_indices = batch_inputs.attention_mask.sum(1) - 1
+            batch_indices = torch.arange(last_token_indices.shape[0], device=self.model.device)
+
+            last_token_logits = outputs.logits[batch_indices, last_token_indices, :]
+
+            yes_logits = last_token_logits[:, self.yes_token_id].float()
+            no_logits = last_token_logits[:, self.no_token_id].float()
+
+            scores = torch.sigmoid(yes_logits - no_logits)
+
+        return scores.tolist()
 
     def _score_pair(self, query: str, document: str) -> float:
         import torch
@@ -257,15 +356,23 @@ class RerankerHeavyServer:
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(request: RerankRequest):
             results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
+
+            # Process in batches to avoid OOM
+            batch_size = 32
+
+            for i in range(0, len(request.documents), batch_size):
+                batch_docs = request.documents[i : i + batch_size]
+                scores = self._score_batch(request.query, batch_docs)
+
+                for j, score in enumerate(scores):
+                    global_idx = i + j
+                    results.append(
+                        DocumentResult(
+                            index=global_idx,
+                            relevance_score=score,
+                            document={"text": batch_docs[j]},
+                        )
                     )
-                )
             results.sort(key=lambda r: r.relevance_score, reverse=True)
             if request.top_n is not None:
                 results = results[: request.top_n]
