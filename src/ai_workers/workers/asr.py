@@ -71,14 +71,14 @@ class ASRServer:
         """Load audio bytes into the format expected by the pipeline."""
         import io
 
-        import librosa
+        import librosa  # type: ignore
 
         audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
         return {"raw": audio, "sampling_rate": sr}
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, File, Form, Request, UploadFile
+        from fastapi import FastAPI, File, Form, Request, UploadFile  # type: ignore
         from pydantic import BaseModel
 
         app = FastAPI(title="Whisper Large v3")
@@ -141,10 +141,10 @@ class ASRServer:
                 generate_kwargs=generate_kwargs,
             )
 
-            text = result.get("text", "").strip()
+            text = result.get("text", "").strip()  # type: ignore
 
             if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
+                chunks = result.get("chunks", [])  # type: ignore
                 segments = []
                 for i, chunk in enumerate(chunks):
                     ts = chunk.get("timestamp", (0, 0))
@@ -165,7 +165,7 @@ class ASRServer:
                 )
 
             if response_format == "text":
-                from fastapi.responses import PlainTextResponse
+                from fastapi.responses import PlainTextResponse  # type: ignore
 
                 return PlainTextResponse(text)
 
