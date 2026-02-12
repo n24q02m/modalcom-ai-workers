@@ -29,20 +29,20 @@ jobs:
       - name: Install dependencies
         run: |
           eval "$(mise env)"
-          uv sync --all-groups
+          uv sync --extra dev
 
       - name: Lint (ruff)
         run: |
           eval "$(mise env)"
-          uv run ruff check src/ tests/
-          uv run ruff format --check src/ tests/
+          uv run --extra dev ruff check src/ tests/
+          uv run --extra dev ruff format --check src/ tests/
 
       - name: Type check (ty)
         run: |
           eval "$(mise env)"
-          uv run ty check src/
+          uv run --extra dev ty check src/
 
       - name: Test
         run: |
           eval "$(mise env)"
-          uv run pytest tests/ -v --tb=short
+          uv run --extra dev pytest tests/ -v --tb=short
