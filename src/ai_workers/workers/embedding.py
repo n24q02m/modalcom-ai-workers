@@ -10,6 +10,8 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+import asyncio
+
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
@@ -52,7 +54,7 @@ class EmbeddingLightServer:
     @modal.enter()
     def start_engine(self) -> None:
         """Initialize vLLM engine at container startup."""
-        from vllm import LLM
+        from vllm import LLM  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
         self.engine = LLM(
@@ -106,7 +108,7 @@ class EmbeddingLightServer:
         async def create_embeddings(request: EmbeddingRequest):
             texts = request.input if isinstance(request.input, list) else [request.input]
 
-            outputs = self.engine.embed(texts)
+            outputs = await asyncio.to_thread(self.engine.embed, texts)
 
             data = []
             total_tokens = 0
@@ -150,7 +152,7 @@ class EmbeddingHeavyServer:
 
     @modal.enter()
     def start_engine(self) -> None:
-        from vllm import LLM
+        from vllm import LLM  # type: ignore
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
         self.engine = LLM(
@@ -203,7 +205,7 @@ class EmbeddingHeavyServer:
         async def create_embeddings(request: EmbeddingRequest):
             texts = request.input if isinstance(request.input, list) else [request.input]
 
-            outputs = self.engine.embed(texts)
+            outputs = await asyncio.to_thread(self.engine.embed, texts)
 
             data = []
             total_tokens = 0
