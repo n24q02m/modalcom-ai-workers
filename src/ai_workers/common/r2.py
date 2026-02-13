@@ -18,36 +18,39 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class R2Config:
-    """Cloudflare R2 configuration."""
+    """Cloudflare R2 configuration.
+
+    Environment variables:
+        R2_ENDPOINT_URL:      Full R2 endpoint (e.g. https://<account>.r2.cloudflarestorage.com)
+        R2_ACCESS_KEY_ID:     R2 API token access key
+        R2_SECRET_ACCESS_KEY: R2 API token secret key
+        R2_BUCKET_NAME:       Bucket name (default: ai-workers-models)
+    """
 
     bucket_name: str = "ai-workers-models"
-    account_id: str = ""
+    endpoint_url: str = ""
     access_key_id: str = ""
     secret_access_key: str = ""
 
-    @property
-    def endpoint_url(self) -> str:
-        return f"https://{self.account_id}.r2.cloudflarestorage.com"
-
     @classmethod
     def from_env(cls) -> R2Config:
-        """Load R2 config from environment variables (Doppler/Infisical)."""
+        """Load R2 config from environment variables."""
         return cls(
             bucket_name=os.getenv("R2_BUCKET_NAME", "ai-workers-models"),
-            account_id=os.getenv("CF_ACCOUNT_ID", ""),
-            access_key_id=os.getenv("CF_R2_ACCESS_KEY", ""),
-            secret_access_key=os.getenv("CF_R2_SECRET_KEY", ""),
+            endpoint_url=os.getenv("R2_ENDPOINT_URL", ""),
+            access_key_id=os.getenv("R2_ACCESS_KEY_ID", ""),
+            secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY", ""),
         )
 
     def validate(self) -> None:
         """Raise ValueError if required fields are missing."""
         missing = []
-        if not self.account_id:
-            missing.append("CF_ACCOUNT_ID")
+        if not self.endpoint_url:
+            missing.append("R2_ENDPOINT_URL")
         if not self.access_key_id:
-            missing.append("CF_R2_ACCESS_KEY")
+            missing.append("R2_ACCESS_KEY_ID")
         if not self.secret_access_key:
-            missing.append("CF_R2_SECRET_KEY")
+            missing.append("R2_SECRET_ACCESS_KEY")
         if missing:
             msg = f"Missing R2 environment variables: {', '.join(missing)}"
             raise ValueError(msg)
@@ -55,6 +58,8 @@ class R2Config:
 
 def get_s3_client(r2_config: R2Config):
     """Create a boto3 S3 client configured for Cloudflare R2."""
+    r2_config.validate()
+
     import boto3
 
     return boto3.client(
@@ -101,19 +106,42 @@ def upload_directory(
     return count
 
 
-def get_modal_cloud_bucket_mount(r2_config: R2Config | None = None):
-    """Create a Modal CloudBucketMount for R2.
+def get_modal_cloud_bucket_mount(
+    r2_config: R2Config | None = None,
+    *,
+    bucket_name: str = "",
+    bucket_endpoint_url: str = "",
+    read_only: bool = True,
+):
+    """Tạo Modal CloudBucketMount cho R2.
 
-    Used inside Modal worker definitions to mount model weights.
+    Dùng trong Modal worker definitions để mount model weights.
+    Workers serving dùng read_only=True (mặc định).
+    Converter dùng read_only=False để ghi model lên R2.
+
+    Modal Secret ``r2-credentials`` BẮT BUỘC chứa:
+      - AWS_ACCESS_KEY_ID:     R2 access key (tên S3-compatible)
+      - AWS_SECRET_ACCESS_KEY: R2 secret key (tên S3-compatible)
+
+    Nếu read_only=False, R2 API token cần có quyền write + list.
+
+    Args:
+        r2_config: Config tùy chọn cho bucket_name/endpoint overrides.
+        bucket_name: Ghi đè bucket name (ưu tiên hơn r2_config).
+        bucket_endpoint_url: Ghi đè endpoint URL (ưu tiên hơn r2_config).
+        read_only: Mount chỉ đọc (True) hoặc đọc-ghi (False).
     """
     import modal
 
     if r2_config is None:
         r2_config = R2Config.from_env()
 
+    _bucket = bucket_name or r2_config.bucket_name
+    _endpoint = bucket_endpoint_url or r2_config.endpoint_url
+
     return modal.CloudBucketMount(
-        bucket_name=r2_config.bucket_name,
-        bucket_endpoint_url=r2_config.endpoint_url,
+        bucket_name=_bucket,
+        bucket_endpoint_url=_endpoint,
         secret=modal.Secret.from_name("r2-credentials"),
-        read_only=True,
+        read_only=read_only,
     )

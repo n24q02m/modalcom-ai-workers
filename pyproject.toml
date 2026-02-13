@@ -9,6 +9,7 @@ dependencies = [
   "loguru>=0.7",
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
+  "fastapi>=0.115",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,18 @@ convert = [
   "safetensors>=0.4",
   "accelerate>=1.0",
   "huggingface-hub>=0.26",
+  "typer>=0.15",
+  "rich>=13.0",
+]
+# ONNX model conversion (CPU-only, INT8 quantization)
+onnx-convert = [
+  "torch>=2.4",
+  "transformers>=4.47",
+  "safetensors>=0.4",
+  "accelerate>=1.0",
+  "huggingface-hub>=0.26",
+  "onnx>=1.17",
+  "onnxruntime>=1.21",
   "typer>=0.15",
   "rich>=13.0",
 ]
@@ -36,7 +49,7 @@ deploy = [
 ]
 # All local tools
 dev = [
-  "ai-workers[convert,storage,deploy]",
+  "ai-workers[convert,onnx-convert,storage,deploy]",
   "ruff>=0.9",
   "ty>=0.0.1a6",
   "pytest>=8.0",

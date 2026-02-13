@@ -8,6 +8,10 @@
 #   OCR:         openai/<model-name>  (e.g. openai/deepseek-ocr-2)
 #   ASR:         openai/<model-name>  (e.g. openai/whisper-large-v3)
 #
+# Architecture: Light + Heavy models are merged into single Modal apps.
+# Both variants share the same endpoint — routing is done via `model` field
+# in the request body.
+#
 # Replace <your-modal-workspace> with your actual Modal workspace name.
 # Endpoint pattern: https://<workspace>--<app-name>-<class>-serve.modal.run
 
@@ -16,55 +20,59 @@ general_settings:
 
 model_list:
   # --- Qwen3 Embedding (OpenAI-compatible /v1/embeddings) ---
+  # Both 0.6B + 8B served from single merged app (ai-workers-embedding)
   - model_name: qwen3-embedding-0.6b
     litellm_params:
       model: openai/qwen3-embedding-0.6b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-embedding-0-6b-embeddinglightserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-embedding-embeddingserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   - model_name: qwen3-embedding-8b
     litellm_params:
       model: openai/qwen3-embedding-8b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-embedding-8b-embeddingheavyserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-embedding-embeddingserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   # --- Qwen3 Reranker (Cohere-compatible /v1/rerank) ---
+  # Both 0.6B + 8B served from single merged app (ai-workers-reranker)
   - model_name: qwen3-reranker-0.6b
     litellm_params:
       model: cohere/qwen3-reranker-0.6b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-reranker-0-6b-rerankerlightserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-reranker-rerankerserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   - model_name: qwen3-reranker-8b
     litellm_params:
       model: cohere/qwen3-reranker-8b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-reranker-8b-rerankerheavyserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-reranker-rerankerserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   # --- Qwen3 VL Embedding (OpenAI-compatible /v1/embeddings) ---
+  # Both 2B + 8B served from single merged app (ai-workers-vl-embedding)
   - model_name: qwen3-vl-embedding-2b
     litellm_params:
       model: openai/qwen3-vl-embedding-2b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-embedding-2b-vlembeddinglightserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-vl-embedding-vlembeddingserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   - model_name: qwen3-vl-embedding-8b
     litellm_params:
       model: openai/qwen3-vl-embedding-8b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-embedding-8b-vlembeddingheavyserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-vl-embedding-vlembeddingserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   # --- Qwen3 VL Reranker (Cohere-compatible /v1/rerank) ---
+  # Both 2B + 8B served from single merged app (ai-workers-vl-reranker)
   - model_name: qwen3-vl-reranker-2b
     litellm_params:
       model: cohere/qwen3-vl-reranker-2b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-reranker-2b-vlrerankerlightserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-vl-reranker-vlrerankerserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   - model_name: qwen3-vl-reranker-8b
     litellm_params:
       model: cohere/qwen3-vl-reranker-8b
-      api_base: https://<your-modal-workspace>--ai-workers-qwen3-vl-reranker-8b-vlrerankerheavyserver-serve.modal.run
+      api_base: https://<your-modal-workspace>--ai-workers-vl-reranker-vlrerankerserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
 
   # --- DeepSeek OCR v2 (OpenAI Vision-compatible /v1/chat/completions) ---

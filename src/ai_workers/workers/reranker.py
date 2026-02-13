@@ -1,11 +1,16 @@
-"""Text Reranker workers using Custom FastAPI.
+"""Text Reranker worker using Custom FastAPI (merged light + heavy).
 
-Qwen3-Reranker uses CausalLM with yes/no token logit scoring.
-Exposes Cohere-compatible /v1/rerank endpoint.
-Two apps: reranker_light (0.6B, T4) and reranker_heavy (8B, A10G).
+Serves both Qwen3-Reranker-0.6B (light) and Qwen3-Reranker-8B (heavy)
+from a single A10G container. Routes by ``model`` field in request.
+
+Both models loaded at startup (~17GB total on A10G 24GB VRAM).
+Uses AutoModelForCausalLM with yes/no logit scoring for relevance.
+
+Models downloaded directly from HuggingFace Hub via Xet protocol
+at container startup (~1GB/s). No R2 storage needed.
 
 LiteLLM integration:
-  model: cohere/qwen3-reranker-0.6b
+  model: openai/qwen3-reranker-0.6b  (hoac qwen3-reranker-8b)
   api_base: https://<modal-url>
 """
 
@@ -13,262 +18,185 @@ from __future__ import annotations
 
 import modal
 
-from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
-from ai_workers.common.r2 import get_modal_cloud_bucket_mount
+from ai_workers.common.images import transformers_image
 
-SCALEDOWN_WINDOW = 300
-KEEP_WARM = 0
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-r2_mount = get_modal_cloud_bucket_mount()
+SCALEDOWN_WINDOW = 300  # 5 minutes
+KEEP_WARM = 0  # Scale to zero when idle
 
-# Qwen3-Reranker chat template for relevance scoring
-RERANKER_PREFIX = (
-    "Given a query and a document, judge whether the document is relevant to the query. "
-    "Answer only 'yes' or 'no'."
+# Models served by this single app — loaded from HuggingFace Hub
+MODEL_CONFIGS = {
+    "qwen3-reranker-0.6b": {"hf_id": "Qwen/Qwen3-Reranker-0.6B"},
+    "qwen3-reranker-8b": {"hf_id": "Qwen/Qwen3-Reranker-8B"},
+}
+
+# System prompt required by Qwen3-Reranker
+RERANKER_PREFIX = 'Judge whether the Document is relevant to the Query. Answer only "yes" or "no".'
+
+reranker_app = modal.App(
+    "ai-workers-reranker",
+    secrets=[modal.Secret.from_name("worker-api-key")],
 )
 
 
-# ---------------------------------------------------------------------------
-# Reranker Light (Qwen3-Reranker-0.6B, T4)
-# ---------------------------------------------------------------------------
-
-reranker_light_app = modal.App(
-    "ai-workers-qwen3-reranker-0.6b",
-    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
-)
-
-MODEL_LIGHT = "qwen3-reranker-0.6b"
-
-
-@reranker_light_app.cls(
-    gpu="T4",
+@reranker_app.cls(
+    gpu="A10G",
     image=transformers_image(),
-    volumes={MODELS_MOUNT_PATH: r2_mount},
     scaledown_window=SCALEDOWN_WINDOW,
-    keep_warm=KEEP_WARM,
-    timeout=600,
-    allow_concurrent_inputs=10,
+    min_containers=KEEP_WARM,
+    timeout=1800,
 )
-class RerankerLightServer:
-    """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
+@modal.concurrent(max_inputs=100)
+class RerankerServer:
+    """Merged reranker server for Qwen3-Reranker-0.6B + 8B.
+
+    Both models loaded at startup. Routes request to correct model
+    via the ``model`` field. Uses yes/no logit scoring with sigmoid
+    for relevance probability.
+    """
 
     @modal.enter()
-    def load_model(self) -> None:
+    def load_models(self) -> None:
+        """Load both reranker models from HuggingFace Hub at container startup."""
         import torch
+        from loguru import logger
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-            device_map="auto",
-        )
-        self.model.eval()
+        self.models: dict[str, object] = {}
+        self.tokenizers: dict[str, object] = {}
 
-        # Pre-compute token IDs for "yes" and "no"
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        for name, cfg in MODEL_CONFIGS.items():
+            hf_id = cfg["hf_id"]
+            logger.info("Loading {} from HuggingFace Hub...", hf_id)
+            tokenizer = AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                hf_id,
+                torch_dtype=torch.float16,
+                trust_remote_code=True,
+                device_map="auto",
+            )
+            model.eval()
+            self.models[name] = model
+            self.tokenizers[name] = tokenizer
+            logger.info("Loaded {} successfully", name)
 
-    def _score_pair(self, query: str, document: str) -> float:
-        """Score a single query-document pair using yes/no logits."""
+    def _score_pair(self, model_name: str, query: str, document: str) -> float:
+        """Score a single query-document pair using yes/no logit comparison."""
         import torch
 
+        model = self.models[model_name]
+        tokenizer = self.tokenizers[model_name]
+
+        # Build chat messages following Qwen3-Reranker format
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
             {
                 "role": "user",
-                "content": f"Query: {query}\nDocument: {document}",
+                "content": f"<Query>\n{query}\n</Query>\n\n<Document>\n{document}\n</Document>",
             },
         ]
-        input_text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
         )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+
+        inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
         with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits = outputs.logits[:, -1, :]  # Last token logits
-            yes_logit = logits[0, self.yes_token_id].float()
-            no_logit = logits[0, self.no_token_id].float()
-            # Sigmoid of (yes - no) gives relevance score in [0, 1]
+            outputs = model(**inputs)
+            logits = outputs.logits[0, -1, :]  # Last token logits
+
+            # Get logits for "yes" and "no" tokens
+            yes_id = tokenizer.convert_tokens_to_ids("yes")
+            no_id = tokenizer.convert_tokens_to_ids("no")
+            yes_logit = logits[yes_id].float()
+            no_logit = logits[no_id].float()
+
+            # Sigmoid of (yes - no) gives relevance probability
             score = torch.sigmoid(yes_logit - no_logit).item()
 
         return score
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import Body, FastAPI, Request
+        from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
-        app = FastAPI(title="Qwen3 Reranker Light")
+        app = FastAPI(title="Qwen3 Reranker (Light + Heavy)")
+
+        class RerankPair(BaseModel):
+            document: str
 
         class RerankRequest(BaseModel):
-            model: str = MODEL_LIGHT
+            model: str = "qwen3-reranker-0.6b"
             query: str
             documents: list[str]
             top_n: int | None = None
 
-        class DocumentResult(BaseModel):
+        class RerankResult(BaseModel):
             index: int
             relevance_score: float
-            document: dict[str, str]
+            document: str
 
         class RerankResponse(BaseModel):
-            results: list[DocumentResult]
             model: str
+            results: list[RerankResult]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
             if request.url.path in ("/health", "/"):
                 return await call_next(request)
+            from fastapi import HTTPException as _HTTPException
+
             from ai_workers.common.auth import verify_api_key
 
-            await verify_api_key(request)
+            try:
+                await verify_api_key(request)
+            except _HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail},
+                )
             return await call_next(request)
 
         @app.get("/health")
         async def health():
-            return {"status": "ok", "model": MODEL_LIGHT}
+            return {
+                "status": "ok",
+                "models": list(MODEL_CONFIGS.keys()),
+            }
 
         @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(request: RerankRequest):
-            results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
-                    )
+        async def rerank(body: RerankRequest = Body(...)):
+            if body.model not in MODEL_CONFIGS:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Unknown model: {body.model}. "
+                        f"Available: {list(MODEL_CONFIGS.keys())}"
+                    },
                 )
 
-            # Sort by score descending
-            results.sort(key=lambda r: r.relevance_score, reverse=True)
-
-            # Apply top_n
-            if request.top_n is not None:
-                results = results[: request.top_n]
-
-            return RerankResponse(results=results, model=request.model)
-
-        return app
-
-
-# ---------------------------------------------------------------------------
-# Reranker Heavy (Qwen3-Reranker-8B, A10G)
-# ---------------------------------------------------------------------------
-
-reranker_heavy_app = modal.App(
-    "ai-workers-qwen3-reranker-8b",
-    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
-)
-
-MODEL_HEAVY = "qwen3-reranker-8b"
-
-
-@reranker_heavy_app.cls(
-    gpu="A10G",
-    image=transformers_image(),
-    volumes={MODELS_MOUNT_PATH: r2_mount},
-    scaledown_window=SCALEDOWN_WINDOW,
-    keep_warm=KEEP_WARM,
-    timeout=600,
-    allow_concurrent_inputs=10,
-)
-class RerankerHeavyServer:
-    """Custom FastAPI reranker server for Qwen3-Reranker-8B."""
-
-    @modal.enter()
-    def load_model(self) -> None:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-            device_map="auto",
-        )
-        self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
-
-    def _score_pair(self, query: str, document: str) -> float:
-        import torch
-
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {"role": "user", "content": f"Query: {query}\nDocument: {document}"},
-        ]
-        input_text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits = outputs.logits[:, -1, :]
-            yes_logit = logits[0, self.yes_token_id].float()
-            no_logit = logits[0, self.no_token_id].float()
-            score = torch.sigmoid(yes_logit - no_logit).item()
-
-        return score
-
-    @modal.asgi_app()
-    def serve(self):
-        from fastapi import FastAPI, Request
-        from pydantic import BaseModel
-
-        app = FastAPI(title="Qwen3 Reranker Heavy")
-
-        class RerankRequest(BaseModel):
-            model: str = MODEL_HEAVY
-            query: str
-            documents: list[str]
-            top_n: int | None = None
-
-        class DocumentResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: dict[str, str]
-
-        class RerankResponse(BaseModel):
-            results: list[DocumentResult]
-            model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
-
-        @app.get("/health")
-        async def health():
-            return {"status": "ok", "model": MODEL_HEAVY}
-
-        @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(request: RerankRequest):
+            # Score each document against the query
             results = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
-                results.append(
-                    DocumentResult(
-                        index=i,
-                        relevance_score=score,
-                        document={"text": doc},
-                    )
-                )
-            results.sort(key=lambda r: r.relevance_score, reverse=True)
-            if request.top_n is not None:
-                results = results[: request.top_n]
-            return RerankResponse(results=results, model=request.model)
+            for i, doc in enumerate(body.documents):
+                score = self._score_pair(body.model, body.query, doc)
+                results.append(RerankResult(index=i, relevance_score=score, document=doc))
+
+            # Sort by relevance score descending
+            results.sort(key=lambda x: x.relevance_score, reverse=True)
+
+            # Apply top_n if specified
+            if body.top_n is not None:
+                results = results[: body.top_n]
+
+            return RerankResponse(model=body.model, results=results)
 
         return app

@@ -1,6 +1,9 @@
-"""Upload converted models to Cloudflare R2 (and optionally GDrive backup).
+"""Upload model files thủ công lên Cloudflare R2 (và tùy chọn backup GDrive).
 
-Reads from ./converted/<model_name>/ and uploads to R2 bucket.
+Đọc từ ./converted/<model_name>/ và upload lên R2 bucket qua boto3.
+
+Lưu ý: Với pipeline mới, lệnh `convert` đã ghi thẳng lên R2 qua CloudBucketMount.
+Lệnh `upload` này chỉ cần dùng khi upload thủ công từ thư mục local.
 """
 
 from __future__ import annotations

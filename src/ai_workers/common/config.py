@@ -55,6 +55,7 @@ class ModelClassType(enum.StrEnum):
 
     AUTO_MODEL = "AutoModel"
     CAUSAL_LM = "AutoModelForCausalLM"
+    IMAGE_TEXT_TO_TEXT = "AutoModelForImageTextToText"
     SEQ2SEQ = "AutoModelForSpeechSeq2Seq"
 
 
@@ -77,7 +78,7 @@ class ModelConfig:
     # Transformers options
     trust_remote_code: bool = True
 
-    # R2 storage path (auto-derived from name if not set)
+    # DEPRECATED: R2 storage path (no longer used — workers load from HF Hub directly)
     r2_prefix: str = ""
 
     # Modal app name (auto-derived from name if not set)
@@ -85,6 +86,9 @@ class ModelConfig:
 
     # Worker module path for `modal deploy`
     worker_module: str = ""
+
+    # Modal app variable name within the worker module (for multi-app files)
+    modal_app_var: str = ""
 
     # Extra kwargs for model loading
     extra_load_kwargs: dict[str, object] = field(default_factory=dict)
@@ -109,7 +113,7 @@ def _register(config: ModelConfig) -> ModelConfig:
     return config
 
 
-# --- Qwen3 Embedding ---
+# --- Qwen3 Embedding (merged: light + heavy on single A10G) ---
 _register(
     ModelConfig(
         name="qwen3-embedding-0.6b",
@@ -117,10 +121,12 @@ _register(
         task=Task.EMBEDDING,
         tier=Tier.LIGHT,
         precision=Precision.FP16,
-        gpu=GPU.T4,
-        serving_engine=ServingEngine.VLLM,
+        gpu=GPU.A10G,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
         worker_module="ai_workers.workers.embedding",
+        modal_app_var="embedding_app",
+        modal_app_name="ai-workers-embedding",
     )
 )
 
@@ -132,13 +138,15 @@ _register(
         tier=Tier.HEAVY,
         precision=Precision.FP16,
         gpu=GPU.A10G,
-        serving_engine=ServingEngine.VLLM,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
         worker_module="ai_workers.workers.embedding",
+        modal_app_var="embedding_app",
+        modal_app_name="ai-workers-embedding",
     )
 )
 
-# --- Qwen3 Reranker ---
+# --- Qwen3 Reranker (merged: light + heavy on single A10G) ---
 _register(
     ModelConfig(
         name="qwen3-reranker-0.6b",
@@ -146,10 +154,12 @@ _register(
         task=Task.RERANKER_LLM,
         tier=Tier.LIGHT,
         precision=Precision.FP16,
-        gpu=GPU.T4,
+        gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.CAUSAL_LM,
         worker_module="ai_workers.workers.reranker",
+        modal_app_var="reranker_app",
+        modal_app_name="ai-workers-reranker",
     )
 )
 
@@ -164,10 +174,12 @@ _register(
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.CAUSAL_LM,
         worker_module="ai_workers.workers.reranker",
+        modal_app_var="reranker_app",
+        modal_app_name="ai-workers-reranker",
     )
 )
 
-# --- Qwen3 VL Embedding ---
+# --- Qwen3 VL Embedding (merged: light + heavy on single A10G) ---
 _register(
     ModelConfig(
         name="qwen3-vl-embedding-2b",
@@ -175,10 +187,12 @@ _register(
         task=Task.VL_EMBEDDING,
         tier=Tier.LIGHT,
         precision=Precision.FP16,
-        gpu=GPU.T4,
+        gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
         worker_module="ai_workers.workers.vl_embedding",
+        modal_app_var="vl_embedding_app",
+        modal_app_name="ai-workers-vl-embedding",
     )
 )
 
@@ -193,10 +207,12 @@ _register(
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
         model_class=ModelClassType.AUTO_MODEL,
         worker_module="ai_workers.workers.vl_embedding",
+        modal_app_var="vl_embedding_app",
+        modal_app_name="ai-workers-vl-embedding",
     )
 )
 
-# --- Qwen3 VL Reranker ---
+# --- Qwen3 VL Reranker (merged: light + heavy on single A10G) ---
 _register(
     ModelConfig(
         name="qwen3-vl-reranker-2b",
@@ -204,10 +220,12 @@ _register(
         task=Task.VL_RERANKER,
         tier=Tier.LIGHT,
         precision=Precision.FP16,
-        gpu=GPU.T4,
+        gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
-        model_class=ModelClassType.AUTO_MODEL,
+        model_class=ModelClassType.IMAGE_TEXT_TO_TEXT,
         worker_module="ai_workers.workers.vl_reranker",
+        modal_app_var="vl_reranker_app",
+        modal_app_name="ai-workers-vl-reranker",
     )
 )
 
@@ -220,8 +238,10 @@ _register(
         precision=Precision.FP16,
         gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
-        model_class=ModelClassType.AUTO_MODEL,
+        model_class=ModelClassType.IMAGE_TEXT_TO_TEXT,
         worker_module="ai_workers.workers.vl_reranker",
+        modal_app_var="vl_reranker_app",
+        modal_app_name="ai-workers-vl-reranker",
     )
 )
 
@@ -238,6 +258,7 @@ _register(
         model_class=ModelClassType.AUTO_MODEL,
         trust_remote_code=True,
         worker_module="ai_workers.workers.ocr",
+        modal_app_var="ocr_app",
         extra_load_kwargs={"use_safetensors": True},
     )
 )
@@ -255,6 +276,7 @@ _register(
         model_class=ModelClassType.SEQ2SEQ,
         trust_remote_code=False,
         worker_module="ai_workers.workers.asr",
+        modal_app_var="asr_app",
     )
 )
 
@@ -292,11 +314,17 @@ def get_torch_dtype(precision: Precision):
 
 def get_model_class(model_class_type: ModelClassType):
     """Get the transformers model class. Import lazily."""
-    from transformers import AutoModel, AutoModelForCausalLM, AutoModelForSpeechSeq2Seq
+    from transformers import (
+        AutoModel,
+        AutoModelForCausalLM,
+        AutoModelForImageTextToText,
+        AutoModelForSpeechSeq2Seq,
+    )
 
     mapping = {
         ModelClassType.AUTO_MODEL: AutoModel,
         ModelClassType.CAUSAL_LM: AutoModelForCausalLM,
+        ModelClassType.IMAGE_TEXT_TO_TEXT: AutoModelForImageTextToText,
         ModelClassType.SEQ2SEQ: AutoModelForSpeechSeq2Seq,
     }
     return mapping[model_class_type]

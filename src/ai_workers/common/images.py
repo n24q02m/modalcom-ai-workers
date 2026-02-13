@@ -1,8 +1,14 @@
 """Modal container image builders.
 
-Two base images:
-- vllm_image(): For models served via vLLM (text embeddings)
-- transformers_image(): For models served via custom FastAPI (reranker, VL, OCR, ASR)
+Tất cả images dùng uv_pip_install (thay vì pip_install) cho tốc độ cài đặt nhanh hơn ~50%.
+
+Ba loại image:
+- transformers_image(): Cho models served qua custom FastAPI (embedding, reranker, VL, OCR, ASR)
+- converter_image(): Cho convert pipeline (CPU-only, có HF Hub access) — DEPRECATED
+- onnx_converter_image(): Cho ONNX conversion pipeline (CPU-only)
+
+Models được tải trực tiếp từ HuggingFace Hub tại container startup
+qua HF Xet protocol (~1GB/s). Không cần R2 storage.
 """
 
 from __future__ import annotations
@@ -14,60 +20,68 @@ import modal
 # ---------------------------------------------------------------------------
 
 PYTHON_VERSION = "3.13"
-MODELS_MOUNT_PATH = "/models"
-
-
-def vllm_image() -> modal.Image:
-    """Build a Modal image with vLLM for embedding serving.
-
-    vLLM provides native OpenAI-compatible /v1/embeddings endpoint.
-    """
-    return (
-        modal.Image.debian_slim(python_version=PYTHON_VERSION)
-        .pip_install(
-            "vllm>=0.8",
-            "fastapi>=0.115",
-            "loguru>=0.7",
-        )
-        .env({"HF_HUB_OFFLINE": "1"})  # No HF downloads at runtime
-    )
 
 
 def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     """Build a Modal image with transformers for custom FastAPI serving.
 
+    Models được tải từ HuggingFace Hub qua Xet protocol tại container startup.
+    HF_XET_HIGH_PERFORMANCE=1 bật tối ưu download tốc độ cao (~1GB/s).
+
     Args:
         flash_attn: Install flash-attn package (needed for DeepSeek-OCR-2).
+                    Requires CUDA devel image for nvcc compiler.
     """
+    # DeepSeek-OCR-2 custom code imports LlamaFlashAttention2 (removed in transformers 4.46)
+    tf_version = "transformers>=4.43,<4.46" if flash_attn else "transformers>=4.47"
     packages = [
         "torch>=2.4",
-        "transformers>=4.47",
+        tf_version,
         "safetensors>=0.4",
         "accelerate>=1.0",
+        "huggingface_hub[hf_xet]",  # Fast model download via Xet protocol
         "fastapi>=0.115",
         "loguru>=0.7",
         "pydantic>=2.0",
     ]
     if flash_attn:
-        packages.append("flash-attn>=2.6")
+        # DeepSeek-OCR-2 custom modeling code dependencies
+        packages.extend(["addict>=2.4", "einops>=0.8", "matplotlib>=3.8"])
 
-    return (
-        modal.Image.debian_slim(python_version=PYTHON_VERSION)
-        .pip_install(*packages)
-        .env({"HF_HUB_OFFLINE": "1"})
-    )
+    if flash_attn:
+        # flash-attn pre-built wheel từ GitHub releases (tránh compile 30+ phút).
+        # Pin torch==2.6.0 để match wheel available (torch 2.10 không có pre-built wheel).
+        # Wheel: cu12 + torch2.6 + Python 3.13 + cxx11abiFALSE + linux_x86_64.
+        flash_attn_wheel = (
+            "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/"
+            "flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp313-cp313-linux_x86_64.whl"
+        )
+        ocr_packages = [p for p in packages if not p.startswith("torch")]
+        img = (
+            modal.Image.debian_slim(python_version=PYTHON_VERSION)
+            .uv_pip_install("torch==2.6.0", *ocr_packages)
+            .uv_pip_install(flash_attn_wheel)
+        )
+    else:
+        img = modal.Image.debian_slim(python_version=PYTHON_VERSION).uv_pip_install(*packages)
+
+    return img.env({"HF_XET_HIGH_PERFORMANCE": "1"}).add_local_python_source("ai_workers")
 
 
 def transformers_audio_image() -> modal.Image:
-    """Build a Modal image with transformers + audio processing for Whisper."""
+    """Build a Modal image with transformers + audio processing for Whisper.
+
+    Models được tải từ HuggingFace Hub qua Xet protocol tại container startup.
+    """
     return (
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
         .apt_install("ffmpeg", "libsndfile1")
-        .pip_install(
+        .uv_pip_install(
             "torch>=2.4",
             "transformers>=4.47",
             "safetensors>=0.4",
             "accelerate>=1.0",
+            "huggingface_hub[hf_xet]",  # Fast model download via Xet protocol
             "fastapi>=0.115",
             "loguru>=0.7",
             "pydantic>=2.0",
@@ -75,5 +89,60 @@ def transformers_audio_image() -> modal.Image:
             "soundfile>=0.12",
             "python-multipart>=0.0.9",
         )
-        .env({"HF_HUB_OFFLINE": "1"})
+        .env({"HF_XET_HIGH_PERFORMANCE": "1"})
+        .add_local_python_source("ai_workers")
+    )
+
+
+def converter_image() -> modal.Image:
+    """Build a Modal image cho convert pipeline (CPU-only).
+
+    Bao gồm tất cả dependencies cần thiết để convert mọi loại model:
+    text, vision-language, và audio. KHÔNG set HF_HUB_OFFLINE vì cần
+    download model từ HuggingFace Hub.
+    """
+    return (
+        modal.Image.debian_slim(python_version=PYTHON_VERSION)
+        .apt_install("ffmpeg", "libsndfile1")
+        .uv_pip_install(
+            "torch>=2.4",
+            "torchvision>=0.19",
+            # DeepSeek-OCR-2 custom code imports LlamaFlashAttention2 (removed in 4.46)
+            "transformers>=4.43,<4.46",
+            "safetensors>=0.4",
+            "accelerate>=1.0",
+            "huggingface_hub[hf_xet]",
+            "loguru>=0.7",
+            "Pillow>=10.0",
+            "librosa>=0.10",
+            "soundfile>=0.12",
+            # DeepSeek-OCR-2 custom modeling code dependencies
+            "addict>=2.4",
+            "einops>=0.8",
+            "matplotlib>=3.8",
+        )
+        .env({"HF_XET_HIGH_PERFORMANCE": "1"})  # Download nhanh hơn từ HF Hub
+    )
+
+
+def onnx_converter_image() -> modal.Image:
+    """Build a Modal image cho ONNX conversion pipeline (CPU-only).
+
+    Export HuggingFace models sang ONNX + INT8 dynamic quantization.
+    Dùng cho Qwen3-Embedding / Reranker 0.6B (fastembed-compatible output).
+    """
+    return (
+        modal.Image.debian_slim(python_version=PYTHON_VERSION)
+        .uv_pip_install(
+            "torch>=2.4",
+            "transformers>=4.47",
+            "safetensors>=0.4",
+            "accelerate>=1.0",
+            "huggingface_hub[hf_xet]",
+            "onnx>=1.17",
+            "onnxruntime>=1.21",
+            "onnxscript>=0.1",
+            "loguru>=0.7",
+        )
+        .env({"HF_XET_HIGH_PERFORMANCE": "1"})
     )

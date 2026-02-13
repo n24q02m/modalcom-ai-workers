@@ -73,11 +73,30 @@ class TestModelRegistry:
         for config in MODEL_REGISTRY.values():
             assert config.r2_prefix == config.name
 
-    def test_modal_app_name_auto_derived(self) -> None:
-        """modal_app_name should be auto-derived from name."""
+    def test_modal_app_name_correct(self) -> None:
+        """modal_app_name should be correctly set (explicit or auto-derived)."""
+        # Merged apps have explicit modal_app_name (shared by light+heavy)
+        expected_names = {
+            "qwen3-embedding-0.6b": "ai-workers-embedding",
+            "qwen3-embedding-8b": "ai-workers-embedding",
+            "qwen3-reranker-0.6b": "ai-workers-reranker",
+            "qwen3-reranker-8b": "ai-workers-reranker",
+            "qwen3-vl-embedding-2b": "ai-workers-vl-embedding",
+            "qwen3-vl-embedding-8b": "ai-workers-vl-embedding",
+            "qwen3-vl-reranker-2b": "ai-workers-vl-reranker",
+            "qwen3-vl-reranker-8b": "ai-workers-vl-reranker",
+            "deepseek-ocr-2": "ai-workers-deepseek-ocr-2",
+            "whisper-large-v3": "ai-workers-whisper-large-v3",
+        }
         for config in MODEL_REGISTRY.values():
-            expected = f"ai-workers-{config.name}"
-            assert config.modal_app_name == expected
+            assert config.modal_app_name == expected_names[config.name], (
+                f"{config.name}: expected {expected_names[config.name]}, got {config.modal_app_name}"
+            )
+
+    def test_all_models_have_modal_app_var(self) -> None:
+        """All models must have modal_app_var set for deploy targeting."""
+        for name, config in MODEL_REGISTRY.items():
+            assert config.modal_app_var, f"{name}: missing modal_app_var"
 
     def test_bf16_only_on_a10g(self) -> None:
         """BF16 models must use A10G+ (T4 doesn't support BF16)."""
@@ -92,13 +111,12 @@ class TestModelRegistry:
         ocr = get_model("deepseek-ocr-2")
         assert ocr.precision == Precision.BF16
 
-    def test_vllm_only_for_text_embedding(self) -> None:
-        """vLLM should only be used for text embedding workers."""
+    def test_all_models_use_custom_fastapi(self) -> None:
+        """All models should use CUSTOM_FASTAPI serving engine (no vLLM)."""
         for config in MODEL_REGISTRY.values():
-            if config.serving_engine == ServingEngine.VLLM:
-                assert config.task == Task.EMBEDDING, (
-                    f"{config.name}: vLLM should only be for EMBEDDING task"
-                )
+            assert config.serving_engine == ServingEngine.CUSTOM_FASTAPI, (
+                f"{config.name}: expected CUSTOM_FASTAPI, got {config.serving_engine}"
+            )
 
 
 class TestListModels:
@@ -149,6 +167,11 @@ class TestHelpers:
 
         assert get_model_class(ModelClassType.CAUSAL_LM) is AutoModelForCausalLM
 
+    def test_get_model_class_image_text_to_text(self) -> None:
+        from transformers import AutoModelForImageTextToText
+
+        assert get_model_class(ModelClassType.IMAGE_TEXT_TO_TEXT) is AutoModelForImageTextToText
+
     def test_get_model_class_seq2seq(self) -> None:
         from transformers import AutoModelForSpeechSeq2Seq
 
@@ -182,3 +205,23 @@ class TestWorkerModulePaths:
         models = list_models(task=task)
         for model in models:
             assert model.worker_module == expected_module
+
+    @pytest.mark.parametrize(
+        ("model_name", "expected_var"),
+        [
+            ("qwen3-embedding-0.6b", "embedding_app"),
+            ("qwen3-embedding-8b", "embedding_app"),
+            ("qwen3-reranker-0.6b", "reranker_app"),
+            ("qwen3-reranker-8b", "reranker_app"),
+            ("qwen3-vl-embedding-2b", "vl_embedding_app"),
+            ("qwen3-vl-embedding-8b", "vl_embedding_app"),
+            ("qwen3-vl-reranker-2b", "vl_reranker_app"),
+            ("qwen3-vl-reranker-8b", "vl_reranker_app"),
+            ("deepseek-ocr-2", "ocr_app"),
+            ("whisper-large-v3", "asr_app"),
+        ],
+    )
+    def test_modal_app_var_mapping(self, model_name: str, expected_var: str) -> None:
+        """Each model must point to the correct app variable in its worker module."""
+        config = get_model(model_name)
+        assert config.modal_app_var == expected_var

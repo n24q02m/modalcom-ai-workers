@@ -1,13 +1,13 @@
 [tools]
 python = "3.13"
 uv = "latest"
+infisical = "latest"
 
 [tasks.setup]
 description = "Setup development environment"
 run = [
   "mise install",
-  "uv sync --group dev",
-  "uv pip install pre-commit",
+  "uv sync --all-groups",
   "uv run pre-commit install",
   "echo 'Setup complete!'"
 ]
@@ -32,17 +32,21 @@ run = [
 ]
 
 [tasks.convert]
-description = "Convert HuggingFace model to SafeTensors"
-run = "uv run python -m ai_workers.cli convert"
+description = "[DEPRECATED] Convert HuggingFace model to SafeTensors → R2 (workers giờ tải từ HF Hub)"
+run = "infisical run --env=prod -- uv run python -m ai_workers convert"
 
 [tasks.upload]
-description = "Upload converted model to CF R2"
-run = "uv run python -m ai_workers.cli upload"
+description = "[DEPRECATED] Upload converted model to CF R2"
+run = "infisical run --env=prod -- uv run python -m ai_workers upload"
 
 [tasks.deploy]
 description = "Deploy worker to Modal.com"
-run = "uv run python -m ai_workers.cli deploy"
+run = "infisical run --env=prod -- uv run python -m ai_workers deploy"
 
 [tasks.deploy-all]
 description = "Deploy all workers to Modal.com"
-run = "uv run python -m ai_workers.cli deploy --all"
+run = "infisical run --env=prod -- uv run python -m ai_workers deploy --all"
+
+[tasks.onnx-convert]
+description = "Convert HuggingFace model to ONNX INT8 and push to HF Hub (Modal CPU)"
+run = "infisical run --env=prod -- uv run python -m ai_workers onnx-convert"

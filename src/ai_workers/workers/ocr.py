@@ -9,6 +9,9 @@ Exposes OpenAI Vision-compatible /v1/chat/completions endpoint.
 Single app: deepseek-ocr-2 (A10G, BF16 — model trained in BF16, cannot
 convert to FP16 without degradation).
 
+Model downloaded directly from HuggingFace Hub via Xet protocol
+at container startup (~1GB/s). No R2 storage needed.
+
 LiteLLM integration:
   model: openai/deepseek-ocr-2
   api_base: https://<modal-url>
@@ -18,30 +21,27 @@ from __future__ import annotations
 
 import modal
 
-from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
-from ai_workers.common.r2 import get_modal_cloud_bucket_mount
+from ai_workers.common.images import transformers_image
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
 MODEL_NAME = "deepseek-ocr-2"
-
-r2_mount = get_modal_cloud_bucket_mount()
+HF_ID = "deepseek-ai/DeepSeek-OCR-2"
 
 ocr_app = modal.App(
     "ai-workers-deepseek-ocr-2",
-    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
+    secrets=[modal.Secret.from_name("worker-api-key")],
 )
 
 
 @ocr_app.cls(
     gpu="A10G",
     image=transformers_image(flash_attn=True),
-    volumes={MODELS_MOUNT_PATH: r2_mount},
     scaledown_window=SCALEDOWN_WINDOW,
-    keep_warm=KEEP_WARM,
+    min_containers=KEEP_WARM,
     timeout=600,
-    allow_concurrent_inputs=5,
 )
+@modal.concurrent(max_inputs=5)
 class OCRServer:
     """Custom FastAPI OCR server for DeepSeek-OCR-2.
 
@@ -53,18 +53,20 @@ class OCRServer:
     @modal.enter()
     def load_model(self) -> None:
         import torch
+        from loguru import logger
         from transformers import AutoModel, AutoProcessor
 
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
-        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        logger.info("Loading {} from HuggingFace Hub...", HF_ID)
+        self.processor = AutoProcessor.from_pretrained(HF_ID, trust_remote_code=True)
         self.model = AutoModel.from_pretrained(
-            model_path,
+            HF_ID,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
             device_map="auto",
             use_safetensors=True,
         )
         self.model.eval()
+        logger.info("Loaded {} successfully", MODEL_NAME)
 
     def _process_image_content(self, content: list[dict]) -> tuple[str, str | None]:
         """Extract text prompt and image URL from OpenAI content array."""
@@ -143,7 +145,8 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import Body, FastAPI, Request
+        from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
         app = FastAPI(title="DeepSeek OCR v2")
@@ -179,9 +182,17 @@ class OCRServer:
         async def auth_middleware(request: Request, call_next):
             if request.url.path in ("/health", "/"):
                 return await call_next(request)
+            from fastapi import HTTPException as _HTTPException
+
             from ai_workers.common.auth import verify_api_key
 
-            await verify_api_key(request)
+            try:
+                await verify_api_key(request)
+            except _HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail},
+                )
             return await call_next(request)
 
         @app.get("/health")
@@ -189,14 +200,14 @@ class OCRServer:
             return {"status": "ok", "model": MODEL_NAME}
 
         @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-        async def chat_completions(request: ChatCompletionRequest):
+        async def chat_completions(body: ChatCompletionRequest = Body(...)):
             import uuid
 
             # Extract the last user message with image
             text_prompt = ""
             image = None
 
-            for msg in reversed(request.messages):
+            for msg in reversed(body.messages):
                 if msg.role == "user":
                     if isinstance(msg.content, list):
                         text_prompt, image_url = self._process_image_content(msg.content)
@@ -209,7 +220,7 @@ class OCRServer:
             if image is None:
                 return ChatCompletionResponse(
                     id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                    model=request.model,
+                    model=body.model,
                     choices=[
                         Choice(
                             message={
@@ -226,7 +237,7 @@ class OCRServer:
 
             return ChatCompletionResponse(
                 id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                model=request.model,
+                model=body.model,
                 choices=[
                     Choice(
                         message={"role": "assistant", "content": result},

@@ -6,6 +6,7 @@ endpoints. Workers are deployed individually via `modal deploy`.
 
 __all__ = [
     "asr",
+    "converter",
     "embedding",
     "ocr",
     "reranker",

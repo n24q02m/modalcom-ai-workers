@@ -1,20 +1,20 @@
-# LiteLLM Proxy Configuration
+# Cấu hình LiteLLM Proxy
 
-File `config.yaml` cau hinh LiteLLM Proxy de route requests den cac Modal workers.
+File `config.yaml` cấu hình LiteLLM Proxy để route các request đến các Modal workers.
 
-## Setup
+## Cài đặt
 
-1. Thay `<your-modal-workspace>` bang ten workspace Modal thuc te
-2. Set environment variables:
+1. Thay `<your-modal-workspace>` bằng tên workspace Modal thực tế
+2. Thiết lập biến môi trường:
    - `LITELLM_MASTER_KEY`: API key cho LiteLLM proxy
-   - `WORKER_API_KEY`: API key chung cho tat ca Modal workers
+   - `WORKER_API_KEY`: API key chung cho tất cả Modal workers
 
-3. Chay proxy:
+3. Chạy proxy:
    ```bash
    litellm --config litellm/config.yaml --port 4000
    ```
 
-## Model Naming Convention
+## Quy ước đặt tên Model
 
 | Task | LiteLLM Prefix | Ví dụ |
 |------|---------------|-------|
@@ -25,7 +25,7 @@ File `config.yaml` cau hinh LiteLLM Proxy de route requests den cac Modal worker
 | OCR | `openai/` | `openai/deepseek-ocr-2` |
 | ASR | `openai/` | `openai/whisper-large-v3` |
 
-## Consumer Usage
+## Sử dụng từ phía Consumer
 
 ### Python (OpenAI SDK)
 
@@ -79,9 +79,9 @@ curl -X POST http://localhost:4000/v1/rerank \
   -d '{"model": "qwen3-reranker-0.6b", "query": "What is AI?", "documents": ["AI is...", "Cats are..."]}'
 ```
 
-## Endpoint URL Pattern
+## Định dạng URL Endpoint
 
-Modal endpoint URL format:
+Định dạng URL endpoint của Modal:
 ```
 https://<workspace>--<app-name>-<classname-lowercase>-serve.modal.run
 ```

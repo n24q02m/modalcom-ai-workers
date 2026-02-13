@@ -4,6 +4,9 @@ Whisper Large v3 is a 1.55B parameter speech recognition model.
 Exposes OpenAI-compatible /v1/audio/transcriptions endpoint.
 Single app: whisper-large-v3 (T4, FP16).
 
+Model downloaded directly from HuggingFace Hub via Xet protocol
+at container startup (~1GB/s). No R2 storage needed.
+
 LiteLLM integration:
   model: openai/whisper-large-v3
   api_base: https://<modal-url>
@@ -13,30 +16,27 @@ from __future__ import annotations
 
 import modal
 
-from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_audio_image
-from ai_workers.common.r2 import get_modal_cloud_bucket_mount
+from ai_workers.common.images import transformers_audio_image
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
 MODEL_NAME = "whisper-large-v3"
-
-r2_mount = get_modal_cloud_bucket_mount()
+HF_ID = "openai/whisper-large-v3"
 
 asr_app = modal.App(
     "ai-workers-whisper-large-v3",
-    secrets=[modal.Secret.from_name("r2-credentials"), modal.Secret.from_name("worker-api-key")],
+    secrets=[modal.Secret.from_name("worker-api-key")],
 )
 
 
 @asr_app.cls(
     gpu="T4",
     image=transformers_audio_image(),
-    volumes={MODELS_MOUNT_PATH: r2_mount},
     scaledown_window=SCALEDOWN_WINDOW,
-    keep_warm=KEEP_WARM,
+    min_containers=KEEP_WARM,
     timeout=600,
-    allow_concurrent_inputs=5,
 )
+@modal.concurrent(max_inputs=5)
 class ASRServer:
     """Custom FastAPI ASR server for Whisper Large v3.
 
@@ -47,12 +47,13 @@ class ASRServer:
     @modal.enter()
     def load_model(self) -> None:
         import torch
+        from loguru import logger
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
-        self.processor = AutoProcessor.from_pretrained(model_path)
+        logger.info("Loading {} from HuggingFace Hub...", HF_ID)
+        self.processor = AutoProcessor.from_pretrained(HF_ID)
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_path,
+            HF_ID,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             device_map="auto",
@@ -66,6 +67,7 @@ class ASRServer:
             torch_dtype=torch.float16,
             device_map="auto",
         )
+        logger.info("Loaded {} successfully", MODEL_NAME)
 
     def _load_audio(self, file_bytes: bytes) -> dict:
         """Load audio bytes into the format expected by the pipeline."""
@@ -79,6 +81,7 @@ class ASRServer:
     @modal.asgi_app()
     def serve(self):
         from fastapi import FastAPI, File, Form, Request, UploadFile
+        from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
         app = FastAPI(title="Whisper Large v3")
@@ -97,9 +100,17 @@ class ASRServer:
         async def auth_middleware(request: Request, call_next):
             if request.url.path in ("/health", "/"):
                 return await call_next(request)
+            from fastapi import HTTPException as _HTTPException
+
             from ai_workers.common.auth import verify_api_key
 
-            await verify_api_key(request)
+            try:
+                await verify_api_key(request)
+            except _HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail},
+                )
             return await call_next(request)
 
         @app.get("/health")

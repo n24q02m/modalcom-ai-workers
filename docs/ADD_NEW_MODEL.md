@@ -1,73 +1,72 @@
-# Huong dan them Model moi
+# Hướng dẫn thêm Model mới
 
-Tai lieu nay mo ta cac buoc de them mot model AI moi vao he thong workers.
+Tài liệu này mô tả các bước để thêm một model AI mới vào hệ thống workers.
 
-## Tong quan quy trinh
+## Tổng quan quy trình
 
 ```
-1. Them vao Model Registry (config.py)
-2. Tao Worker module (workers/*.py)
-3. Convert weights (CLI)
-4. Upload len R2 (CLI)
-5. Deploy len Modal (CLI)
-6. Them vao LiteLLM config
-7. Test endpoint
+1. Thêm vào Model Registry (config.py)
+2. Tạo Worker module (workers/*.py)
+3. Convert weights (chạy trên Modal CPU → ghi thẳng R2)
+4. Deploy lên Modal (CLI)
+5. Thêm vào LiteLLM config
+6. Test endpoint
 ```
 
-## Buoc 1: Them vao Model Registry
+## Bước 1: Thêm vào Model Registry
 
 File: `src/ai_workers/common/config.py`
 
-Them mot entry moi vao cuoi phan Model Registry:
+Thêm một entry mới vào cuối phần Model Registry:
 
 ```python
 _register(
     ModelConfig(
-        # Ten duy nhat, dung lam key va R2 prefix
+        # Tên duy nhất, dùng làm key và R2 prefix
         name="my-new-model-7b",
-        # HuggingFace model ID (dung de download khi convert)
+        # HuggingFace model ID (dùng để download khi convert)
         hf_id="organization/MyNewModel-7B",
         # Task: EMBEDDING, RERANKER_LLM, VL_EMBEDDING, VL_RERANKER, OCR, ASR
         task=Task.EMBEDDING,
-        # Tier: LIGHT hoac HEAVY
+        # Tier: LIGHT hoặc HEAVY
         tier=Tier.HEAVY,
-        # Precision: FP16 (mac dinh) hoac BF16
-        # Chi dung BF16 khi model duoc train bang BF16 va khong the convert FP16
+        # Precision: FP16 (mặc định) hoặc BF16
+        # Chỉ dùng BF16 khi model được train bằng BF16 và không thể convert sang FP16
         precision=Precision.FP16,
-        # GPU: T4 (models <= 2B) hoac A10G (models > 2B hoac BF16)
+        # GPU: T4 (models <= 2B) hoặc A10G (models > 2B hoặc BF16)
         gpu=GPU.A10G,
-        # Serving: VLLM (chi cho embedding text) hoac CUSTOM_FASTAPI
+        # Serving: VLLM (chỉ cho embedding text) hoặc CUSTOM_FASTAPI
         serving_engine=ServingEngine.VLLM,
         # Model class: AUTO_MODEL, CAUSAL_LM, SEQ2SEQ
         model_class=ModelClassType.AUTO_MODEL,
-        # Trust remote code (True cho Qwen, DeepSeek, etc.)
+        # Trust remote code (True cho Qwen, DeepSeek, ...)
         trust_remote_code=True,
-        # Module path cua worker file
+        # Module path của worker file
         worker_module="ai_workers.workers.my_new_worker",
-        # Extra kwargs cho model loading (optional)
+        # Extra kwargs cho model loading (tuỳ chọn)
         extra_load_kwargs={},
     )
 )
 ```
 
-### Chon GPU
+### Chọn GPU
 
-| Model Size | Precision | GPU | Ly do |
+| Kích thước Model | Precision | GPU | Lý do |
 |-----------|-----------|-----|-------|
-| <= 2B | FP16 | T4 | Du VRAM (16GB) |
-| 3-8B | FP16 | A10G | Can 24GB VRAM |
-| Bat ky | BF16 | A10G+ | T4 khong ho tro BF16 |
+| <= 2B | FP16 | T4 | Đủ VRAM (16GB) |
+| 3-8B | FP16 | A10G | Cần 24GB VRAM |
+| Bất kỳ | BF16 | A10G+ | T4 không hỗ trợ BF16 |
 
-### Chon Precision
+### Chọn Precision
 
-- **FP16** (mac dinh): Phu hop hau het models. Nho hon, nhanh hon.
-- **BF16**: Chi khi model duoc train bang BF16 va convert FP16 gay degradation (vd: DeepSeek-OCR-2).
+- **FP16** (mặc định): Phù hợp hầu hết models. Nhỏ hơn, nhanh hơn.
+- **BF16**: Chỉ khi model được train bằng BF16 và convert sang FP16 gây suy giảm chất lượng (ví dụ: DeepSeek-OCR-2).
 
-## Buoc 2: Tao Worker Module
+## Bước 2: Tạo Worker Module
 
 File: `src/ai_workers/workers/my_new_worker.py`
 
-### Template co ban
+### Template cơ bản
 
 ```python
 """My New Worker description."""
@@ -141,12 +140,12 @@ class MyNewServer:
         async def health():
             return {"status": "ok", "model": MODEL_NAME}
 
-        # TODO: Them cac endpoint cu the cho task cua model
+        # TODO: Thêm các endpoint cụ thể cho task của model
 
         return app
 ```
 
-### Chon endpoint format
+### Chọn endpoint format
 
 | Task | Endpoint | Format | Reference |
 |------|----------|--------|-----------|
@@ -155,7 +154,7 @@ class MyNewServer:
 | OCR / Vision | `/v1/chat/completions` | OpenAI Chat | `workers/ocr.py` |
 | ASR | `/v1/audio/transcriptions` | OpenAI Audio | `workers/asr.py` |
 
-### Chon Modal Image
+### Chọn Modal Image
 
 | Use Case | Function | Packages |
 |----------|----------|----------|
@@ -164,60 +163,58 @@ class MyNewServer:
 | Transformers + Flash Attn | `transformers_image(flash_attn=True)` | + flash-attn |
 | Audio models | `transformers_audio_image()` | + librosa, soundfile |
 
-## Buoc 3: Convert Weights
+## Bước 3: Convert Weights
+
+Convert chạy trên Modal CPU container (32GB RAM, 4 CPU cores) và ghi thẳng
+weights lên R2 qua CloudBucketMount (writable). Không cần máy local mạnh.
 
 ```bash
-# Convert model tu HuggingFace sang target precision
-python -m ai_workers convert run my-new-model-7b
+# Convert model — chạy trên Modal CPU, output ghi thẳng lên R2
+mise run convert my-new-model-7b
 
-# Kiem tra output
-ls converted/my-new-model-7b/
+# Ghi đè nếu đã tồn tại trên R2
+mise run convert my-new-model-7b --force
+
+# Convert tất cả models
+mise run convert all
 ```
 
-Output se nam trong `./converted/my-new-model-7b/` voi SafeTensors format.
+> mise tasks đã tích hợp `infisical run --env=prod --` để inject secrets.
+> Cần cấu hình Modal secret `r2-credentials` trên Modal dashboard (quyền write + list).
 
-> **Luu y:** Local machine co 4GB VRAM + 16GB RAM.
-> - Models <= 8B FP16 (16GB): vua du, can `low_cpu_mem_usage=True`
-> - Models > 8B: can convert tren may khac hoac dung `--device cpu` va swap
-
-## Buoc 4: Upload len R2
+## Bước 4: Deploy lên Modal
 
 ```bash
-# Upload len CF R2
-python -m ai_workers upload run my-new-model-7b
+# Dry run (kiểm tra trước)
+mise run deploy my-new-model-7b --dry-run
 
-# Voi backup GDrive
-python -m ai_workers upload run my-new-model-7b --backup-gdrive
+# Deploy thật
+mise run deploy my-new-model-7b
+
+# Deploy tất cả workers
+mise run deploy-all
 ```
 
-## Buoc 5: Deploy len Modal
+> mise tasks đã tích hợp `infisical run --env=prod --` để inject secrets.
 
-```bash
-# Dry run (kiem tra truoc)
-python -m ai_workers deploy run my-new-model-7b --dry-run
-
-# Deploy that
-python -m ai_workers deploy run my-new-model-7b
-```
-
-## Buoc 6: Them vao LiteLLM Config
+## Bước 5: Thêm vào LiteLLM Config
 
 File: `litellm/config.yaml`
 
 ```yaml
 - model_name: my-new-model-7b
   litellm_params:
-    model: openai/my-new-model-7b  # hoac cohere/ cho reranker
+    model: openai/my-new-model-7b  # hoặc cohere/ cho reranker
     api_base: https://<workspace>--ai-workers-my-new-model-7b-mynewserver-serve.modal.run
     api_key: ${WORKER_API_KEY}
 ```
 
-> Lay URL chinh xac tu Modal dashboard sau khi deploy.
+> Lấy URL chính xác từ Modal dashboard sau khi deploy.
 
-## Buoc 7: Test Endpoint
+## Bước 6: Test Endpoint
 
 ```bash
-# Test truc tiep (khong qua LiteLLM)
+# Test trực tiếp (không qua LiteLLM)
 curl -X POST https://<modal-url>/v1/embeddings \
   -H "Authorization: Bearer $WORKER_API_KEY" \
   -H "Content-Type: application/json" \
@@ -227,13 +224,12 @@ curl -X POST https://<modal-url>/v1/embeddings \
 curl https://<modal-url>/health
 ```
 
-## Checklist
+## Danh sách kiểm tra
 
-- [ ] Them `ModelConfig` vao `config.py`
-- [ ] Tao worker module trong `workers/`
-- [ ] Convert weights thanh cong
-- [ ] Upload len R2
-- [ ] Deploy len Modal
-- [ ] Them vao `litellm/config.yaml`
-- [ ] Test endpoint hoat dong
-- [ ] Cap nhat README worker matrix
+- [ ] Thêm `ModelConfig` vào `config.py`
+- [ ] Tạo worker module trong `workers/`
+- [ ] Convert weights (Modal CPU → R2)
+- [ ] Deploy lên Modal
+- [ ] Thêm vào `litellm/config.yaml`
+- [ ] Test endpoint hoạt động
+- [ ] Cập nhật README worker matrix
