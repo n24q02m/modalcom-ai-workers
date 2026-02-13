@@ -14,8 +14,6 @@ LiteLLM integration:
   api_base: https://<modal-url>
 """
 
-from __future__ import annotations
-
 import modal
 
 from ai_workers.common.images import transformers_image
@@ -74,7 +72,7 @@ class RerankerServer:
             tokenizer = AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
             model = AutoModelForCausalLM.from_pretrained(
                 hf_id,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 trust_remote_code=True,
                 device_map="auto",
             )
