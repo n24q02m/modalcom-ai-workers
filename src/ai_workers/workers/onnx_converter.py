@@ -134,7 +134,6 @@ model = {usage_class}("Qwen/{model_short}-Q4F16")
 - **ONNX opset**: 21
 - **INT8**: `onnxruntime.quantization.quantize_dynamic` (QInt8)
 - **Q4F16**: `MatMulNBitsQuantizer` (block_size=128, symmetric) + FP16 cast
-- **Converted by**: [modalcom-ai-workers](https://github.com/n24q02m/modalcom-ai-workers)
 """
 
 
