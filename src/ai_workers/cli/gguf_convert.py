@@ -108,6 +108,7 @@ def _gguf_convert_remote(
                 hf_source=config.hf_source,
                 hf_target=config.hf_target,
                 gguf_name=config.gguf_name,
+                output_attr=config.output_attr,
                 quant_type=quant_type,
                 force=force,
             )

@@ -35,7 +35,7 @@ gguf_convert_app = modal.App(
 
 
 # ---------------------------------------------------------------------------
-# GGUF model registry — reuse ONNX targets (them GGUF vao cung repo)
+# GGUF model registry — dedicated *-GGUF repos (tach rieng voi ONNX)
 # ---------------------------------------------------------------------------
 
 
@@ -45,8 +45,9 @@ class GgufModelConfig:
 
     name: str  # Registry key
     hf_source: str  # HuggingFace source model ID
-    hf_target: str  # HuggingFace target repo (cung repo voi ONNX)
+    hf_target: str  # HuggingFace target repo (dedicated *-GGUF repo)
     gguf_name: str  # GGUF filename (e.g. "qwen3-embedding-0.6b")
+    output_attr: str  # "last_hidden_state" (embedding) or "logits" (reranker)
 
 
 GGUF_MODELS: dict[str, GgufModelConfig] = {}
@@ -61,8 +62,9 @@ _register(
     GgufModelConfig(
         name="qwen3-embedding-0.6b-gguf",
         hf_source="Qwen/Qwen3-Embedding-0.6B",
-        hf_target="n24q02m/Qwen3-Embedding-0.6B-ONNX",
+        hf_target="n24q02m/Qwen3-Embedding-0.6B-GGUF",
         gguf_name="qwen3-embedding-0.6b",
+        output_attr="last_hidden_state",
     )
 )
 
@@ -70,10 +72,87 @@ _register(
     GgufModelConfig(
         name="qwen3-reranker-0.6b-gguf",
         hf_source="Qwen/Qwen3-Reranker-0.6B",
-        hf_target="n24q02m/Qwen3-Reranker-0.6B-ONNX",
+        hf_target="n24q02m/Qwen3-Reranker-0.6B-GGUF",
         gguf_name="qwen3-reranker-0.6b",
+        output_attr="logits",
     )
 )
+
+
+# ---------------------------------------------------------------------------
+# Model card template
+# ---------------------------------------------------------------------------
+
+_GGUF_MODEL_CARD_TEMPLATE = """\
+---
+license: apache-2.0
+tags:
+  - gguf
+  - quantized
+  - qwen3
+  - {model_type}
+base_model: {hf_source}
+pipeline_tag: {pipeline_tag}
+---
+
+# {hf_target}
+
+GGUF-quantized version of [{hf_source}](https://huggingface.co/{hf_source})
+for use with [qwen3-embed](https://github.com/n24q02m/qwen3-embed)
+and [llama-cpp-python](https://github.com/abetlen/llama-cpp-python).
+
+## Available Variants
+
+| Variant | File | Size | Description |
+|---------|------|------|-------------|
+| Q4_K_M | `{gguf_filename}` | {size_mb:.0f} MB | 4-bit quantization (recommended) |
+
+## Usage
+
+```python
+from qwen3_embed import {usage_class}
+
+model = {usage_class}("Qwen/{model_short}-GGUF")
+```
+
+Requires optional dependency:
+
+```bash
+pip install qwen3-embed[gguf]
+```
+
+## Conversion Details
+
+- **Source**: {hf_source}
+- **Method**: `convert_hf_to_gguf.py` (F16) + `llama-quantize` (Q4_K_M)
+
+## Related
+
+- ONNX variants: [{onnx_repo}](https://huggingface.co/{onnx_repo})
+"""
+
+
+def _generate_gguf_model_card(
+    config: GgufModelConfig,
+    gguf_filename: str,
+    size_mb: float,
+) -> str:
+    """Generate a model card README.md for the GGUF HuggingFace repo."""
+    is_embedding = config.output_attr == "last_hidden_state"
+    model_short = config.hf_source.split("/")[-1]
+    onnx_repo = config.hf_target.replace("-GGUF", "-ONNX")
+
+    return _GGUF_MODEL_CARD_TEMPLATE.format(
+        hf_source=config.hf_source,
+        hf_target=config.hf_target,
+        model_type="text-embedding" if is_embedding else "text-reranking",
+        pipeline_tag="feature-extraction" if is_embedding else "text-classification",
+        gguf_filename=gguf_filename,
+        size_mb=size_mb,
+        usage_class="TextEmbedding" if is_embedding else "TextCrossEncoder",
+        model_short=model_short,
+        onnx_repo=onnx_repo,
+    )
 
 
 @gguf_convert_app.function(
@@ -87,6 +166,7 @@ def gguf_convert_model(
     hf_source: str,
     hf_target: str,
     gguf_name: str,
+    output_attr: str = "last_hidden_state",
     *,
     quant_type: str = "Q4_K_M",
     force: bool = False,
@@ -100,8 +180,9 @@ def gguf_convert_model(
     Args:
         model_name: Registry name (e.g. "qwen3-embedding-0.6b-gguf").
         hf_source: Source HuggingFace model ID (e.g. "Qwen/Qwen3-Embedding-0.6B").
-        hf_target: Target HuggingFace repo ID (e.g. "n24q02m/Qwen3-Embedding-0.6B-ONNX").
+        hf_target: Target HuggingFace repo ID (e.g. "n24q02m/Qwen3-Embedding-0.6B-GGUF").
         gguf_name: Base name for GGUF file (e.g. "qwen3-embedding-0.6b").
+        output_attr: Model output attribute ("last_hidden_state" or "logits").
         quant_type: GGUF quantization type (default "Q4_K_M").
         force: Ghi de neu file da ton tai tren HF Hub.
 
@@ -125,7 +206,7 @@ def gguf_convert_model(
     api = HfApi(token=hf_token)
 
     gguf_filename = f"{gguf_name}-{quant_type.lower().replace('_', '-')}.gguf"
-    gguf_repo_path = f"gguf/{gguf_filename}"
+    gguf_repo_path = gguf_filename  # Root level in dedicated GGUF repo
 
     # ------------------------------------------------------------------
     # Kiem tra file da ton tai chua
@@ -152,7 +233,7 @@ def gguf_convert_model(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir) / "model"
-        output_dir = Path(tmpdir) / "output" / "gguf"
+        output_dir = Path(tmpdir) / "output"
         model_dir.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -175,7 +256,7 @@ def gguf_convert_model(
         # Step 1: convert_hf_to_gguf.py -> F16 GGUF
         # ------------------------------------------------------------------
         f16_path = Path(tmpdir) / f"{gguf_name}-f16.gguf"
-        q4_path = output_dir / gguf_filename
+        q4_path = Path(tmpdir) / "output" / gguf_filename
 
         logger.info("Converting HF -> GGUF F16: {}", f16_path)
 
@@ -257,6 +338,41 @@ def gguf_convert_model(
             repo_type="model",
             commit_message=f"Add GGUF {quant_type} converted from {hf_source}",
         )
+
+        # Upload model card
+        config_obj = GgufModelConfig(
+            name=model_name,
+            hf_source=hf_source,
+            hf_target=hf_target,
+            gguf_name=gguf_name,
+            output_attr=output_attr,
+        )
+        model_card = _generate_gguf_model_card(config_obj, gguf_filename, q4_size)
+        api.upload_file(
+            path_or_fileobj=model_card.encode("utf-8"),
+            path_in_repo="README.md",
+            repo_id=hf_target,
+            repo_type="model",
+            commit_message="docs: update model card",
+        )
+
+        # Upload tokenizer + config from source for model loading
+        from huggingface_hub import hf_hub_download as _hf_download
+
+        for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
+            try:
+                local_cfg = _hf_download(
+                    repo_id=hf_source, filename=cfg_file, token=hf_token
+                )
+                api.upload_file(
+                    path_or_fileobj=local_cfg,
+                    path_in_repo=cfg_file,
+                    repo_id=hf_target,
+                    repo_type="model",
+                    commit_message=f"Add {cfg_file}",
+                )
+            except Exception:
+                pass  # Some config files may not exist
 
         logger.info("Push thanh cong len https://huggingface.co/{}", hf_target)
 

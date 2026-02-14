@@ -134,6 +134,10 @@ model = {usage_class}("Qwen/{model_short}-Q4F16")
 - **ONNX opset**: 21
 - **INT8**: `onnxruntime.quantization.quantize_dynamic` (QInt8)
 - **Q4F16**: `MatMulNBitsQuantizer` (block_size=128, symmetric) + FP16 cast
+
+## Related
+
+- GGUF variants: [{gguf_repo}](https://huggingface.co/{gguf_repo})
 """
 
 
@@ -145,6 +149,7 @@ def _generate_model_card(
     """Generate a model card README.md for the HuggingFace repo."""
     is_embedding = config.output_attr == "last_hidden_state"
     model_short = config.hf_source.split("/")[-1]
+    gguf_repo = config.hf_target.replace("-ONNX", "-GGUF")
 
     return _MODEL_CARD_TEMPLATE.format(
         hf_source=config.hf_source,
@@ -155,6 +160,7 @@ def _generate_model_card(
         q4f16_size_mb=q4f16_size_mb,
         usage_class="TextEmbedding" if is_embedding else "TextCrossEncoder",
         model_short=model_short,
+        gguf_repo=gguf_repo,
     )
 
 
