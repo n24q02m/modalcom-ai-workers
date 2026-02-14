@@ -48,5 +48,9 @@ description = "Deploy all workers to Modal.com"
 run = "infisical run --env=prod -- uv run python -m ai_workers deploy --all"
 
 [tasks.onnx-convert]
-description = "Convert HuggingFace model to ONNX INT8 and push to HF Hub (Modal CPU)"
+description = "Convert HuggingFace model to ONNX (INT8 + Q4F16) and push to HF Hub (Modal CPU)"
 run = "infisical run --env=prod -- uv run python -m ai_workers onnx-convert"
+
+[tasks.gguf-convert]
+description = "Convert HuggingFace model to GGUF Q4_K_M and push to HF Hub (Modal CPU)"
+run = "infisical run --env=prod -- uv run python -m ai_workers gguf-convert"

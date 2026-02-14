@@ -126,10 +126,15 @@ def converter_image() -> modal.Image:
 
 
 def onnx_converter_image() -> modal.Image:
-    """Build a Modal image cho ONNX conversion pipeline (CPU-only).
+    """Build a Modal image cho ONNX multi-variant conversion pipeline (CPU-only).
 
-    Export HuggingFace models sang ONNX + INT8 dynamic quantization.
-    Dùng cho Qwen3-Embedding / Reranker 0.6B (fastembed-compatible output).
+    Export HuggingFace models sang ONNX + INT8 dynamic quantization + Q4F16
+    (INT4 weights + FP16 activations). Dung cho Qwen3-Embedding / Reranker 0.6B
+    (fastembed-compatible output).
+
+    Dependencies:
+    - onnxconverter-common: FP32 -> FP16 cast cho Q4F16 variant
+    - MatMulNBitsQuantizer (onnxruntime): INT4 weight quantization
     """
     return (
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
@@ -142,6 +147,40 @@ def onnx_converter_image() -> modal.Image:
             "onnx>=1.17",
             "onnxruntime>=1.21",
             "onnxscript>=0.1",
+            "onnxconverter-common>=1.14",
+            "loguru>=0.7",
+        )
+        .env({"HF_XET_HIGH_PERFORMANCE": "1"})
+    )
+
+
+def gguf_converter_image() -> modal.Image:
+    """Build a Modal image cho GGUF conversion pipeline (CPU-only).
+
+    Convert HuggingFace models sang GGUF format via llama.cpp.
+    Pipeline: HF model -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M).
+
+    Image includes:
+    - llama.cpp cloned + built from source (cmake, gcc)
+    - Python dependencies for convert_hf_to_gguf.py (gguf, transformers, numpy, torch, sentencepiece)
+    - HuggingFace Hub for model download/upload
+    """
+    return (
+        modal.Image.debian_slim(python_version=PYTHON_VERSION)
+        .apt_install("git", "cmake", "build-essential")
+        .run_commands(
+            # Clone llama.cpp va build llama-quantize
+            "git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp",
+            "cd /opt/llama.cpp && cmake -B build -DGGML_NATIVE=OFF && cmake --build build --target llama-quantize -j$(nproc)",
+        )
+        .uv_pip_install(
+            "torch>=2.4",
+            "transformers>=4.47",
+            "safetensors>=0.4",
+            "huggingface_hub[hf_xet]",
+            "gguf>=0.6",
+            "numpy>=2.0",
+            "sentencepiece>=0.1",
             "loguru>=0.7",
         )
         .env({"HF_XET_HIGH_PERFORMANCE": "1"})

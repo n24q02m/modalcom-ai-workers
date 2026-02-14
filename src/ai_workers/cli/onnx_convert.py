@@ -1,9 +1,10 @@
-"""Convert HuggingFace models sang ONNX INT8 và push lên HuggingFace Hub.
+"""Convert HuggingFace models sang ONNX multi-variant va push len HuggingFace Hub.
 
-Chạy trên Modal CPU container (32GB RAM, 4 CPU cores).
-Pipeline: HuggingFace Hub → ONNX FP32 → INT8 quantization → HF Hub (public).
+Chay tren Modal CPU container (32GB RAM, 4 CPU cores).
+Pipeline: HuggingFace Hub -> ONNX FP32 -> onnxslim -> INT8 + Q4F16 -> HF Hub (public).
 
-Output fastembed-compatible: onnx/model.onnx + tokenizer files.
+Output fastembed-compatible:
+  onnx/model_quantized.onnx (INT8) + onnx/model_q4f16.onnx (Q4F16) + tokenizer files.
 
 Usage:
   python -m ai_workers onnx-convert list
@@ -36,7 +37,7 @@ def onnx_convert(
         help="Ghi đè nếu repo đã tồn tại trên HF Hub",
     ),
 ) -> None:
-    """Convert model HuggingFace sang ONNX INT8 trên Modal CPU, push lên HF Hub."""
+    """Convert model HuggingFace sang ONNX multi-variant (INT8 + Q4F16) tren Modal CPU, push len HF Hub."""
     if model is None:
         console.print(
             "[yellow]Cần chỉ định model, 'all', hoặc 'list'. Dùng --help để xem hướng dẫn.[/yellow]"
@@ -49,7 +50,7 @@ def onnx_convert(
 
     if model == "all":
         console.print(
-            f"[bold]Converting {len(ONNX_MODELS)} models sang ONNX INT8 trên Modal CPU...[/bold]"
+            f"[bold]Converting {len(ONNX_MODELS)} models sang ONNX (INT8 + Q4F16) tren Modal CPU...[/bold]"
         )
         failed: list[str] = []
         for name in ONNX_MODELS:
@@ -85,9 +86,9 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
     console.print(f"  Target: {config.hf_target}")
     console.print(f"  Model Class: {config.model_class}")
     console.print(f"  Output: {config.output_attr}")
-    console.print("  Format: ONNX INT8 (dynamic quantization)")
-    console.print("  Chạy trên: Modal CPU (32GB RAM)")
-    console.print("  Đầu ra: HuggingFace Hub (public repo)")
+    console.print("  Variants: INT8 (model_quantized.onnx) + Q4F16 (model_q4f16.onnx)")
+    console.print("  Chay tren: Modal CPU (32GB RAM)")
+    console.print("  Dau ra: HuggingFace Hub (public repo)")
     console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
     try:
@@ -108,17 +109,24 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
         status = result.get("status", "unknown")
         if status == "skipped":
             console.print(
-                f"[yellow]Bỏ qua {config.name} — repo đã tồn tại trên HF Hub. "
-                f"Dùng --force để ghi đè.[/yellow]"
+                f"[yellow]Bo qua {config.name} — repo da ton tai tren HF Hub. "
+                f"Dung --force de ghi de.[/yellow]"
             )
         elif status == "success":
             files_count = result.get("files_count", 0)
             total_size = result.get("total_size_mb", 0)
             url = result.get("url", "")
+            variants = result.get("variants", {})
             console.print(
-                f"[green]ONNX Convert {config.name}: THÀNH CÔNG "
+                f"[green]ONNX Convert {config.name}: THANH CONG "
                 f"({files_count} files, {total_size:.2f} MB)[/green]"
             )
+            for vname, vinfo in variants.items():
+                if isinstance(vinfo, dict):
+                    console.print(
+                        f"  [dim]{vname}: {vinfo.get('file', '?')} "
+                        f"({vinfo.get('size_mb', 0):.2f} MB)[/dim]"
+                    )
             console.print(f"  [dim]{url}[/dim]")
         else:
             console.print(
