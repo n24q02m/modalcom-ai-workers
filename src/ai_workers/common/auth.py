@@ -12,14 +12,15 @@ from loguru import logger
 async def verify_api_key(request: Request) -> None:
     """Verify Bearer token from Authorization header.
 
-    The expected token is set via Modal Secret "worker-api-key".
-    If WORKER_API_KEY env var is empty, authentication is skipped (dev mode).
+    The expected token is resolved from ``API_KEY`` env var, falling back to
+    ``WORKER_API_KEY``. If neither is set, auth is skipped entirely (dev mode).
+    When a key IS configured, a valid Bearer token is required.
 
     Uses ``hmac.compare_digest`` to prevent timing attacks.
     """
-    expected_key = os.getenv("WORKER_API_KEY", "")
+    expected_key = os.getenv("API_KEY") or os.getenv("WORKER_API_KEY", "")
 
-    # Skip auth in dev mode (no key configured)
+    # Dev mode: neither API_KEY nor WORKER_API_KEY set → skip auth entirely
     if not expected_key:
         return
 
@@ -32,6 +33,7 @@ async def verify_api_key(request: Request) -> None:
         )
 
     token = auth_header.removeprefix("Bearer ").strip()
+
     if not hmac.compare_digest(token.encode(), expected_key.encode()):
         logger.warning("Invalid API key from {}", request.client)
         raise HTTPException(

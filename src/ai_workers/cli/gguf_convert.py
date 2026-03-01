@@ -13,14 +13,15 @@ Usage:
 
 from __future__ import annotations
 
+import modal
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ai_workers.workers.gguf_converter import GGUF_MODELS
+from ai_workers.workers.gguf_converter import GGUF_MODELS, gguf_convert_app, gguf_convert_model
 
 app = typer.Typer(no_args_is_help=True)
-console = Console()
+console = Console(width=200)
 
 
 @app.callback(invoke_without_command=True)
@@ -82,7 +83,9 @@ def _gguf_convert_remote(
     """Goi Modal remote function de GGUF convert mot model."""
     if model_name not in GGUF_MODELS:
         available = ", ".join(sorted(GGUF_MODELS.keys()))
-        console.print(f"[red]Loi: Model '{model_name}' khong tim thay. Available: {available}[/red]")
+        console.print(
+            f"[red]Loi: Model '{model_name}' khong tim thay. Available: {available}[/red]"
+        )
         raise typer.Exit(code=1)
 
     config = GGUF_MODELS[model_name]
@@ -98,10 +101,6 @@ def _gguf_convert_remote(
     console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
     try:
-        import modal
-
-        from ai_workers.workers.gguf_converter import gguf_convert_app, gguf_convert_model
-
         with modal.enable_output(), gguf_convert_app.run():
             result = gguf_convert_model.remote(
                 model_name=config.name,

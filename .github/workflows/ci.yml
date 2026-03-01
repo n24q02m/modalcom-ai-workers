@@ -33,4 +33,5 @@ jobs:
         run: uv run ty check src/
 
       - name: Test
-        run: uv run pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short --cov=src --cov-report=xml
+

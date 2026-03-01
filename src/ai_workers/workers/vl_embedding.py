@@ -12,8 +12,6 @@ Models downloaded directly from HuggingFace Hub via Xet protocol
 at container startup (~1GB/s). No R2 storage needed.
 """
 
-from __future__ import annotations
-
 import modal
 
 from ai_workers.common.images import transformers_image
@@ -182,6 +180,9 @@ class VLEmbeddingServer:
             data: list[EmbeddingData]
             model: str
 
+        # Rebuild to resolve forward references (VLEmbeddingInput used in VLEmbeddingRequest)
+        VLEmbeddingRequest.model_rebuild()
+
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
             if request.url.path in ("/health", "/"):
@@ -222,19 +223,13 @@ class VLEmbeddingServer:
             if isinstance(body.input, str):
                 # Single text input
                 embeddings = self._embed_text(body.model, [body.input])
-            elif (
-                isinstance(body.input, list)
-                and body.input
-                and isinstance(body.input[0], str)
-            ):
+            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
                 embeddings = self._embed_text(body.model, body.input)
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    emb = self._embed_multimodal(
-                        body.model, body.input.text, body.input.image_url
-                    )
+                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
                     embeddings = [emb]
                 else:
                     embeddings = self._embed_text(body.model, [body.input.text])

@@ -17,8 +17,6 @@ LiteLLM integration:
   api_base: https://<modal-url>
 """
 
-from __future__ import annotations
-
 import modal
 
 from ai_workers.common.images import transformers_image
@@ -177,6 +175,10 @@ class OCRServer:
             model: str
             choices: list[Choice]
             usage: Usage
+
+        # Rebuild to resolve forward references (list[dict] in ChatMessage.content)
+        ChatMessage.model_rebuild()
+        ChatCompletionRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):

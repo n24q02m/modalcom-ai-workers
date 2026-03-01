@@ -14,14 +14,15 @@ Usage:
 
 from __future__ import annotations
 
+import modal
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ai_workers.workers.onnx_converter import ONNX_MODELS
+from ai_workers.workers.onnx_converter import ONNX_MODELS, onnx_convert_app, onnx_convert_model
 
 app = typer.Typer(no_args_is_help=True)
-console = Console()
+console = Console(width=200)
 
 
 @app.callback(invoke_without_command=True)
@@ -75,7 +76,9 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
     """Gọi Modal remote function để ONNX convert một model."""
     if model_name not in ONNX_MODELS:
         available = ", ".join(sorted(ONNX_MODELS.keys()))
-        console.print(f"[red]Lỗi: Model '{model_name}' không tìm thấy. Available: {available}[/red]")
+        console.print(
+            f"[red]Lỗi: Model '{model_name}' không tìm thấy. Available: {available}[/red]"
+        )
         raise typer.Exit(code=1)
 
     config = ONNX_MODELS[model_name]
@@ -92,10 +95,6 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
     console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
     try:
-        import modal
-
-        from ai_workers.workers.onnx_converter import onnx_convert_app, onnx_convert_model
-
         with modal.enable_output(), onnx_convert_app.run():
             result = onnx_convert_model.remote(
                 model_name=config.name,

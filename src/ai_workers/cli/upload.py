@@ -16,17 +16,17 @@ from rich.console import Console
 from ai_workers.common.config import get_model, list_models
 from ai_workers.common.r2 import R2Config, upload_directory
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer()
 console = Console()
 
 DEFAULT_CONVERTED_DIR = Path("converted")
 
 
-@app.callback(invoke_without_command=True)
+@app.command()
 def upload(
     model: str = typer.Argument(
-        ...,
-        help="Model registry name (e.g. 'qwen3-embedding-0.6b') or 'all'",
+        None,
+        help="Model registry name (e.g. 'qwen3-embedding-0.6b'), 'all', or 'list'",
     ),
     converted_dir: Path = typer.Option(
         DEFAULT_CONVERTED_DIR,
@@ -41,6 +41,16 @@ def upload(
     ),
 ) -> None:
     """Upload a converted model to Cloudflare R2."""
+    if model is None:
+        console.print(
+            "[yellow]Cần chỉ định model, 'all', hoặc 'list'. Dùng --help để xem hướng dẫn.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+
+    if model == "list":
+        list_available()
+        return
+
     if model == "all":
         models = list_models()
         console.print(f"[bold]Uploading all {len(models)} models...[/bold]")
@@ -110,7 +120,6 @@ def _sync_gdrive(local_dir: Path, prefix: str) -> None:
         console.print(f"[red]GDrive backup: FAILED — {e}[/red]")
 
 
-@app.command("list")
 def list_available() -> None:
     """List models available for upload (already converted)."""
     converted_dir = DEFAULT_CONVERTED_DIR

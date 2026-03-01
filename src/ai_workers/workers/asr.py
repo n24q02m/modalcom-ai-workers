@@ -12,8 +12,6 @@ LiteLLM integration:
   api_base: https://<modal-url>
 """
 
-from __future__ import annotations
-
 import modal
 
 from ai_workers.common.images import transformers_audio_image

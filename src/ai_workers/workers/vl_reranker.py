@@ -12,8 +12,6 @@ Models downloaded directly from HuggingFace Hub via Xet protocol
 at container startup (~1GB/s). No R2 storage needed.
 """
 
-from __future__ import annotations
-
 import modal
 
 from ai_workers.common.images import transformers_image
@@ -182,6 +180,9 @@ class VLRerankerServer:
         class RerankResponse(BaseModel):
             model: str
             results: list[RerankResult]
+
+        # Rebuild to resolve forward references (VLRerankDocument used in VLRerankRequest)
+        VLRerankRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
