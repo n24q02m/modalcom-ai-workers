@@ -100,15 +100,29 @@ python-version = "3.13"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+tag_format = "v{version}"
+commit_message = "chore(release): v{version}"
+major_on_zero = false
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.remote]
+type = "github"
+
 [dependency-groups]
 dev = [
     "click>=8.3.1",
     "httpx>=0.28.1",
     "pillow>=12.1.1",
+    "pre-commit>=4.0.0",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "python-multipart>=0.0.22",
+    "python-semantic-release>=9.0.0",
     "rich>=14.3.2",
     "typer>=0.21.1",
 ]

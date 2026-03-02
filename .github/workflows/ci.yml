@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  issue_comment:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,3 +42,90 @@ jobs:
       - name: Test
         run: uv run pytest tests/ -v --tb=short --cov=src --cov-report=xml
 
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          flags: workers
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request' &&
+      github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always
+
+    # ============================================================================
+    # Security (Semgrep SAST - private repos only, replaces CodeQL)
+    # ============================================================================
+  semgrep:
+    name: Semgrep SAST Scan
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
+    permissions:
+      contents: read
+
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Semgrep scan
+        run: semgrep scan --config auto --error --verbose
+
+  ai_pr_review:
+    name: Qodo AI Code Review
+    if: github.event_name == 'issue_comment' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Load custom instructions
+        run: |
+          if [ -f ".github/best_practices.md" ]; then
+            INSTRUCTIONS=$(cat .github/best_practices.md)
+            RANDOM_EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "CUSTOM_INSTRUCTIONS<<$RANDOM_EOF" >> "$GITHUB_ENV"
+            echo "$INSTRUCTIONS" >> "$GITHUB_ENV"
+            echo "$RANDOM_EOF" >> "$GITHUB_ENV"
+          fi
+
+      - name: PR Agent action step
+        uses: qodo-ai/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
