@@ -2,20 +2,27 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| latest  | :white_check_mark: |
+
+Only the latest release is actively supported with security updates.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+If you discover a security vulnerability, please report it responsibly:
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+1. **Do NOT open a public GitHub issue.**
+2. Email **security@nqminh.dev** with:
+   - Description of the vulnerability
+   - Steps to reproduce
+   - Potential impact
+3. You will receive an acknowledgment within **48 hours**.
+4. A fix will be developed and released as soon as possible, typically within **7 days**.
+
+## Security Design
+
+- All credentials are injected at runtime via environment variables (Infisical + Modal Secrets).
+- No secrets are hardcoded or committed to the repository.
+- Worker endpoints are protected by bearer token authentication (`WORKER_API_KEY`) using constant-time comparison (`hmac.compare_digest`).
+- CI/CD workflows use pinned action versions and hardened runners.
