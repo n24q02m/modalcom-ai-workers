@@ -1,7 +1,6 @@
 [tools]
 python = "3.13"
 uv = "latest"
-infisical = "latest"
 
 [tasks.setup]
 description = "Setup development environment"
@@ -31,14 +30,6 @@ run = [
   "uv run ruff check --fix .",
   "uv run ruff format .",
 ]
-
-[tasks.convert]
-description = "[DEPRECATED] Convert HuggingFace model to SafeTensors → R2 (workers giờ tải từ HF Hub)"
-run = "infisical run --env=prod -- uv run python -m ai_workers convert"
-
-[tasks.upload]
-description = "[DEPRECATED] Upload converted model to CF R2"
-run = "infisical run --env=prod -- uv run python -m ai_workers upload"
 
 [tasks.deploy]
 description = "Deploy worker to Modal.com"

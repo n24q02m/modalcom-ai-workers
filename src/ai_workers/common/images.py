@@ -2,9 +2,8 @@
 
 Tất cả images dùng uv_pip_install (thay vì pip_install) cho tốc độ cài đặt nhanh hơn ~50%.
 
-Ba loại image:
+Hai loại image:
 - transformers_image(): Cho models served qua custom FastAPI (embedding, reranker, VL, OCR, ASR)
-- converter_image(): Cho convert pipeline (CPU-only, có HF Hub access) — DEPRECATED
 - onnx_converter_image(): Cho ONNX conversion pipeline (CPU-only)
 
 Models được tải trực tiếp từ HuggingFace Hub tại container startup
@@ -91,37 +90,6 @@ def transformers_audio_image() -> modal.Image:
         )
         .env({"HF_XET_HIGH_PERFORMANCE": "1"})
         .add_local_python_source("ai_workers")
-    )
-
-
-def converter_image() -> modal.Image:
-    """Build a Modal image cho convert pipeline (CPU-only).
-
-    Bao gồm tất cả dependencies cần thiết để convert mọi loại model:
-    text, vision-language, và audio. KHÔNG set HF_HUB_OFFLINE vì cần
-    download model từ HuggingFace Hub.
-    """
-    return (
-        modal.Image.debian_slim(python_version=PYTHON_VERSION)
-        .apt_install("ffmpeg", "libsndfile1")
-        .uv_pip_install(
-            "torch>=2.4",
-            "torchvision>=0.19",
-            # DeepSeek-OCR-2 custom code imports LlamaFlashAttention2 (removed in 4.46)
-            "transformers>=4.43,<4.46",
-            "safetensors>=0.4",
-            "accelerate>=1.0",
-            "huggingface_hub[hf_xet]",
-            "loguru>=0.7",
-            "Pillow>=10.0",
-            "librosa>=0.10",
-            "soundfile>=0.12",
-            # DeepSeek-OCR-2 custom modeling code dependencies
-            "addict>=2.4",
-            "einops>=0.8",
-            "matplotlib>=3.8",
-        )
-        .env({"HF_XET_HIGH_PERFORMANCE": "1"})  # Download nhanh hơn từ HF Hub
     )
 
 

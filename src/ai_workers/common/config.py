@@ -78,9 +78,6 @@ class ModelConfig:
     # Transformers options
     trust_remote_code: bool = True
 
-    # DEPRECATED: R2 storage path (no longer used — workers load from HF Hub directly)
-    r2_prefix: str = ""
-
     # Modal app name (auto-derived from name if not set)
     modal_app_name: str = ""
 
@@ -94,8 +91,6 @@ class ModelConfig:
     extra_load_kwargs: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.r2_prefix:
-            object.__setattr__(self, "r2_prefix", self.name)
         if not self.modal_app_name:
             app_name = f"ai-workers-{self.name}"
             object.__setattr__(self, "modal_app_name", app_name)
