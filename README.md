@@ -1,114 +1,115 @@
 # modalcom-ai-workers
 
-GPU-serverless AI workers trên [Modal.com](https://modal.com) cho embedding, reranking, OCR và ASR.
+[![CI](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 
-Tất cả endpoints tương thích với [LiteLLM](https://docs.litellm.ai/) proxy — các ứng dụng tiêu thụ (KnowledgePrism, EchoVault, ...) giao tiếp thông qua OpenAI/Cohere SDK chuẩn.
+GPU-serverless AI workers on [Modal.com](https://modal.com) for embedding, reranking, OCR, and ASR.
+
+All endpoints are [LiteLLM](https://docs.litellm.ai/)-compatible — consumer apps communicate through standard OpenAI/Cohere SDKs.
 
 ## Architecture
 
 ```
-Consumer Apps (KnowledgePrism, EchoVault)
-         │
-    LiteLLM Proxy (routing + auth)
-         │
-    ┌────┼────────────────────────────────────┐
-    │    Modal.com GPU Serverless              │
-    │                                          │
-    │  ┌─────────────┐  ┌─────────────┐       │
-    │  │ Embedding    │  │ Reranker    │       │
-    │  │ Light (T4)   │  │ Light (T4)  │       │
-    │  │ Heavy (A10G) │  │ Heavy (A10G)│       │
-    │  └─────────────┘  └─────────────┘       │
-    │                                          │
-    │  ┌─────────────┐  ┌─────────────┐       │
-    │  │ VL Embedding │  │ VL Reranker │       │
-    │  │ Light (T4)   │  │ Light (T4)  │       │
-    │  │ Heavy (A10G) │  │ Heavy (A10G)│       │
-    │  └─────────────┘  └─────────────┘       │
-    │                                          │
-    │  ┌─────────────┐  ┌─────────────┐       │
-    │  │ OCR (A10G)   │  │ ASR (T4)    │       │
-    │  │ BF16         │  │ FP16        │       │
-    │  └─────────────┘  └─────────────┘       │
-    │                                          │
-    │  ┌──────────────────────────────┐       │
-    │  │ Converter (CPU, 32GB RAM)    │       │
-    │  │ HF Hub → SafeTensors → R2   │       │
-    │  └──────────────────────────────┘       │
-    │                                          │
-    │  CloudBucketMount ←→ CF R2 (weights)    │
-    └──────────────────────────────────────────┘
+Consumer Apps
+      │
+ LiteLLM Proxy (routing + auth)
+      │
+ ┌────┼────────────────────────────────────┐
+ │    Modal.com GPU Serverless              │
+ │                                          │
+ │  ┌─────────────┐  ┌─────────────┐       │
+ │  │ Embedding    │  │ Reranker    │       │
+ │  │ (A10G)      │  │ (A10G)      │       │
+ │  └─────────────┘  └─────────────┘       │
+ │                                          │
+ │  ┌─────────────┐  ┌─────────────┐       │
+ │  │ VL Embedding │  │ VL Reranker │       │
+ │  │ (A10G)      │  │ (A10G)      │       │
+ │  └─────────────┘  └─────────────┘       │
+ │                                          │
+ │  ┌─────────────┐  ┌─────────────┐       │
+ │  │ OCR (A10G)   │  │ ASR (T4)    │       │
+ │  │ BF16         │  │ FP16        │       │
+ │  └─────────────┘  └─────────────┘       │
+ │                                          │
+ │  Models loaded from HuggingFace Hub      │
+ │  via Xet protocol (~1GB/s)               │
+ └──────────────────────────────────────────┘
 ```
 
 ## Worker Matrix
 
-| Model | Task | Tier | GPU | Precision | Endpoint |
-|-------|------|------|-----|-----------|----------|
-| Qwen3-Embedding-0.6B | Embedding | Light | T4 | FP16 | `/v1/embeddings` |
-| Qwen3-Embedding-8B | Embedding | Heavy | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-Reranker-0.6B | Reranker | Light | T4 | FP16 | `/v1/rerank` |
-| Qwen3-Reranker-8B | Reranker | Heavy | A10G | FP16 | `/v1/rerank` |
-| Qwen3-VL-Embedding-2B | VL Embed | Light | T4 | FP16 | `/v1/embeddings` |
-| Qwen3-VL-Embedding-8B | VL Embed | Heavy | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-VL-Reranker-2B | VL Rerank | Light | T4 | FP16 | `/v1/rerank` |
-| Qwen3-VL-Reranker-8B | VL Rerank | Heavy | A10G | FP16 | `/v1/rerank` |
-| DeepSeek-OCR-2 | OCR | Heavy | A10G | BF16 | `/v1/chat/completions` |
-| Whisper-Large-v3 | ASR | Heavy | T4 | FP16 | `/v1/audio/transcriptions` |
+| Model | Task | GPU | Precision | Endpoint |
+|-------|------|-----|-----------|----------|
+| Qwen3-Embedding-0.6B | Embedding | A10G | FP16 | `/v1/embeddings` |
+| Qwen3-Embedding-8B | Embedding | A10G | FP16 | `/v1/embeddings` |
+| Qwen3-Reranker-0.6B | Reranker | A10G | FP16 | `/v1/rerank` |
+| Qwen3-Reranker-8B | Reranker | A10G | FP16 | `/v1/rerank` |
+| Qwen3-VL-Embedding-2B | VL Embed | A10G | FP16 | `/v1/embeddings` |
+| Qwen3-VL-Embedding-8B | VL Embed | A10G | FP16 | `/v1/embeddings` |
+| Qwen3-VL-Reranker-2B | VL Rerank | A10G | FP16 | `/v1/rerank` |
+| Qwen3-VL-Reranker-8B | VL Rerank | A10G | FP16 | `/v1/rerank` |
+| DeepSeek-OCR-2 | OCR | A10G | BF16 | `/v1/chat/completions` |
+| Whisper-Large-v3 | ASR | T4 | FP16 | `/v1/audio/transcriptions` |
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.13 + [mise](https://mise.jdx.dev/)
-- [Infisical CLI](https://infisical.com/docs/cli/overview) (quản lý secrets)
-- Modal account + token
-- CF R2 bucket for model weights
+- Python 3.13 + [uv](https://docs.astral.sh/uv/)
+- [Modal](https://modal.com) account + token (`modal token new`)
 
 ### Setup
 
 ```bash
 # Install dependencies
-mise install
-mise run setup
-
-# Or manually
 uv sync --all-groups
+
+# Or with mise
+mise install && mise run setup
 ```
 
-### Pipeline: Convert → Deploy
-
-Convert chạy trên Modal CPU (32GB RAM) và ghi thẳng weights lên R2
-qua CloudBucketMount — không cần máy local mạnh, không cần upload riêng.
+### Deploy
 
 ```bash
-# 1. Convert HF model → SafeTensors → ghi thẳng lên R2 (chạy trên Modal CPU)
-mise run convert qwen3-embedding-0.6b
-
-# 2. Deploy worker lên Modal (GPU serverless)
-mise run deploy qwen3-embedding-0.6b
-
-# Deploy tất cả workers
-mise run deploy-all
-```
-
-### CLI Commands
-
-```bash
-# Liệt kê models trong registry
-python -m ai_workers convert list
+# List available models
 python -m ai_workers deploy list
 
-# Convert model (chạy trên Modal CPU, ghi thẳng R2)
-python -m ai_workers convert qwen3-embedding-0.6b
-python -m ai_workers convert all              # convert tất cả
-python -m ai_workers convert qwen3-embedding-0.6b --force  # ghi đè
+# Deploy a single worker
+python -m ai_workers deploy qwen3-embedding-0.6b
 
-# Upload thủ công (chỉ khi cần upload từ local)
-python -m ai_workers upload qwen3-embedding-0.6b --backup-gdrive
-
-# Deploy lên Modal
-python -m ai_workers deploy qwen3-embedding-0.6b --dry-run
+# Deploy all workers
 python -m ai_workers deploy --all
+
+# Dry run (show what would be deployed)
+python -m ai_workers deploy qwen3-embedding-0.6b --dry-run
+```
+
+### ONNX/GGUF Conversion
+
+Convert models to optimized formats and push to HuggingFace Hub:
+
+```bash
+# ONNX (INT8 + Q4F16)
+python -m ai_workers onnx-convert qwen3-embedding-0.6b
+
+# GGUF (Q4_K_M via llama.cpp)
+python -m ai_workers gguf-convert qwen3-embedding-0.6b
+```
+
+## LiteLLM Integration
+
+Workers expose OpenAI/Cohere-compatible endpoints. See [litellm/README.md](litellm/README.md) for proxy configuration and [litellm/config.yaml](litellm/config.yaml) for a ready-to-use config template.
+
+```yaml
+# Example: register embedding worker in LiteLLM proxy
+model_list:
+  - model_name: qwen3-embedding-0.6b
+    litellm_params:
+      model: openai/qwen3-embedding-0.6b
+      api_base: https://<workspace>--ai-workers-embedding-serve.modal.run
+      api_key: your-worker-api-key
 ```
 
 ## Project Structure
@@ -117,18 +118,16 @@ python -m ai_workers deploy --all
 src/ai_workers/
 ├── common/
 │   ├── config.py       # Model registry (single source of truth)
-│   ├── r2.py           # CF R2 storage + CloudBucketMount
 │   ├── auth.py         # Bearer token middleware
-│   ├── images.py       # Modal container images (workers + converter)
+│   ├── images.py       # Modal container images
 │   └── logging.py      # Structured logging
 ├── cli/
 │   ├── __main__.py     # CLI entry point
-│   ├── convert.py      # Convert qua Modal CPU → ghi thẳng R2
-│   ├── upload.py       # Upload thủ công từ local → R2 (tuỳ chọn)
-│   └── deploy.py       # Deploy workers lên Modal
+│   ├── deploy.py       # Deploy workers to Modal
+│   ├── onnx_convert.py # ONNX conversion (INT8 + Q4F16)
+│   └── gguf_convert.py # GGUF conversion (Q4_K_M)
 └── workers/
-    ├── converter.py    # Modal CPU app — convert HF → SafeTensors → R2
-    ├── embedding.py    # Text embedding (vLLM)
+    ├── embedding.py    # Text embedding
     ├── reranker.py     # Text reranker (yes/no scoring)
     ├── vl_embedding.py # Vision-Language embedding
     ├── vl_reranker.py  # Vision-Language reranker
@@ -145,70 +144,43 @@ docs/
 
 ```bash
 # Lint
-mise run lint
+uv run ruff check . && uv run ruff format --check .
 
-# Fix lint issues
-mise run fix
+# Type check
+uv run ty check
 
 # Test
-mise run test
+uv run pytest
+
+# Auto-fix
+uv run ruff check --fix . && uv run ruff format .
 ```
-
-## CI (GitHub Actions)
-
-| Workflow | File | Trigger | Mô tả |
-|----------|------|---------|-------|
-| CI | `ci.yml` | PR + push → main | Lint, type check, test |
-
-Convert và deploy chạy CLI local → trigger Modal.com. Xem [Pipeline: Convert → Deploy](#pipeline-convert--deploy).
 
 ## Secrets
 
-### Infisical (App Secrets)
+### Environment Variables (for deployment)
 
-6 secrets trong Infisical (env=prod), inject qua `infisical run --env=prod --`:
+| Variable | Description | Used by |
+|----------|-------------|---------|
+| `MODAL_TOKEN_ID` | Modal API token ID | Deploy |
+| `MODAL_TOKEN_SECRET` | Modal API token secret | Deploy |
 
-| Secret | Mô tả | Dùng bởi |
-|--------|-------|----------|
-| `MODAL_TOKEN_ID` | Modal API token ID | Convert, Deploy |
-| `MODAL_TOKEN_SECRET` | Modal API token secret | Convert, Deploy |
-| `R2_ENDPOINT_URL` | R2 endpoint (`https://<account-id>.r2.cloudflarestorage.com`) | Convert, Deploy |
-| `R2_ACCESS_KEY_ID` | R2 API token access key | Upload (boto3) |
-| `R2_SECRET_ACCESS_KEY` | R2 API token secret key | Upload (boto3) |
-| `R2_BUCKET_NAME` | R2 bucket name | Convert, Deploy, Upload |
-
-> **R2_ENDPOINT_URL** và **R2_BUCKET_NAME** cần có khi chạy `modal deploy` hoặc convert.
-> CloudBucketMount được resolve lúc import module (module-level `get_modal_cloud_bucket_mount()`
-> đọc env vars), KHÔNG phải lúc container chạy.
-
-mise tasks (`convert`, `deploy`, `upload`, `deploy-all`) đã tích hợp sẵn `infisical run --env=prod --`.
-
-### Modal Secrets (trên Modal dashboard)
-
-Tạo trên Modal dashboard hoặc CLI:
+### Modal Secrets (on Modal dashboard)
 
 ```bash
-# R2 credentials (cho CloudBucketMount — bắt buộc dùng tên key S3-compatible)
-modal secret create r2-credentials \
-  AWS_ACCESS_KEY_ID="<r2-access-key-id>" \
-  AWS_SECRET_ACCESS_KEY="<r2-secret-access-key>"
-
-# Worker API key
+# Worker API key (protects endpoints)
 modal secret create worker-api-key \
   WORKER_API_KEY="your-secret-key"
 ```
 
-> **Lưu ý:** CloudBucketMount yêu cầu secret có key names `AWS_ACCESS_KEY_ID` và
-> `AWS_SECRET_ACCESS_KEY` (S3-compatible). Đây là giá trị của R2 API token,
-> KHÔNG phải AWS credentials.
->
-> R2 token cần quyền **read + write + list** (cho converter ghi weights lên R2).
-> Workers chỉ đọc (read-only mount), converter ghi (writable mount).
+## Adding New Models
 
-## Thêm Model Mới
+See [docs/ADD_NEW_MODEL.md](docs/ADD_NEW_MODEL.md) for a step-by-step guide.
 
-Xem [docs/ADD_NEW_MODEL.md](docs/ADD_NEW_MODEL.md) để biết cách thêm model mới vào hệ thống.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 
 ## License
 
-MIT
+[MIT](LICENSE)

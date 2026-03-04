@@ -88,13 +88,3 @@ model_list:
       model: openai/whisper-large-v3
       api_base: https://<your-modal-workspace>--ai-workers-whisper-large-v3-asrserver-serve.modal.run
       api_key: ${WORKER_API_KEY}
-
-# Logging (optional — integrate with Langfuse)
-# litellm_settings:
-#   success_callback: ["langfuse"]
-#   failure_callback: ["langfuse"]
-#
-# environment_variables:
-#   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-#   LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-#   LANGFUSE_HOST: ${LANGFUSE_HOST}

@@ -65,9 +65,9 @@ mise run deploy-all  # Deploy all workers
 3. Third-party (`modal`, `fastapi`, `loguru`, `pydantic`)
 4. Local (`ai_workers.common.config`, `ai_workers.common.auth`)
 
-**Lazy imports**: Heavy deps (`torch`, `transformers`, `boto3`, `PIL`) imported INSIDE functions, not at module level. This is deliberate for Modal container compatibility and fast CLI startup.
+**Lazy imports**: Heavy deps (`torch`, `transformers`, `PIL`) imported INSIDE functions, not at module level. This is deliberate for Modal container compatibility and fast CLI startup.
 
-**`TYPE_CHECKING` guard** for type-only imports (e.g., `Path` in `r2.py`).
+**`TYPE_CHECKING` guard** for type-only imports.
 
 ```python
 from __future__ import annotations
@@ -128,11 +128,10 @@ src/ai_workers/
   __init__.py, __main__.py    # Package + CLI entry
   common/                     # Shared infrastructure
     config.py                 # Model registry (single source of truth)
-    r2.py                     # R2 storage helpers
     auth.py                   # Bearer token middleware
     images.py                 # Modal container image builders
     logging.py                # Structured logging config
-  cli/                        # Typer CLI commands (deploy, convert, upload)
+  cli/                        # Typer CLI commands (deploy, onnx-convert, gguf-convert)
   workers/                    # Modal.com worker definitions
     embedding.py, reranker.py, vl_embedding.py, vl_reranker.py, ocr.py, asr.py
     onnx_converter.py, gguf_converter.py
@@ -143,7 +142,7 @@ tests/                        # Unit tests
 
 - Module-level docstrings on every file
 - Google-style docstrings: `Args:`, `Returns:` sections
-- Vietnamese in operational logs/comments; English for identifiers and docstrings
+- All comments and docstrings in English
 
 ### Commits
 

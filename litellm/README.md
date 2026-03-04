@@ -1,31 +1,31 @@
-# Cấu hình LiteLLM Proxy
+# LiteLLM Proxy Configuration
 
-File `config.yaml` cấu hình LiteLLM Proxy để route các request đến các Modal workers.
+The `config.yaml` file configures LiteLLM Proxy to route requests to Modal workers.
 
-## Cài đặt
+## Setup
 
-1. Thay `<your-modal-workspace>` bằng tên workspace Modal thực tế
-2. Thiết lập biến môi trường:
-   - `LITELLM_MASTER_KEY`: API key cho LiteLLM proxy
-   - `WORKER_API_KEY`: API key chung cho tất cả Modal workers
+1. Replace `<your-modal-workspace>` with your actual Modal workspace name
+2. Set environment variables:
+   - `LITELLM_MASTER_KEY`: API key for the LiteLLM proxy
+   - `WORKER_API_KEY`: Shared API key for all Modal workers
 
-3. Chạy proxy:
+3. Run the proxy:
    ```bash
    litellm --config litellm/config.yaml --port 4000
    ```
 
-## Quy ước đặt tên Model
+## Model Naming Convention
 
-| Task | LiteLLM Prefix | Ví dụ |
-|------|---------------|-------|
-| Embedding | `openai/` | `openai/qwen3-embedding-0.6b` |
-| Reranker | `cohere/` | `cohere/qwen3-reranker-0.6b` |
-| VL Embedding | `openai/` | `openai/qwen3-vl-embedding-2b` |
-| VL Reranker | `cohere/` | `cohere/qwen3-vl-reranker-2b` |
-| OCR | `openai/` | `openai/deepseek-ocr-2` |
-| ASR | `openai/` | `openai/whisper-large-v3` |
+| Task         | LiteLLM Prefix | Example                          |
+|--------------|---------------|----------------------------------|
+| Embedding    | `openai/`     | `openai/qwen3-embedding-0.6b`   |
+| Reranker     | `cohere/`     | `cohere/qwen3-reranker-0.6b`    |
+| VL Embedding | `openai/`     | `openai/qwen3-vl-embedding-2b`  |
+| VL Reranker  | `cohere/`     | `cohere/qwen3-vl-reranker-2b`   |
+| OCR          | `openai/`     | `openai/deepseek-ocr-2`         |
+| ASR          | `openai/`     | `openai/whisper-large-v3`        |
 
-## Sử dụng từ phía Consumer
+## Consumer Usage
 
 ### Python (OpenAI SDK)
 
@@ -79,16 +79,16 @@ curl -X POST http://localhost:4000/v1/rerank \
   -d '{"model": "qwen3-reranker-0.6b", "query": "What is AI?", "documents": ["AI is...", "Cats are..."]}'
 ```
 
-## Định dạng URL Endpoint
+## Endpoint URL Format
 
-Định dạng URL endpoint của Modal:
+Modal endpoint URL format:
 ```
 https://<workspace>--<app-name>-<classname-lowercase>-serve.modal.run
 ```
 
-Ví dụ: workspace `my-workspace`, app `ai-workers-qwen3-embedding-0-6b`, class `EmbeddingLightServer`:
+Example: workspace `my-workspace`, app `ai-workers-embedding`, class `EmbeddingServer`:
 ```
-https://my-workspace--ai-workers-qwen3-embedding-0-6b-embeddinglightserver-serve.modal.run
+https://my-workspace--ai-workers-embedding-embeddingserver-serve.modal.run
 ```
 
-> **Lưu ý:** Sau khi deploy lần đầu, lấy URL chính xác bằng `modal app list` hoặc Modal dashboard.
+> **Note:** After the first deployment, get the exact URL from `modal app list` or the Modal dashboard.
