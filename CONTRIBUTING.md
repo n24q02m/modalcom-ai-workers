@@ -1,0 +1,167 @@
+# Contributing to modalcom-ai-workers
+
+Thank you for your interest in contributing to modalcom-ai-workers! This guide will help you get started.
+
+## Getting Started
+
+### Prerequisites
+
+- **Python 3.13+** and **uv**
+- Git
+- A GitHub account
+- (Optional) A [Modal](https://modal.com/) account for deployment testing
+
+### Setup Development Environment
+
+1. **Fork the repository** and clone your fork
+
+```bash
+git clone https://github.com/YOUR_USERNAME/modalcom-ai-workers
+cd modalcom-ai-workers
+```
+
+2. **Install dependencies**
+
+```bash
+uv sync --all-groups
+```
+
+3. **Run checks**
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check
+```
+
+> **Note:** Deployment requires a Modal account and secrets configured (either via [Infisical](https://infisical.com/) or plain environment variables).
+
+## Development Workflow
+
+### Making Changes
+
+1. Create a new branch: `git checkout -b feature/your-feature-name`
+2. Make your changes
+3. Run lint: `uv run ruff check . && uv run ruff format --check . && uv run ty check`
+4. Run tests: `uv run pytest`
+5. Commit your changes (see [Commit Convention](#commit-convention))
+6. Push to your fork: `git push origin feature/your-feature-name`
+7. Open a Pull Request
+
+### Testing
+
+```bash
+uv run pytest              # Run all tests
+uv run pytest -v           # Verbose output
+uv run pytest --tb=short   # Short tracebacks
+```
+
+## Commit Convention
+
+We use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```text
+<type>[optional scope]: <description>
+```
+
+### Types
+
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes
+- `refactor`: Code refactoring
+- `perf`: Performance improvements
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+- `ci`: CI/CD changes
+- `build`: Build system changes
+
+### Examples
+
+```text
+feat(workers): add new embedding model support
+fix(auth): handle missing API key gracefully
+docs: update deployment instructions
+```
+
+## Release Process
+
+Releases are automated using **python-semantic-release**. We strictly follow the **Conventional Commits** specification to determine version bumps and generate changelogs automatically.
+
+### How to Release
+
+1. Create a Pull Request with your changes.
+2. Ensure your commit messages follow the convention above.
+3. Merge the PR to `main`.
+4. A maintainer triggers the CD workflow manually via **workflow_dispatch**.
+
+You do **not** need to create manual tags or changelog entries.
+
+## Pull Request Guidelines
+
+- Keep PRs focused on a single feature or fix
+- Update documentation if needed
+- Add tests for new functionality
+- Ensure all checks pass
+
+### PR Checklist
+
+Before submitting your PR, ensure:
+
+- [ ] Code follows Python best practices
+- [ ] All tests pass (`uv run pytest`)
+- [ ] Linting passes (`uv run ruff check .`)
+- [ ] Formatting is correct (`uv run ruff format --check .`)
+- [ ] Type checking passes (`uv run ty check`)
+- [ ] Commit messages follow **Conventional Commits**
+- [ ] Documentation updated (if needed)
+
+## Code Style
+
+This project uses **Ruff** for formatting and linting, and **ty** for type checking.
+
+```bash
+uv run ruff check .       # Check for issues
+uv run ruff check --fix . # Auto-fix issues
+uv run ruff format .      # Format code
+uv run ty check           # Type check
+```
+
+## Project Structure
+
+```text
+modalcom-ai-workers/
+├── src/
+│   └── ai_workers/
+│       ├── __init__.py
+│       ├── __main__.py        # Package + CLI entry
+│       ├── common/            # Shared infrastructure
+│       │   ├── config.py      # Model registry (single source of truth)
+│       │   ├── auth.py        # Bearer token middleware
+│       │   ├── images.py      # Modal container image builders
+│       │   └── logging.py     # Structured logging config
+│       ├── cli/               # Typer CLI commands (deploy, onnx-convert, gguf-convert)
+│       └── workers/           # Modal.com worker definitions
+├── litellm/                   # LiteLLM proxy configuration
+├── tests/
+├── pyproject.toml
+└── README.md
+```
+
+## Questions?
+
+Feel free to open an issue for:
+
+- Bug reports
+- Feature requests
+- Questions about the codebase
+- Discussion about architecture
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the MIT License.
+
+---
+
+**Thank you for contributing!**
