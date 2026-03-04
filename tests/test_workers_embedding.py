@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workers.workers.embedding import EmbeddingServer, MODEL_CONFIGS
+from ai_workers.workers.embedding import MODEL_CONFIGS, EmbeddingServer
 
 
 @pytest.fixture()

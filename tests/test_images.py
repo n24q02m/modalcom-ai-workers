@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
-
 
 def test_transformers_image_default():
     """transformers_image() with flash_attn=False returns a mock modal.Image chain."""

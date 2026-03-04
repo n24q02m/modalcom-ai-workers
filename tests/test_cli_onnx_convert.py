@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
-from ai_workers.cli.onnx_convert import app, list_onnx_models
+from ai_workers.cli.onnx_convert import app
 from ai_workers.workers.onnx_converter import ONNX_MODELS
 
 runner = CliRunner()
@@ -134,10 +132,10 @@ def test_onnx_convert_skipped(monkeypatch):
 
 
 def test_onnx_convert_auth_error():
-    AuthError = type("AuthError", (Exception,), {})
+    auth_error_cls = type("AuthError", (Exception,), {})
 
     mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(side_effect=AuthError("not authenticated"))
+    mock_cm.__enter__ = MagicMock(side_effect=auth_error_cls("not authenticated"))
     mock_cm.__exit__ = MagicMock(return_value=False)
 
     mock_onnx_convert_app = MagicMock()
@@ -148,7 +146,7 @@ def test_onnx_convert_auth_error():
         patch("ai_workers.cli.onnx_convert.onnx_convert_app", mock_onnx_convert_app),
     ):
         mock_modal.enable_output.return_value = mock_cm
-        mock_modal.exception.AuthError = AuthError
+        mock_modal.exception.AuthError = auth_error_cls
         result = runner.invoke(app, ["qwen3-embedding-0.6b-onnx"])
 
     assert result.exit_code == 1

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import io
 import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workers.workers.asr import ASRServer, MODEL_NAME
+from ai_workers.workers.asr import MODEL_NAME, ASRServer
 
 
 @pytest.fixture()

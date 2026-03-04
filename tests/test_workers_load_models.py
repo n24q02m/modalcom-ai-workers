@@ -8,13 +8,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ai_workers.workers.embedding import EmbeddingServer
 from ai_workers.workers.reranker import RerankerServer
 from ai_workers.workers.vl_embedding import VLEmbeddingServer
 from ai_workers.workers.vl_reranker import VLRerankerServer
-
 
 # ---------------------------------------------------------------------------
 # EmbeddingServer — load_models
@@ -120,9 +117,8 @@ def test_reranker_load_models_populates_dicts():
                 AutoTokenizer=MagicMock(from_pretrained=MagicMock(return_value=mock_tokenizer)),
             ),
         },
-    ):
-        with patch("torch.float16", torch.float16):
-            server.load_models()
+    ), patch("torch.float16", torch.float16):
+        server.load_models()
 
     assert len(server.models) == 2
     assert len(server.tokenizers) == 2
@@ -192,9 +188,8 @@ def test_vl_embedding_load_models_populates_dicts():
                 AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
             ),
         },
-    ):
-        with patch("torch.float16", torch.float16):
-            server.load_models()
+    ), patch("torch.float16", torch.float16):
+        server.load_models()
 
     assert len(server.models) == 2
     assert len(server.processors) == 2
@@ -310,9 +305,8 @@ def test_vl_reranker_load_models_populates_dicts():
                 AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
             ),
         },
-    ):
-        with patch("torch.float16", torch.float16):
-            server.load_models()
+    ), patch("torch.float16", torch.float16):
+        server.load_models()
 
     assert len(server.models) == 2
     assert len(server.processors) == 2

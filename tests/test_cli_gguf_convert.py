@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from ai_workers.cli.gguf_convert import app
@@ -127,10 +126,10 @@ def test_gguf_convert_skipped():
 
 
 def test_gguf_convert_auth_error():
-    AuthError = type("AuthError", (Exception,), {})
+    auth_error_cls = type("AuthError", (Exception,), {})
 
     mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(side_effect=AuthError("no auth"))
+    mock_cm.__enter__ = MagicMock(side_effect=auth_error_cls("no auth"))
     mock_cm.__exit__ = MagicMock(return_value=False)
 
     mock_gguf_convert_app = MagicMock()
@@ -141,7 +140,7 @@ def test_gguf_convert_auth_error():
         patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
     ):
         mock_modal.enable_output.return_value = mock_cm
-        mock_modal.exception.AuthError = AuthError
+        mock_modal.exception.AuthError = auth_error_cls
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 1

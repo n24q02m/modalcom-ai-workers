@@ -161,7 +161,6 @@ class TestDeployListSubcommand:
 
     def test_list_shows_table(self) -> None:
         """list_workers should print a Rich table without error."""
-        from io import StringIO
 
         from ai_workers.cli.deploy import list_workers
 

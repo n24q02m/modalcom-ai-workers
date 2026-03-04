@@ -91,9 +91,11 @@ ignore = [
 known-first-party = ["ai_workers"]
 
 # --- ty ---
-[tool.ty]
-src = ["src"]
+[tool.ty.environment]
 python-version = "3.13"
+
+[tool.ty.src]
+include = ["src"]
 
 # --- pytest ---
 [tool.pytest.ini_options]

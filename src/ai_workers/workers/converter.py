@@ -82,9 +82,9 @@ def convert_model(
     # AutoModelForImageTextToText chỉ có từ transformers >= 4.46
     # Converter image pin transformers < 4.46 cho DeepSeek-OCR-2 compatibility
     try:
-        from transformers import AutoModelForImageTextToText
+        from transformers import AutoModelForImageTextToText as _AutoModelForImageTextToText
     except ImportError:
-        AutoModelForImageTextToText = None
+        _AutoModelForImageTextToText = None  # type: ignore[assignment]  # noqa: N806
 
     output_path = Path(MODELS_MOUNT_PATH) / model_name
 
@@ -112,7 +112,7 @@ def convert_model(
     model_class_map: dict[str, type | None] = {
         "AutoModel": AutoModel,
         "AutoModelForCausalLM": AutoModelForCausalLM,
-        "AutoModelForImageTextToText": AutoModelForImageTextToText,
+        "AutoModelForImageTextToText": _AutoModelForImageTextToText,
         "AutoModelForSpeechSeq2Seq": AutoModelForSpeechSeq2Seq,
     }
     cls = model_class_map.get(model_class)

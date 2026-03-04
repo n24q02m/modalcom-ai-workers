@@ -33,7 +33,7 @@ class TestUploadCLIExtra:
     def test_upload_all_calls_upload_single_for_each_model(self, tmp_path: Path) -> None:
         """model='all' should call _upload_single for each model (line 54-59)."""
         with patch("ai_workers.cli.upload._upload_single") as mock_single:
-            result = self._invoke(["all", "--converted-dir", str(tmp_path)])
+            self._invoke(["all", "--converted-dir", str(tmp_path)])
         assert mock_single.call_count > 0
 
     def test_upload_with_backup_gdrive_calls_sync(self, tmp_path: Path) -> None:
@@ -50,7 +50,7 @@ class TestUploadCLIExtra:
             patch("ai_workers.cli.upload.upload_directory", mock_upload),
             patch("ai_workers.cli.upload._sync_gdrive") as mock_sync,
         ):
-            result = self._invoke(
+            self._invoke(
                 [
                     "--backup-gdrive",
                     "qwen3-embedding-0.6b",
@@ -80,9 +80,11 @@ class TestUploadSingleExtra:
         model_dir.mkdir()
         (model_dir / "model.safetensors").write_bytes(b"x")
 
-        with patch("ai_workers.cli.upload.R2Config.from_env", side_effect=ValueError("No env")):
-            with pytest.raises(ClickExit):
-                _upload_single("qwen3-embedding-0.6b", tmp_path)
+        with (
+            patch("ai_workers.cli.upload.R2Config.from_env", side_effect=ValueError("No env")),
+            pytest.raises(ClickExit),
+        ):
+            _upload_single("qwen3-embedding-0.6b", tmp_path)
 
     def test_upload_generic_exception_exits(self, tmp_path: Path) -> None:
         """Generic exception from upload_directory should raise Exit (lines 93-95)."""

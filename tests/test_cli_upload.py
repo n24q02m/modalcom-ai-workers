@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from ai_workers.cli.upload import app
@@ -55,10 +54,10 @@ def test_upload_single_success():
         mock_upload_dir = MagicMock(return_value=3)
 
         with (
-            patch("ai_workers.cli.upload.R2Config") as mock_R2Config,
+            patch("ai_workers.cli.upload.R2Config") as mock_r2_config_cls,
             patch("ai_workers.cli.upload.upload_directory", mock_upload_dir),
         ):
-            mock_R2Config.from_env.return_value = mock_r2_config
+            mock_r2_config_cls.from_env.return_value = mock_r2_config
             result = runner.invoke(
                 app, ["qwen3-embedding-0.6b", "--converted-dir", str(converted_dir)]
             )
@@ -79,8 +78,8 @@ def test_upload_r2_config_missing_exits_1():
         model_dir = converted_dir / "qwen3-embedding-0.6b"
         model_dir.mkdir()
 
-        with patch("ai_workers.cli.upload.R2Config") as mock_R2Config:
-            mock_R2Config.from_env.side_effect = ValueError("R2_BUCKET not set")
+        with patch("ai_workers.cli.upload.R2Config") as mock_r2_config_cls:
+            mock_r2_config_cls.from_env.side_effect = ValueError("R2_BUCKET not set")
             result = runner.invoke(
                 app, ["qwen3-embedding-0.6b", "--converted-dir", str(converted_dir)]
             )
@@ -110,10 +109,10 @@ def test_upload_all():
         mock_upload_dir = MagicMock(return_value=1)
 
         with (
-            patch("ai_workers.cli.upload.R2Config") as mock_R2Config,
+            patch("ai_workers.cli.upload.R2Config") as mock_r2_config_cls,
             patch("ai_workers.cli.upload.upload_directory", mock_upload_dir),
         ):
-            mock_R2Config.from_env.return_value = mock_r2_config
+            mock_r2_config_cls.from_env.return_value = mock_r2_config
             result = runner.invoke(app, ["all", "--converted-dir", str(converted_dir)])
 
     assert result.exit_code == 0

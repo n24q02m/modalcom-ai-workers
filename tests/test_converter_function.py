@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Module-level mock for converter (broken import workaround)
 # ---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ def _make_convert_model_fn():
             if "converter" in key and "workers" in key:
                 del sys.modules[key]
 
-        import ai_workers.workers.converter as mod  # noqa: PLC0415
+        import ai_workers.workers.converter as mod
 
         return mod.convert_model, mod
 
@@ -398,21 +397,15 @@ class TestConvertModelErrors:
                     "loguru": MagicMock(logger=MagicMock()),
                 },
             ),
+            pytest.raises(ImportError),
         ):
-            # The function catches ImportError in 'try: from transformers import AutoModelForImageTextToText'
-            # but when transformers IS in sys.modules, the import succeeds (returns the mock).
-            # So with AutoModelForImageTextToText = None in the stub, cls will be None -> raises ImportError.
-            # However the 'from transformers import AutoModelForImageTextToText' uses the stub
-            # which has AutoModelForImageTextToText=None, so the import itself won't raise;
-            # it's cls=None that causes the error.
-            with pytest.raises(ImportError):
-                convert_model(
-                    model_name="test",
-                    hf_id="Org/test",
-                    precision="fp16",
-                    model_class="AutoModelForImageTextToText",
-                    task="vl-embedding",
-                    trust_remote_code=False,
-                    extra_load_kwargs={},
-                    force=True,
-                )
+            convert_model(
+                model_name="test",
+                hf_id="Org/test",
+                precision="fp16",
+                model_class="AutoModelForImageTextToText",
+                task="vl-embedding",
+                trust_remote_code=False,
+                extra_load_kwargs={},
+                force=True,
+            )
