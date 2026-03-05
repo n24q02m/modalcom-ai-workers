@@ -22,7 +22,7 @@ If you discover a security vulnerability, please report it responsibly:
 
 ## Security Design
 
-- All credentials are injected at runtime via environment variables (Infisical + Modal Secrets).
+- All credentials are injected at runtime via environment variables (secrets manager + Modal Secrets).
 - No secrets are hardcoded or committed to the repository.
 - Worker endpoints are protected by bearer token authentication (`WORKER_API_KEY`) using constant-time comparison (`hmac.compare_digest`).
 - CI/CD workflows use pinned action versions and hardened runners.

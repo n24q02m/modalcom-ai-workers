@@ -86,6 +86,8 @@ jobs:
         with:
           python-version: '3.13'
 
+      # Note: CD pipeline uses Infisical for secrets injection.
+      # Fork contributors: set HF_TOKEN, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET as GitHub repo secrets instead.
       - name: Install Infisical CLI
         run: |
           curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo -E bash

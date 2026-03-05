@@ -152,7 +152,6 @@ class MyNewServer:
 
 | Use Case                    | Function                               | Packages                          |
 |-----------------------------|----------------------------------------|-----------------------------------|
-| vLLM embedding              | `vllm_image()`                         | vllm, torch, transformers         |
 | Transformers (text/vision)  | `transformers_image()`                 | torch, transformers, Pillow       |
 | Transformers + Flash Attn   | `transformers_image(flash_attn=True)`  | + flash-attn                      |
 | Audio models                | `transformers_audio_image()`           | + librosa, soundfile              |

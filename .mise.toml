@@ -31,6 +31,10 @@ run = [
   "uv run ruff format .",
 ]
 
+# Deployment tasks require secrets (HF_TOKEN, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET).
+# Internal: uses `infisical run` for secret injection.
+# Public contributors: export secrets manually or use your preferred secrets manager.
+
 [tasks.deploy]
 description = "Deploy worker to Modal.com"
 run = "infisical run --env=prod -- uv run python -m ai_workers deploy"

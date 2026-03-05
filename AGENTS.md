@@ -26,7 +26,7 @@ mise run lint        # ruff check + ruff format --check + ty check
 mise run test        # pytest
 mise run fix         # ruff check --fix + ruff format
 
-# Deployment (requires Infisical secrets)
+# Deployment (requires secrets: HF_TOKEN, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET)
 mise run deploy      # Deploy single worker (interactive)
 mise run deploy-all  # Deploy all workers
 ```
