@@ -3,6 +3,7 @@
 **GPU-serverless AI workers on Modal.com for embedding, reranking, OCR, and ASR**
 
 [![CI](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/n24q02m/modalcom-ai-workers/graph/badge.svg?token=5Z9ETF0G7B)](https://codecov.io/gh/n24q02m/modalcom-ai-workers)
 [![License](https://img.shields.io/github/license/n24q02m/modalcom-ai-workers)](LICENSE)
 
 [![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)](#)
