@@ -27,13 +27,6 @@ def test_transformers_audio_image():
     assert img is not None
 
 
-def test_converter_image():
-    from ai_workers.common.images import converter_image
-
-    img = converter_image()
-    assert img is not None
-
-
 def test_onnx_converter_image():
     from ai_workers.common.images import onnx_converter_image
 

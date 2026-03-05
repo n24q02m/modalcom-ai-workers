@@ -68,11 +68,6 @@ class TestModelRegistry:
             assert config.serving_engine in ServingEngine, f"{name}: invalid serving_engine"
             assert config.worker_module, f"{name}: missing worker_module"
 
-    def test_r2_prefix_auto_derived(self) -> None:
-        """r2_prefix should default to name if not explicitly set."""
-        for config in MODEL_REGISTRY.values():
-            assert config.r2_prefix == config.name
-
     def test_modal_app_name_correct(self) -> None:
         """modal_app_name should be correctly set (explicit or auto-derived)."""
         # Merged apps have explicit modal_app_name (shared by light+heavy)

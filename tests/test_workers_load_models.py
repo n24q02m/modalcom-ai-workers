@@ -109,15 +109,20 @@ def test_reranker_load_models_populates_dicts():
 
     import torch
 
-    with patch.dict(
-        "sys.modules",
-        {
-            "transformers": MagicMock(
-                AutoModelForCausalLM=MagicMock(from_pretrained=MagicMock(return_value=mock_model)),
-                AutoTokenizer=MagicMock(from_pretrained=MagicMock(return_value=mock_tokenizer)),
-            ),
-        },
-    ), patch("torch.float16", torch.float16):
+    with (
+        patch.dict(
+            "sys.modules",
+            {
+                "transformers": MagicMock(
+                    AutoModelForCausalLM=MagicMock(
+                        from_pretrained=MagicMock(return_value=mock_model)
+                    ),
+                    AutoTokenizer=MagicMock(from_pretrained=MagicMock(return_value=mock_tokenizer)),
+                ),
+            },
+        ),
+        patch("torch.float16", torch.float16),
+    ):
         server.load_models()
 
     assert len(server.models) == 2
@@ -180,15 +185,18 @@ def test_vl_embedding_load_models_populates_dicts():
 
     import torch
 
-    with patch.dict(
-        "sys.modules",
-        {
-            "transformers": MagicMock(
-                AutoModel=MagicMock(from_pretrained=MagicMock(return_value=mock_model)),
-                AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
-            ),
-        },
-    ), patch("torch.float16", torch.float16):
+    with (
+        patch.dict(
+            "sys.modules",
+            {
+                "transformers": MagicMock(
+                    AutoModel=MagicMock(from_pretrained=MagicMock(return_value=mock_model)),
+                    AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
+                ),
+            },
+        ),
+        patch("torch.float16", torch.float16),
+    ):
         server.load_models()
 
     assert len(server.models) == 2
@@ -295,17 +303,20 @@ def test_vl_reranker_load_models_populates_dicts():
 
     import torch
 
-    with patch.dict(
-        "sys.modules",
-        {
-            "transformers": MagicMock(
-                AutoModelForImageTextToText=MagicMock(
-                    from_pretrained=MagicMock(return_value=mock_model)
+    with (
+        patch.dict(
+            "sys.modules",
+            {
+                "transformers": MagicMock(
+                    AutoModelForImageTextToText=MagicMock(
+                        from_pretrained=MagicMock(return_value=mock_model)
+                    ),
+                    AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
                 ),
-                AutoProcessor=MagicMock(from_pretrained=MagicMock(return_value=mock_processor)),
-            ),
-        },
-    ), patch("torch.float16", torch.float16):
+            },
+        ),
+        patch("torch.float16", torch.float16),
+    ):
         server.load_models()
 
     assert len(server.models) == 2

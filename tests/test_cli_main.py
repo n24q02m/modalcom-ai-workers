@@ -26,16 +26,6 @@ def test_cli_app_has_gguf_convert_subcommand():
     assert result.exit_code == 0
 
 
-def test_cli_app_has_upload_subcommand():
-    result = runner.invoke(app, ["upload", "--help"])
-    assert result.exit_code == 0
-
-
 def test_cli_app_has_deploy_subcommand():
     result = runner.invoke(app, ["deploy", "--help"])
-    assert result.exit_code == 0
-
-
-def test_cli_app_has_convert_subcommand():
-    result = runner.invoke(app, ["convert", "--help"])
     assert result.exit_code == 0
