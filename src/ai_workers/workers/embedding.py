@@ -10,7 +10,7 @@ Models downloaded directly from HuggingFace Hub via Xet protocol
 at container startup (~1GB/s). No R2 storage needed.
 
 LiteLLM integration:
-  model: openai/qwen3-embedding-0.6b  (hoac qwen3-embedding-8b)
+  model: openai/qwen3-embedding-0.6b  (or qwen3-embedding-8b)
   api_base: https://<modal-url>
 """
 

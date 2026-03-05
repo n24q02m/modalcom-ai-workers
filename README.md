@@ -4,73 +4,76 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 
-GPU-serverless AI workers on [Modal.com](https://modal.com) for embedding, reranking, OCR, and ASR.
-
-All endpoints are [LiteLLM](https://docs.litellm.ai/)-compatible — consumer apps communicate through standard OpenAI/Cohere SDKs.
+GPU-serverless AI workers on [Modal.com](https://modal.com) for embedding, reranking, OCR, and ASR. All endpoints are [LiteLLM](https://docs.litellm.ai/)-compatible — consumer apps communicate through standard OpenAI/Cohere SDKs.
 
 ## Architecture
 
 ```
-Consumer Apps
-      │
- LiteLLM Proxy (routing + auth)
-      │
- ┌────┼────────────────────────────────────┐
- │    Modal.com GPU Serverless              │
- │                                          │
- │  ┌─────────────┐  ┌─────────────┐       │
- │  │ Embedding    │  │ Reranker    │       │
- │  │ (A10G)      │  │ (A10G)      │       │
- │  └─────────────┘  └─────────────┘       │
- │                                          │
- │  ┌─────────────┐  ┌─────────────┐       │
- │  │ VL Embedding │  │ VL Reranker │       │
- │  │ (A10G)      │  │ (A10G)      │       │
- │  └─────────────┘  └─────────────┘       │
- │                                          │
- │  ┌─────────────┐  ┌─────────────┐       │
- │  │ OCR (A10G)   │  │ ASR (T4)    │       │
- │  │ BF16         │  │ FP16        │       │
- │  └─────────────┘  └─────────────┘       │
- │                                          │
- │  Models loaded from HuggingFace Hub      │
- │  via Xet protocol (~1GB/s)               │
- └──────────────────────────────────────────┘
+Consumer Apps (OpenAI/Cohere SDK)
+       │
+  LiteLLM Proxy (routing + auth + cost tracking)
+       │
+  ┌────┼────────────────────────────────────────┐
+  │    Modal.com GPU Serverless                  │
+  │                                              │
+  │  ┌──────────────┐  ┌──────────────┐         │
+  │  │ Embedding    │  │ Reranker     │         │
+  │  │ 0.6B + 8B   │  │ 0.6B + 8B   │         │
+  │  │ (A10G)      │  │ (A10G)       │         │
+  │  └──────────────┘  └──────────────┘         │
+  │                                              │
+  │  ┌──────────────┐  ┌──────────────┐         │
+  │  │ VL Embedding │  │ VL Reranker  │         │
+  │  │ 2B + 8B     │  │ 2B + 8B     │         │
+  │  │ (A10G)      │  │ (A10G)       │         │
+  │  └──────────────┘  └──────────────┘         │
+  │                                              │
+  │  ┌──────────────┐  ┌──────────────┐         │
+  │  │ OCR          │  │ ASR          │         │
+  │  │ DeepSeek-2   │  │ Whisper v3   │         │
+  │  │ BF16 (A10G) │  │ FP16 (T4)    │         │
+  │  └──────────────┘  └──────────────┘         │
+  │                                              │
+  │  Models loaded from HuggingFace Hub          │
+  │  via Xet protocol (~1GB/s)                   │
+  └──────────────────────────────────────────────┘
 ```
+
+Light + Heavy model variants are merged into single Modal apps — both sizes share the same endpoint. Routing is done via the `model` field in the request body. All workers scale to zero when idle (5 min cooldown).
 
 ## Worker Matrix
 
-| Model | Task | GPU | Precision | Endpoint |
-|-------|------|-----|-----------|----------|
-| Qwen3-Embedding-0.6B | Embedding | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-Embedding-8B | Embedding | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-Reranker-0.6B | Reranker | A10G | FP16 | `/v1/rerank` |
-| Qwen3-Reranker-8B | Reranker | A10G | FP16 | `/v1/rerank` |
-| Qwen3-VL-Embedding-2B | VL Embed | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-VL-Embedding-8B | VL Embed | A10G | FP16 | `/v1/embeddings` |
-| Qwen3-VL-Reranker-2B | VL Rerank | A10G | FP16 | `/v1/rerank` |
-| Qwen3-VL-Reranker-8B | VL Rerank | A10G | FP16 | `/v1/rerank` |
-| DeepSeek-OCR-2 | OCR | A10G | BF16 | `/v1/chat/completions` |
-| Whisper-Large-v3 | ASR | T4 | FP16 | `/v1/audio/transcriptions` |
+| Model | HuggingFace ID | Task | GPU | Precision | Endpoint |
+|-------|---------------|------|-----|-----------|----------|
+| `qwen3-embedding-0.6b` | `Qwen/Qwen3-Embedding-0.6B` | Embedding | A10G | FP16 | `/v1/embeddings` |
+| `qwen3-embedding-8b` | `Qwen/Qwen3-Embedding-8B` | Embedding | A10G | FP16 | `/v1/embeddings` |
+| `qwen3-reranker-0.6b` | `Qwen/Qwen3-Reranker-0.6B` | Reranker | A10G | FP16 | `/v1/rerank` |
+| `qwen3-reranker-8b` | `Qwen/Qwen3-Reranker-8B` | Reranker | A10G | FP16 | `/v1/rerank` |
+| `qwen3-vl-embedding-2b` | `Qwen/Qwen3-VL-Embedding-2B` | VL Embed | A10G | FP16 | `/v1/embeddings` |
+| `qwen3-vl-embedding-8b` | `Qwen/Qwen3-VL-Embedding-8B` | VL Embed | A10G | FP16 | `/v1/embeddings` |
+| `qwen3-vl-reranker-2b` | `Qwen/Qwen3-VL-Reranker-2B` | VL Rerank | A10G | FP16 | `/v1/rerank` |
+| `qwen3-vl-reranker-8b` | `Qwen/Qwen3-VL-Reranker-8B` | VL Rerank | A10G | FP16 | `/v1/rerank` |
+| `deepseek-ocr-2` | `deepseek-ai/DeepSeek-OCR-2` | OCR | A10G | BF16 | `/v1/chat/completions` |
+| `whisper-large-v3` | `openai/whisper-large-v3` | ASR | T4 | FP16 | `/v1/audio/transcriptions` |
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.13 + [uv](https://docs.astral.sh/uv/)
-- [Modal](https://modal.com) account + token (`modal token new`)
+- Python 3.13+ and [uv](https://docs.astral.sh/uv/)
+- [Modal](https://modal.com) account with API token (`modal token new`)
+- [HuggingFace](https://huggingface.co) token (for ONNX/GGUF conversion only)
 
 ### Setup
 
 ```bash
-# Install dependencies
 uv sync --all-groups
 
 # Or with mise
 mise install && mise run setup
 ```
 
-### Deploy
+### Deploy Workers
 
 ```bash
 # List available models
@@ -88,29 +91,109 @@ python -m ai_workers deploy qwen3-embedding-0.6b --dry-run
 
 ### ONNX/GGUF Conversion
 
-Convert models to optimized formats and push to HuggingFace Hub:
+Convert models to optimized formats and push to HuggingFace Hub. Conversion runs on Modal CPU containers (no local GPU needed).
 
 ```bash
-# ONNX (INT8 + Q4F16)
+# ONNX (FP32 → INT8 + Q4F16 quantization)
 python -m ai_workers onnx-convert qwen3-embedding-0.6b
+python -m ai_workers onnx-convert --all
 
 # GGUF (Q4_K_M via llama.cpp)
 python -m ai_workers gguf-convert qwen3-embedding-0.6b
+python -m ai_workers gguf-convert --all
+
+# List convertible models
+python -m ai_workers onnx-convert list
+python -m ai_workers gguf-convert list
 ```
 
-## LiteLLM Integration
+## LiteLLM Proxy Integration
 
-Workers expose OpenAI/Cohere-compatible endpoints. See [litellm/README.md](litellm/README.md) for proxy configuration and [litellm/config.yaml](litellm/config.yaml) for a ready-to-use config template.
+Workers expose OpenAI/Cohere-compatible endpoints. Use [LiteLLM Proxy](https://docs.litellm.ai/) for unified routing, auth, and cost tracking.
+
+A ready-to-use proxy config is provided at [`litellm/config.yaml`](litellm/config.yaml). Replace `<your-modal-workspace>` with your Modal workspace name.
+
+### Model Naming Convention
+
+| Task | LiteLLM Prefix | Example |
+|------|---------------|---------|
+| Embedding | `openai/` | `openai/qwen3-embedding-0.6b` |
+| Reranker | `cohere/` | `cohere/qwen3-reranker-0.6b` |
+| VL Embedding | `openai/` | `openai/qwen3-vl-embedding-2b` |
+| VL Reranker | `cohere/` | `cohere/qwen3-vl-reranker-2b` |
+| OCR | `openai/` | `openai/deepseek-ocr-2` |
+| ASR | `openai/` | `openai/whisper-large-v3` |
+
+### Proxy Config Example
 
 ```yaml
-# Example: register embedding worker in LiteLLM proxy
 model_list:
   - model_name: qwen3-embedding-0.6b
     litellm_params:
       model: openai/qwen3-embedding-0.6b
-      api_base: https://<workspace>--ai-workers-embedding-serve.modal.run
-      api_key: your-worker-api-key
+      api_base: https://<workspace>--ai-workers-embedding-embeddingserver-serve.modal.run
+      api_key: ${WORKER_API_KEY}
 ```
+
+### Consumer Usage (Python)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-litellm-key",
+    base_url="http://localhost:4000",
+)
+
+# Embedding
+response = client.embeddings.create(
+    model="qwen3-embedding-0.6b",
+    input=["Hello world"],
+)
+
+# OCR (OpenAI Vision-compatible)
+response = client.chat.completions.create(
+    model="deepseek-ocr-2",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Extract all text from this image"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+        ]
+    }],
+)
+
+# ASR
+with open("audio.mp3", "rb") as f:
+    response = client.audio.transcriptions.create(
+        model="whisper-large-v3",
+        file=f,
+    )
+```
+
+### Consumer Usage (curl)
+
+```bash
+# Embedding
+curl -X POST http://localhost:4000/v1/embeddings \
+  -H "Authorization: Bearer your-litellm-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen3-embedding-0.6b", "input": ["Hello"]}'
+
+# Rerank (Cohere-compatible)
+curl -X POST http://localhost:4000/v1/rerank \
+  -H "Authorization: Bearer your-litellm-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen3-reranker-0.6b", "query": "What is AI?", "documents": ["AI is...", "Cats are..."]}'
+```
+
+### Modal Endpoint URL Format
+
+```
+https://<workspace>--<app-name>-<classname-lowercase>-serve.modal.run
+```
+
+After deployment, get the exact URL from `modal app list` or the Modal dashboard.
 
 ## Project Structure
 
@@ -122,28 +205,75 @@ src/ai_workers/
 │   ├── images.py       # Modal container images
 │   └── logging.py      # Structured logging
 ├── cli/
-│   ├── __main__.py     # CLI entry point
+│   ├── __main__.py     # CLI entry point (deploy, onnx-convert, gguf-convert)
 │   ├── deploy.py       # Deploy workers to Modal
-│   ├── onnx_convert.py # ONNX conversion (INT8 + Q4F16)
-│   └── gguf_convert.py # GGUF conversion (Q4_K_M)
+│   ├── onnx_convert.py # ONNX conversion CLI
+│   └── gguf_convert.py # GGUF conversion CLI
 └── workers/
-    ├── embedding.py    # Text embedding
-    ├── reranker.py     # Text reranker (yes/no scoring)
-    ├── vl_embedding.py # Vision-Language embedding
-    ├── vl_reranker.py  # Vision-Language reranker
-    ├── ocr.py          # Document OCR (DeepSeek)
-    └── asr.py          # Speech-to-text (Whisper)
+    ├── embedding.py    # Text embedding (Qwen3-Embedding 0.6B + 8B)
+    ├── reranker.py     # Text reranker (Qwen3-Reranker 0.6B + 8B)
+    ├── vl_embedding.py # Vision-Language embedding (Qwen3-VL-Embedding 2B + 8B)
+    ├── vl_reranker.py  # Vision-Language reranker (Qwen3-VL-Reranker 2B + 8B)
+    ├── ocr.py          # Document OCR (DeepSeek-OCR-2)
+    ├── asr.py          # Speech-to-text (Whisper-Large-v3)
+    ├── onnx_converter.py  # ONNX export + quantization (Modal CPU)
+    └── gguf_converter.py  # GGUF conversion via llama.cpp (Modal CPU)
 litellm/
-├── config.yaml         # LiteLLM proxy routing config
-└── README.md           # Consumer integration guide
-docs/
-└── ADD_NEW_MODEL.md    # Guide to add new models
+├── config.yaml         # LiteLLM proxy routing config template
+└── README.md           # Proxy setup guide
 ```
+
+## Adding a New Model
+
+All model metadata lives in `src/ai_workers/common/config.py`. To add a new model:
+
+1. **Register in config.py** — add a `_register(ModelConfig(...))` call:
+
+   ```python
+   _register(
+       ModelConfig(
+           name="my-new-model",              # Registry key
+           hf_id="org/MyNewModel",           # HuggingFace model ID
+           task=Task.EMBEDDING,              # Task type
+           tier=Tier.LIGHT,                  # LIGHT or HEAVY
+           precision=Precision.FP16,         # FP16 or BF16
+           gpu=GPU.A10G,                     # A10G or T4
+           model_class=ModelClassType.AUTO_MODEL,
+           worker_module="ai_workers.workers.embedding",
+           modal_app_var="embedding_app",
+           modal_app_name="ai-workers-embedding",
+       )
+   )
+   ```
+
+2. **Create or reuse a worker** — if the model fits an existing worker pattern (embedding, reranker, etc.), point `worker_module` to that file. For a new task type, create a new worker file in `workers/`.
+
+3. **Add LiteLLM config** — add the model to `litellm/config.yaml`.
+
+4. **Deploy** — `python -m ai_workers deploy my-new-model`.
+
+## Secrets
+
+### Modal Secrets (created on Modal dashboard)
+
+| Secret Name | Key | Used By |
+|------------|-----|---------|
+| `worker-api-key` | `WORKER_API_KEY` | All serving workers (endpoint auth) |
+| `hf-token` | `HF_TOKEN` | ONNX/GGUF converters (HuggingFace Hub push) |
+
+### CI/CD Secrets (GitHub Actions)
+
+| Secret | Description |
+|--------|-------------|
+| `MODAL_TOKEN_ID` | Modal API token ID |
+| `MODAL_TOKEN_SECRET` | Modal API token secret |
+| `HF_TOKEN` | HuggingFace token (for conversion jobs) |
+| `GH_PAT` | GitHub PAT (for semantic-release) |
 
 ## Development
 
 ```bash
-# Lint
+# Lint + format check
 uv run ruff check . && uv run ruff format --check .
 
 # Type check
@@ -152,34 +282,23 @@ uv run ty check
 # Test
 uv run pytest
 
-# Auto-fix
+# Auto-fix lint issues
 uv run ruff check --fix . && uv run ruff format .
 ```
 
-## Secrets
+### Commit Convention
 
-### Environment Variables (for deployment)
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). A pre-commit hook enforces the format:
 
-| Variable | Description | Used by |
-|----------|-------------|---------|
-| `MODAL_TOKEN_ID` | Modal API token ID | Deploy |
-| `MODAL_TOKEN_SECRET` | Modal API token secret | Deploy |
-
-### Modal Secrets (on Modal dashboard)
-
-```bash
-# Worker API key (protects endpoints)
-modal secret create worker-api-key \
-  WORKER_API_KEY="your-secret-key"
+```
+<type>(<optional scope>): <description>
 ```
 
-## Adding New Models
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
 
-See [docs/ADD_NEW_MODEL.md](docs/ADD_NEW_MODEL.md) for a step-by-step guide.
+## Related Projects
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+- [qwen3-embed](https://github.com/n24q02m/qwen3-embed) — Local ONNX runtime for Qwen3 embedding models (offline/edge deployment)
 
 ## License
 

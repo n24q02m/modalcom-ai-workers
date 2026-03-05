@@ -1,8 +1,8 @@
-"""Modal CPU function de convert HuggingFace models sang GGUF Q4_K_M.
+"""Modal CPU function to convert HuggingFace models to GGUF Q4_K_M.
 
-Chay tren Modal CPU container (32GB RAM) thay vi may local.
-Download tu HuggingFace Hub -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M)
--> push HF Hub.
+Runs on a Modal CPU container (32GB RAM) instead of local machine.
+Download from HuggingFace Hub -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M)
+-> push to HF Hub.
 
 Output structure:
   {hf_repo_id}/
@@ -10,10 +10,10 @@ Output structure:
 
 Flow:
   CLI (local) -> gguf_convert_model.remote() -> Modal CPU container:
-    1. Download model tu HuggingFace Hub (safetensors)
+    1. Download model from HuggingFace Hub (safetensors)
     2. Run convert_hf_to_gguf.py -> F16 GGUF (intermediate)
     3. Run llama-quantize -> Q4_K_M GGUF
-    4. Push len HuggingFace Hub (existing repo)
+    4. Push to HuggingFace Hub (existing repo)
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import modal
 from ai_workers.common.images import gguf_converter_image
 
 # ---------------------------------------------------------------------------
-# Modal App cho GGUF convert (CPU-only, khong GPU)
+# Modal App for GGUF conversion (CPU-only, no GPU)
 # ---------------------------------------------------------------------------
 
 gguf_convert_app = modal.App(
@@ -35,13 +35,13 @@ gguf_convert_app = modal.App(
 
 
 # ---------------------------------------------------------------------------
-# GGUF model registry — dedicated *-GGUF repos (tach rieng voi ONNX)
+# GGUF model registry — dedicated *-GGUF repos (separate from ONNX)
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class GgufModelConfig:
-    """Config cho mot model can GGUF convert."""
+    """Configuration for a model that needs GGUF conversion."""
 
     name: str  # Registry key
     hf_source: str  # HuggingFace source model ID
@@ -159,7 +159,7 @@ def _generate_gguf_model_card(
     image=gguf_converter_image(),
     memory=32768,  # 32GB RAM
     cpu=4.0,
-    timeout=3600,  # 1 gio
+    timeout=3600,  # 1 hour
 )
 def gguf_convert_model(
     model_name: str,
@@ -171,11 +171,11 @@ def gguf_convert_model(
     quant_type: str = "Q4_K_M",
     force: bool = False,
 ) -> dict[str, object]:
-    """Convert mot HuggingFace model sang GGUF va push len HF Hub.
+    """Convert a HuggingFace model to GGUF and push to HF Hub.
 
-    Chay tren Modal CPU container. Pipeline:
+    Runs on a Modal CPU container. Pipeline:
     HF model -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M)
-    -> push len HuggingFace Hub repo (existing).
+    -> push to HuggingFace Hub repo (existing).
 
     Args:
         model_name: Registry name (e.g. "qwen3-embedding-0.6b-gguf").
@@ -184,10 +184,10 @@ def gguf_convert_model(
         gguf_name: Base name for GGUF file (e.g. "qwen3-embedding-0.6b").
         output_attr: Model output attribute ("last_hidden_state" or "logits").
         quant_type: GGUF quantization type (default "Q4_K_M").
-        force: Ghi de neu file da ton tai tren HF Hub.
+        force: Overwrite if file already exists on HF Hub.
 
     Returns:
-        Dict chua ket qua: model_name, status, hf_target, gguf_file, size_mb.
+        Dict containing results: model_name, status, hf_target, gguf_file, size_mb.
     """
     import gc
     import os
@@ -200,7 +200,7 @@ def gguf_convert_model(
 
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
-        msg = "HF_TOKEN khong duoc set. Can Modal Secret 'hf-token' voi key HF_TOKEN."
+        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
         raise ValueError(msg)
 
     api = HfApi(token=hf_token)
@@ -209,7 +209,7 @@ def gguf_convert_model(
     gguf_repo_path = gguf_filename  # Root level in dedicated GGUF repo
 
     # ------------------------------------------------------------------
-    # Kiem tra file da ton tai chua
+    # Check if file already exists
     # ------------------------------------------------------------------
     if not force:
         try:
@@ -218,7 +218,7 @@ def gguf_convert_model(
             ]
             if gguf_repo_path in existing_files:
                 logger.info(
-                    "File {} da ton tai trong {}. Bo qua. Dung force=True de ghi de.",
+                    "File {} already exists in {}. Skipping. Use force=True to overwrite.",
                     gguf_repo_path,
                     hf_target,
                 )
@@ -229,7 +229,7 @@ def gguf_convert_model(
                     "hf_target": hf_target,
                 }
         except Exception:
-            pass  # Repo chua ton tai, se tao moi
+            pass  # Repo does not exist yet, will be created
 
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir) / "model"
@@ -238,11 +238,11 @@ def gguf_convert_model(
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # ------------------------------------------------------------------
-        # Download model tu HuggingFace Hub
+        # Download model from HuggingFace Hub
         # ------------------------------------------------------------------
-        logger.info("Dang tai model {} tu HuggingFace Hub...", hf_source)
+        logger.info("Loading model {} from HuggingFace Hub...", hf_source)
 
-        # Download tat ca files can thiet
+        # Download all required files
         from huggingface_hub import snapshot_download
 
         snapshot_download(
@@ -283,7 +283,7 @@ def gguf_convert_model(
         f16_size = f16_path.stat().st_size / (1024**2)
         logger.info("GGUF F16 exported: {:.2f} MB", f16_size)
 
-        # Giai phong RAM
+        # Free RAM
         gc.collect()
 
         # ------------------------------------------------------------------
@@ -316,13 +316,13 @@ def gguf_convert_model(
             f16_size / q4_size if q4_size > 0 else 0,
         )
 
-        # Xoa F16 intermediate
+        # Delete F16 intermediate
         f16_path.unlink()
 
         # ------------------------------------------------------------------
-        # Upload GGUF file len HuggingFace Hub
+        # Upload GGUF file to HuggingFace Hub
         # ------------------------------------------------------------------
-        logger.info("Uploading {} len {}...", gguf_repo_path, hf_target)
+        logger.info("Uploading {} to {}...", gguf_repo_path, hf_target)
 
         api.create_repo(
             repo_id=hf_target,
@@ -372,7 +372,7 @@ def gguf_convert_model(
             except Exception:
                 pass  # Some config files may not exist
 
-        logger.info("Push thanh cong len https://huggingface.co/{}", hf_target)
+        logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
     gc.collect()
 

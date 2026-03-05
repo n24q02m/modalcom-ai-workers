@@ -1,8 +1,8 @@
-"""Modal CPU function de convert HuggingFace models sang ONNX multi-variant.
+"""Modal CPU function to convert HuggingFace models to ONNX multi-variant.
 
-Chay tren Modal CPU container (32GB RAM) thay vi may local.
-Download tu HuggingFace Hub -> ONNX export (FP32)
--> INT8 dynamic quantization + INT4 (Q4F16) quantization -> push HF Hub.
+Runs on a Modal CPU container (32GB RAM) instead of local machine.
+Download from HuggingFace Hub -> ONNX export (FP32)
+-> INT8 dynamic quantization + INT4 (Q4F16) quantization -> push to HF Hub.
 
 Output structure (fastembed-compatible):
   {hf_repo_id}/
@@ -16,13 +16,13 @@ Output structure (fastembed-compatible):
 
 Flow:
   CLI (local) -> onnx_convert_model.remote() -> Modal CPU container:
-    1. Download model + tokenizer tu HuggingFace Hub
-    2. Wrap model (chi lay output can thiet — last_hidden_state hoac logits)
-    3. torch.onnx.export sang FP32 (opset 21, CPU, /tmp/)
+    1. Download model + tokenizer from HuggingFace Hub
+    2. Wrap model (only extract the necessary output — last_hidden_state or logits)
+    3. torch.onnx.export to FP32 (opset 21, CPU, /tmp/)
     4. onnxruntime.quantization.quantize_dynamic -> INT8 (model_quantized.onnx)
     5. MatMulNBitsQuantizer + float16 -> Q4F16 (model_q4f16.onnx)
-    6. Luu tokenizer + config + model card vao /tmp/
-    7. Push toan bo len HuggingFace Hub (public repo)
+    6. Save tokenizer + config + model card to /tmp/
+    7. Push all files to HuggingFace Hub (public repo)
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ import modal
 from ai_workers.common.images import onnx_converter_image
 
 # ---------------------------------------------------------------------------
-# Modal App cho ONNX convert (CPU-only, khong GPU)
+# Modal App for ONNX conversion (CPU-only, no GPU)
 # ---------------------------------------------------------------------------
 
 onnx_convert_app = modal.App(
@@ -44,17 +44,17 @@ onnx_convert_app = modal.App(
 
 
 # ---------------------------------------------------------------------------
-# ONNX model registry — models can convert cho qwen3-embed package
+# ONNX model registry — models available for conversion in the qwen3-embed package
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class OnnxModelConfig:
-    """Config cho mot model can ONNX convert."""
+    """Configuration for a model that needs ONNX conversion."""
 
     name: str  # Registry key
     hf_source: str  # HuggingFace source model ID
-    hf_target: str  # HuggingFace target repo cho ONNX output
+    hf_target: str  # HuggingFace target repo for ONNX output
     model_class: str  # "AutoModel" | "AutoModelForCausalLM"
     output_attr: str  # "last_hidden_state" | "logits"
 
@@ -168,7 +168,7 @@ def _generate_model_card(
     image=onnx_converter_image(),
     memory=32768,  # 32GB RAM
     cpu=4.0,
-    timeout=3600,  # 1 gio
+    timeout=3600,  # 1 hour
 )
 def onnx_convert_model(
     model_name: str,
@@ -180,23 +180,23 @@ def onnx_convert_model(
     opset_version: int = 21,
     force: bool = False,
 ) -> dict[str, object]:
-    """Convert mot HuggingFace model sang ONNX multi-variant va push len HF Hub.
+    """Convert a HuggingFace model to ONNX multi-variant and push to HF Hub.
 
-    Chay tren Modal CPU container. Pipeline:
+    Runs on a Modal CPU container. Pipeline:
     ONNX FP32 export -> INT8 + Q4F16 quantization
-    -> push public repo len HuggingFace Hub.
+    -> push public repo to HuggingFace Hub.
 
     Args:
         model_name: Registry name (e.g. "qwen3-embedding-0.6b-onnx").
         hf_source: Source HuggingFace model ID (e.g. "Qwen/Qwen3-Embedding-0.6B").
         hf_target: Target HuggingFace repo ID (e.g. "n24q02m/Qwen3-Embedding-0.6B-ONNX").
-        model_class: "AutoModel" hoac "AutoModelForCausalLM".
-        output_attr: Attribute lay tu model output ("last_hidden_state" | "logits").
+        model_class: "AutoModel" or "AutoModelForCausalLM".
+        output_attr: Attribute to extract from model output ("last_hidden_state" | "logits").
         opset_version: ONNX opset version (default 21, required for MatMulNBits).
-        force: Ghi de neu repo da ton tai tren HF Hub.
+        force: Overwrite if repo already exists on HF Hub.
 
     Returns:
-        Dict chua ket qua: model_name, status, hf_target, variants, total_size_mb.
+        Dict containing results: model_name, status, hf_target, variants, total_size_mb.
     """
     import gc
     import os
@@ -213,17 +213,17 @@ def onnx_convert_model(
 
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
-        msg = "HF_TOKEN khong duoc set. Can Modal Secret 'hf-token' voi key HF_TOKEN."
+        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
         raise ValueError(msg)
 
     api = HfApi(token=hf_token)
 
     # ------------------------------------------------------------------
-    # Kiem tra repo da ton tai chua
+    # Check if repo already exists
     # ------------------------------------------------------------------
     if not force and repo_exists(hf_target, token=hf_token):
         logger.info(
-            "Repo {} da ton tai tren HF Hub. Bo qua. Dung force=True de ghi de.",
+            "Repo {} already exists on HF Hub. Skipping. Use force=True to overwrite.",
             hf_target,
         )
         return {
@@ -240,9 +240,9 @@ def onnx_convert_model(
         onnx_dir.mkdir(parents=True, exist_ok=True)
 
         # ------------------------------------------------------------------
-        # Download model + tokenizer tu HuggingFace Hub
+        # Download model + tokenizer from HuggingFace Hub
         # ------------------------------------------------------------------
-        logger.info("Dang tai model {} tu HuggingFace Hub...", hf_source)
+        logger.info("Loading model {} from HuggingFace Hub...", hf_source)
 
         tokenizer = AutoTokenizer.from_pretrained(hf_source, trust_remote_code=True)
 
@@ -252,25 +252,27 @@ def onnx_convert_model(
         }
         cls = model_cls_map.get(model_class)
         if cls is None:
-            msg = f"Model class '{model_class}' khong hop le. Chon: {list(model_cls_map.keys())}"
+            msg = (
+                f"Model class '{model_class}' is invalid. Choose from: {list(model_cls_map.keys())}"
+            )
             raise ValueError(msg)
 
         model = cls.from_pretrained(
             hf_source,
             trust_remote_code=True,
-            torch_dtype=torch.float32,  # FP32 cho quantization chinh xac
+            torch_dtype=torch.float32,  # FP32 for accurate quantization
             low_cpu_mem_usage=True,
             device_map="cpu",
         )
-        model.config.use_cache = False  # Tat KV cache
+        model.config.use_cache = False  # Disable KV cache
         model.eval()
         logger.info("Model loaded: {} params", sum(p.numel() for p in model.parameters()))
 
         # ------------------------------------------------------------------
-        # Wrap model — chi output tensor can thiet
+        # Wrap model — only output the necessary tensor
         # ------------------------------------------------------------------
         class _OnnxWrapper(torch.nn.Module):
-            """Wrapper giu lai chinh xac 1 output tensor cho ONNX export."""
+            """Wrapper that retains exactly 1 output tensor for ONNX export."""
 
             def __init__(self, inner: torch.nn.Module, attr: str) -> None:
                 super().__init__()
@@ -288,7 +290,7 @@ def onnx_convert_model(
         wrapper = _OnnxWrapper(model, output_attr)
 
         # ------------------------------------------------------------------
-        # Tao dummy input cho tracing
+        # Create dummy input for tracing
         # ------------------------------------------------------------------
         dummy = tokenizer("hello world", return_tensors="pt")
         dummy_ids = dummy["input_ids"]
@@ -335,7 +337,7 @@ def onnx_convert_model(
         else:
             fp32_total_size = fp32_size
 
-        # Giai phong model (can RAM cho quantization)
+        # Free model (need RAM for quantization)
         del model, wrapper
         gc.collect()
 
@@ -404,13 +406,13 @@ def onnx_convert_model(
             fp32_total_size / q4f16_size if q4f16_size > 0 else 0,
         )
 
-        # Xoa FP32 model + external data (khong upload)
+        # Delete FP32 model + external data (not uploaded)
         fp32_path.unlink()
         if fp32_data_path.exists():
             fp32_data_path.unlink()
 
         # ------------------------------------------------------------------
-        # Luu tokenizer + config
+        # Save tokenizer + config
         # ------------------------------------------------------------------
         logger.info("Saving tokenizer + config -> {}", output_path)
         tokenizer.save_pretrained(str(output_path))
@@ -437,7 +439,7 @@ def onnx_convert_model(
         logger.info("Model card generated: {}", readme_path)
 
         # ------------------------------------------------------------------
-        # Thong ke files
+        # File statistics
         # ------------------------------------------------------------------
         total_size = 0.0
         file_count = 0
@@ -449,14 +451,14 @@ def onnx_convert_model(
                 logger.info("  {} ({:.2f} MB)", f.relative_to(output_path), size_mb)
 
         logger.info(
-            "Convert xong {} files ({:.2f} MB), dang push len {}...",
+            "Conversion complete: {} files ({:.2f} MB), pushing to {}...",
             file_count,
             total_size,
             hf_target,
         )
 
         # ------------------------------------------------------------------
-        # Tao repo + push len HuggingFace Hub
+        # Create repo + push to HuggingFace Hub
         # ------------------------------------------------------------------
         api.create_repo(
             repo_id=hf_target,
@@ -470,10 +472,10 @@ def onnx_convert_model(
             folder_path=str(output_path),
             repo_type="model",
             commit_message=f"Add ONNX INT8 + Q4F16 models converted from {hf_source}",
-            delete_patterns=["onnx/*.onnx"],  # Xoa ONNX files cu (model.onnx) truoc khi upload
+            delete_patterns=["onnx/*.onnx"],  # Delete old ONNX files (model.onnx) before upload
         )
 
-        logger.info("Push thanh cong len https://huggingface.co/{}", hf_target)
+        logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
     gc.collect()
 
