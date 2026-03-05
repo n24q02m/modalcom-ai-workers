@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 MSG=$(head -1 "$1")
-if [[ "$MSG" =~ ^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?(!)?\:\ .+ ]]; then
+if [[ "$MSG" =~ ^(feat|fix)(\(.+\))?:.+ ]] || [[ "$MSG" =~ ^chore\(release\):.+ ]]; then
   exit 0
 fi
-echo "ERROR: Commit message must follow Conventional Commits format."
-echo "  <type>[optional scope][!]: <description>"
-echo "  Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+echo "ERROR: Commit blocked. Only 'feat:' and 'fix:' prefixes allowed."
 echo "Got: $MSG"
 exit 1

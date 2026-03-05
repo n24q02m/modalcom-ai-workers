@@ -1,28 +1,46 @@
-# Dependencies
-.venv/
+# Byte-compiled / optimized
 __pycache__/
-*.pyc
-*.egg-info/
+*.py[cod]
+*$py.class
+*.so
 
-# Local conversion output
-converted/
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Ruff / ty
+.ruff_cache/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Misc
+# Logs
 *.log
+
+# Environment
 .env
 .env.*
-!.env.example
-
-# Infisical
+.envrc
 .infisical.json
 
-# Temp files
+# Project-specific
+converted/
+temp/
 temp_test.json

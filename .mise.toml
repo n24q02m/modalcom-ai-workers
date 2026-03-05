@@ -6,7 +6,8 @@ uv = "latest"
 description = "Setup development environment"
 run = [
   "mise install",
-  "uv sync --all-groups",
+  "uv sync --group dev",
+  "uv pip install pre-commit",
   "uv run pre-commit install",
   "uv run pre-commit install --hook-type commit-msg",
   "echo 'Setup complete!'"
@@ -32,17 +33,17 @@ run = [
 ]
 
 [tasks.deploy]
-description = "Deploy worker to Modal.com"
+description = "Deploy a single worker"
 run = "uv run python -m ai_workers deploy"
 
 [tasks.deploy-all]
-description = "Deploy all workers to Modal.com"
+description = "Deploy all workers"
 run = "uv run python -m ai_workers deploy --all"
 
 [tasks.onnx-convert]
-description = "Convert HuggingFace model to ONNX (INT8 + Q4F16) and push to HF Hub (Modal CPU)"
+description = "Convert model to ONNX format"
 run = "uv run python -m ai_workers onnx-convert"
 
 [tasks.gguf-convert]
-description = "Convert HuggingFace model to GGUF Q4_K_M and push to HF Hub (Modal CPU)"
+description = "Convert model to GGUF format"
 run = "uv run python -m ai_workers gguf-convert"

@@ -41,22 +41,6 @@ deploy = [
     { name = "rich" },
     { name = "typer" },
 ]
-dev = [
-    { name = "accelerate" },
-    { name = "huggingface-hub" },
-    { name = "modal" },
-    { name = "onnx" },
-    { name = "onnxruntime" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "rich" },
-    { name = "ruff" },
-    { name = "safetensors" },
-    { name = "torch" },
-    { name = "transformers" },
-    { name = "ty" },
-    { name = "typer" },
-]
 onnx-convert = [
     { name = "accelerate" },
     { name = "huggingface-hub" },
@@ -89,7 +73,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'onnx-convert'", specifier = ">=1.0" },
-    { name = "ai-workers", extras = ["onnx-convert", "deploy"], marker = "extra == 'dev'" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "huggingface-hub", marker = "extra == 'onnx-convert'", specifier = ">=0.26" },
     { name = "loguru", specifier = ">=0.7" },
@@ -98,19 +81,15 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'onnx-convert'", specifier = ">=1.21" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "rich", marker = "extra == 'deploy'", specifier = ">=13.0" },
     { name = "rich", marker = "extra == 'onnx-convert'", specifier = ">=13.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "safetensors", marker = "extra == 'onnx-convert'", specifier = ">=0.4" },
     { name = "torch", marker = "extra == 'onnx-convert'", specifier = ">=2.4" },
     { name = "transformers", marker = "extra == 'onnx-convert'", specifier = ">=4.47" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a6" },
     { name = "typer", marker = "extra == 'deploy'", specifier = ">=0.15" },
     { name = "typer", marker = "extra == 'onnx-convert'", specifier = ">=0.15" },
 ]
-provides-extras = ["onnx-convert", "deploy", "dev"]
+provides-extras = ["onnx-convert", "deploy"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release
@@ -33,28 +34,26 @@ jobs:
       released: ${{ steps.release.outputs.released }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
-      is-prerelease: ${{ steps.release.outputs.is_prerelease }}
+      is_prerelease: ${{ steps.release.outputs.is_prerelease }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
 
-      - name: Release
+      - uses: python-semantic-release/python-semantic-release@v10
         id: release
-        uses: python-semantic-release/python-semantic-release@v10
         with:
           github_token: ${{ secrets.GH_PAT }}
           prerelease: ${{ inputs.release_type == 'beta' }}
           prerelease_token: beta
 
-      - name: Publish to GitHub Release
-        uses: python-semantic-release/publish-action@v10
+      - uses: python-semantic-release/publish-action@v10
         if: steps.release.outputs.released == 'true'
         with:
           github_token: ${{ secrets.GH_PAT }}
@@ -76,19 +75,16 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v4
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: '3.13'
+          version: "latest"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-      - name: Setup project
-        run: |
-          uv sync --all-groups
+      - name: Install dependencies
+        run: uv sync --group dev
 
       - name: Deploy all workers
         run: uv run python -m ai_workers deploy --all

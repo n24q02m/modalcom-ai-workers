@@ -1,5 +1,7 @@
 repos:
+  # ============================================================================
   # Common Checks
+  # ============================================================================
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -21,9 +23,11 @@ repos:
         name: fix end of files
         exclude_types: [image]
 
-  # Python Linting + Formatting
+  # ============================================================================
+  # Python
+  # ============================================================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.1
     hooks:
       - id: ruff
         name: ruff lint
@@ -31,7 +35,6 @@ repos:
       - id: ruff-format
         name: ruff format
 
-  # Local hooks
   - repo: local
     hooks:
       - id: ty
@@ -48,7 +51,9 @@ repos:
         types: [python]
         pass_filenames: false
 
+  # ============================================================================
   # Commit Message Enforcement
+  # ============================================================================
   - repo: local
     hooks:
       - id: enforce-commit
