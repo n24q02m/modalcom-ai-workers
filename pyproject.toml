@@ -127,4 +127,6 @@ dev = [
     "python-semantic-release>=9.0.0",
     "rich>=14.3.2",
     "typer>=0.21.1",
+    "ruff>=0.9",
+    "ty>=0.0.1a6",
 ]

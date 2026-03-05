@@ -81,6 +81,8 @@ dev = [
     { name = "python-multipart" },
     { name = "python-semantic-release" },
     { name = "rich" },
+    { name = "ruff" },
+    { name = "ty" },
     { name = "typer" },
 ]
 
@@ -122,6 +124,8 @@ dev = [
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "python-semantic-release", specifier = ">=9.0.0" },
     { name = "rich", specifier = ">=14.3.2" },
+    { name = "ruff", specifier = ">=0.9" },
+    { name = "ty", specifier = ">=0.0.1a6" },
     { name = "typer", specifier = ">=0.21.1" },
 ]
 
