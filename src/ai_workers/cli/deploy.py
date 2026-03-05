@@ -69,7 +69,7 @@ def deploy(
                 failures.extend(names)
 
         if failures:
-            console.print(f"\n[red bold]Deploy THẤT BẠI: {', '.join(failures)}[/red bold]")
+            console.print(f"\n[red bold]Deploy FAILED: {', '.join(failures)}[/red bold]")
             raise typer.Exit(code=1)
         return
 
@@ -86,10 +86,10 @@ def _module_to_file_path(module: str) -> str:
 
 
 def _deploy_app(module: str, app_var: str, *, dry_run: bool = False) -> None:
-    """Deploy một app cụ thể trong một worker module file.
+    """Deploy a specific app within a worker module file.
 
-    Sử dụng định dạng ``modal deploy file.py::app_var`` để chỉ định
-    app khi file có nhiều apps.
+    Uses the ``modal deploy file.py::app_var`` format to specify
+    the app when the file contains multiple apps.
     """
     file_path = _module_to_file_path(module)
     target = f"{file_path}::{app_var}"

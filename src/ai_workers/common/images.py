@@ -1,13 +1,13 @@
 """Modal container image builders.
 
-Tất cả images dùng uv_pip_install (thay vì pip_install) cho tốc độ cài đặt nhanh hơn ~50%.
+All images use uv_pip_install (instead of pip_install) for ~50% faster install speed.
 
-Hai loại image:
-- transformers_image(): Cho models served qua custom FastAPI (embedding, reranker, VL, OCR, ASR)
-- onnx_converter_image(): Cho ONNX conversion pipeline (CPU-only)
+Two types of images:
+- transformers_image(): For models served via custom FastAPI (embedding, reranker, VL, OCR, ASR)
+- onnx_converter_image(): For ONNX conversion pipeline (CPU-only)
 
-Models được tải trực tiếp từ HuggingFace Hub tại container startup
-qua HF Xet protocol (~1GB/s). Không cần R2 storage.
+Models are loaded directly from HuggingFace Hub at container startup
+via HF Xet protocol (~1GB/s). No R2 storage needed.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ PYTHON_VERSION = "3.13"
 def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     """Build a Modal image with transformers for custom FastAPI serving.
 
-    Models được tải từ HuggingFace Hub qua Xet protocol tại container startup.
-    HF_XET_HIGH_PERFORMANCE=1 bật tối ưu download tốc độ cao (~1GB/s).
+    Models are loaded from HuggingFace Hub via Xet protocol at container startup.
+    HF_XET_HIGH_PERFORMANCE=1 enables high-speed download optimization (~1GB/s).
 
     Args:
         flash_attn: Install flash-attn package (needed for DeepSeek-OCR-2).
@@ -48,8 +48,8 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
         packages.extend(["addict>=2.4", "einops>=0.8", "matplotlib>=3.8"])
 
     if flash_attn:
-        # flash-attn pre-built wheel từ GitHub releases (tránh compile 30+ phút).
-        # Pin torch==2.6.0 để match wheel available (torch 2.10 không có pre-built wheel).
+        # flash-attn pre-built wheel from GitHub releases (avoids 30+ min compile).
+        # Pin torch==2.6.0 to match available wheel (torch 2.10 has no pre-built wheel).
         # Wheel: cu12 + torch2.6 + Python 3.13 + cxx11abiFALSE + linux_x86_64.
         flash_attn_wheel = (
             "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/"
@@ -70,7 +70,7 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
 def transformers_audio_image() -> modal.Image:
     """Build a Modal image with transformers + audio processing for Whisper.
 
-    Models được tải từ HuggingFace Hub qua Xet protocol tại container startup.
+    Models are loaded from HuggingFace Hub via Xet protocol at container startup.
     """
     return (
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
@@ -94,14 +94,14 @@ def transformers_audio_image() -> modal.Image:
 
 
 def onnx_converter_image() -> modal.Image:
-    """Build a Modal image cho ONNX multi-variant conversion pipeline (CPU-only).
+    """Build a Modal image for ONNX multi-variant conversion pipeline (CPU-only).
 
-    Export HuggingFace models sang ONNX + INT8 dynamic quantization + Q4F16
-    (INT4 weights + FP16 activations). Dung cho Qwen3-Embedding / Reranker 0.6B
+    Export HuggingFace models to ONNX + INT8 dynamic quantization + Q4F16
+    (INT4 weights + FP16 activations). Used for Qwen3-Embedding / Reranker 0.6B
     (fastembed-compatible output).
 
     Dependencies:
-    - onnxconverter-common: FP32 -> FP16 cast cho Q4F16 variant
+    - onnxconverter-common: FP32 -> FP16 cast for Q4F16 variant
     - MatMulNBitsQuantizer (onnxruntime): INT4 weight quantization
     """
     return (
@@ -123,9 +123,9 @@ def onnx_converter_image() -> modal.Image:
 
 
 def gguf_converter_image() -> modal.Image:
-    """Build a Modal image cho GGUF conversion pipeline (CPU-only).
+    """Build a Modal image for GGUF conversion pipeline (CPU-only).
 
-    Convert HuggingFace models sang GGUF format via llama.cpp.
+    Convert HuggingFace models to GGUF format via llama.cpp.
     Pipeline: HF model -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M).
 
     Image includes:
@@ -137,7 +137,7 @@ def gguf_converter_image() -> modal.Image:
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
         .apt_install("git", "cmake", "build-essential")
         .run_commands(
-            # Clone llama.cpp va build llama-quantize
+            # Clone llama.cpp and build llama-quantize
             "git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp",
             "cd /opt/llama.cpp && cmake -B build -DGGML_NATIVE=OFF && cmake --build build --target llama-quantize -j$(nproc)",
         )

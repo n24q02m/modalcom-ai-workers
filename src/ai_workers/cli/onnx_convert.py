@@ -1,6 +1,6 @@
-"""Convert HuggingFace models sang ONNX multi-variant va push len HuggingFace Hub.
+"""Convert HuggingFace models to ONNX multi-variant and push to HuggingFace Hub.
 
-Chay tren Modal CPU container (32GB RAM, 4 CPU cores).
+Runs on Modal CPU container (32GB RAM, 4 CPU cores).
 Pipeline: HuggingFace Hub -> ONNX FP32 -> onnxslim -> INT8 + Q4F16 -> HF Hub (public).
 
 Output fastembed-compatible:
@@ -29,19 +29,19 @@ console = Console(width=200)
 def onnx_convert(
     model: str = typer.Argument(
         None,
-        help="Tên model ONNX (vd: 'qwen3-embedding-0.6b-onnx'), 'all', hoặc 'list'",
+        help="ONNX model name (e.g. 'qwen3-embedding-0.6b-onnx'), 'all', or 'list'",
     ),
     force: bool = typer.Option(
         False,
         "--force",
         "-f",
-        help="Ghi đè nếu repo đã tồn tại trên HF Hub",
+        help="Overwrite if repo already exists on HF Hub",
     ),
 ) -> None:
-    """Convert model HuggingFace sang ONNX multi-variant (INT8 + Q4F16) tren Modal CPU, push len HF Hub."""
+    """Convert HuggingFace model to ONNX multi-variant (INT8 + Q4F16) on Modal CPU, push to HF Hub."""
     if model is None:
         console.print(
-            "[yellow]Cần chỉ định model, 'all', hoặc 'list'. Dùng --help để xem hướng dẫn.[/yellow]"
+            "[yellow]Please specify a model, 'all', or 'list'. Use --help for usage guide.[/yellow]"
         )
         raise typer.Exit(code=1)
 
@@ -51,7 +51,7 @@ def onnx_convert(
 
     if model == "all":
         console.print(
-            f"[bold]Converting {len(ONNX_MODELS)} models sang ONNX (INT8 + Q4F16) tren Modal CPU...[/bold]"
+            f"[bold]Converting {len(ONNX_MODELS)} models to ONNX (INT8 + Q4F16) on Modal CPU...[/bold]"
         )
         failed: list[str] = []
         for name in ONNX_MODELS:
@@ -61,11 +61,11 @@ def onnx_convert(
                 failed.append(name)
         if failed:
             console.print(
-                f"\n[red bold]{len(failed)} model(s) thất bại: {', '.join(failed)}[/red bold]"
+                f"\n[red bold]{len(failed)} model(s) failed: {', '.join(failed)}[/red bold]"
             )
             raise typer.Exit(code=1)
         console.print(
-            f"\n[green bold]Tất cả {len(ONNX_MODELS)} models convert thành công![/green bold]"
+            f"\n[green bold]All {len(ONNX_MODELS)} models converted successfully![/green bold]"
         )
         return
 
@@ -73,12 +73,10 @@ def onnx_convert(
 
 
 def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
-    """Gọi Modal remote function để ONNX convert một model."""
+    """Call Modal remote function to ONNX convert a model."""
     if model_name not in ONNX_MODELS:
         available = ", ".join(sorted(ONNX_MODELS.keys()))
-        console.print(
-            f"[red]Lỗi: Model '{model_name}' không tìm thấy. Available: {available}[/red]"
-        )
+        console.print(f"[red]Error: Model '{model_name}' not found. Available: {available}[/red]")
         raise typer.Exit(code=1)
 
     config = ONNX_MODELS[model_name]
@@ -90,8 +88,8 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
     console.print(f"  Model Class: {config.model_class}")
     console.print(f"  Output: {config.output_attr}")
     console.print("  Variants: INT8 (model_quantized.onnx) + Q4F16 (model_q4f16.onnx)")
-    console.print("  Chay tren: Modal CPU (32GB RAM)")
-    console.print("  Dau ra: HuggingFace Hub (public repo)")
+    console.print("  Runs on: Modal CPU (32GB RAM)")
+    console.print("  Output: HuggingFace Hub (public repo)")
     console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
     try:
@@ -108,8 +106,8 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
         status = result.get("status", "unknown")
         if status == "skipped":
             console.print(
-                f"[yellow]Bo qua {config.name} — repo da ton tai tren HF Hub. "
-                f"Dung --force de ghi de.[/yellow]"
+                f"[yellow]Skipped {config.name} — repo already exists on HF Hub. "
+                f"Use --force to overwrite.[/yellow]"
             )
         elif status == "success":
             files_count = result.get("files_count", 0)
@@ -117,7 +115,7 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
             url = result.get("url", "")
             variants = result.get("variants", {})
             console.print(
-                f"[green]ONNX Convert {config.name}: THANH CONG "
+                f"[green]ONNX Convert {config.name}: SUCCESS "
                 f"({files_count} files, {total_size:.2f} MB)[/green]"
             )
             for vname, vinfo in variants.items():
@@ -128,16 +126,14 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
                     )
             console.print(f"  [dim]{url}[/dim]")
         else:
-            console.print(
-                f"[red]ONNX Convert {config.name}: trạng thái không xác định — {result}[/red]"
-            )
+            console.print(f"[red]ONNX Convert {config.name}: unknown status — {result}[/red]")
             raise typer.Exit(code=1) from None
 
     except modal.exception.AuthError:
-        console.print("[red]Lỗi: Chưa xác thực Modal. Chạy `modal token set` trước.[/red]")
+        console.print("[red]Error: Modal not authenticated. Run `modal token set` first.[/red]")
         raise typer.Exit(code=1) from None
     except Exception as e:
-        console.print(f"[red]ONNX Convert {config.name}: THẤT BẠI — {e}[/red]")
+        console.print(f"[red]ONNX Convert {config.name}: FAILED — {e}[/red]")
         import traceback
 
         traceback.print_exc()
@@ -146,9 +142,9 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
 
 @app.command("list")
 def list_onnx_models() -> None:
-    """Liệt kê tất cả ONNX models có thể convert."""
+    """List all convertible ONNX models."""
     table = Table(title="ONNX Model Registry")
-    table.add_column("Tên", style="cyan")
+    table.add_column("Name", style="cyan")
     table.add_column("Source (HF)", style="dim")
     table.add_column("Target (HF)")
     table.add_column("Model Class")

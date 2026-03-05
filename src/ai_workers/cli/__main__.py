@@ -17,14 +17,14 @@ app = typer.Typer(
 app.add_typer(
     onnx_convert_app,
     name="onnx-convert",
-    help="Convert models sang ONNX (INT8 + Q4F16) tren Modal CPU -> push HF Hub",
+    help="Convert models to ONNX (INT8 + Q4F16) on Modal CPU → push to HF Hub",
 )
 app.add_typer(
     gguf_convert_app,
     name="gguf-convert",
-    help="Convert models sang GGUF Q4_K_M tren Modal CPU -> push HF Hub",
+    help="Convert models to GGUF Q4_K_M on Modal CPU → push to HF Hub",
 )
-app.add_typer(deploy_app, name="deploy", help="Deploy workers len Modal.com")
+app.add_typer(deploy_app, name="deploy", help="Deploy workers to Modal.com")
 
 if __name__ == "__main__":
     app()

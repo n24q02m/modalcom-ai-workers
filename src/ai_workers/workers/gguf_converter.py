@@ -361,9 +361,7 @@ def gguf_convert_model(
 
         for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
             try:
-                local_cfg = _hf_download(
-                    repo_id=hf_source, filename=cfg_file, token=hf_token
-                )
+                local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=hf_token)
                 api.upload_file(
                     path_or_fileobj=local_cfg,
                     path_in_repo=cfg_file,

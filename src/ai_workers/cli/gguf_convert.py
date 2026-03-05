@@ -1,6 +1,6 @@
-"""Convert HuggingFace models sang GGUF Q4_K_M va push len HuggingFace Hub.
+"""Convert HuggingFace models to GGUF Q4_K_M and push to HuggingFace Hub.
 
-Chay tren Modal CPU container (32GB RAM, 4 CPU cores).
+Runs on Modal CPU container (32GB RAM, 4 CPU cores).
 Pipeline: HuggingFace Hub -> convert_hf_to_gguf.py (F16) -> llama-quantize (Q4_K_M) -> HF Hub.
 
 Output: gguf/{model_name}-q4-k-m.gguf
@@ -28,13 +28,13 @@ console = Console(width=200)
 def gguf_convert(
     model: str = typer.Argument(
         None,
-        help="Ten model GGUF (vd: 'qwen3-embedding-0.6b-gguf'), 'all', hoac 'list'",
+        help="GGUF model name (e.g. 'qwen3-embedding-0.6b-gguf'), 'all', or 'list'",
     ),
     force: bool = typer.Option(
         False,
         "--force",
         "-f",
-        help="Ghi de neu file da ton tai tren HF Hub",
+        help="Overwrite if file already exists on HF Hub",
     ),
     quant_type: str = typer.Option(
         "Q4_K_M",
@@ -43,10 +43,10 @@ def gguf_convert(
         help="GGUF quantization type (default: Q4_K_M)",
     ),
 ) -> None:
-    """Convert model HuggingFace sang GGUF tren Modal CPU, push len HF Hub."""
+    """Convert HuggingFace model to GGUF on Modal CPU, push to HF Hub."""
     if model is None:
         console.print(
-            "[yellow]Can chi dinh model, 'all', hoac 'list'. Dung --help de xem huong dan.[/yellow]"
+            "[yellow]Please specify a model, 'all', or 'list'. Use --help for usage guide.[/yellow]"
         )
         raise typer.Exit(code=1)
 
@@ -56,7 +56,7 @@ def gguf_convert(
 
     if model == "all":
         console.print(
-            f"[bold]Converting {len(GGUF_MODELS)} models sang GGUF {quant_type} tren Modal CPU...[/bold]"
+            f"[bold]Converting {len(GGUF_MODELS)} models to GGUF {quant_type} on Modal CPU...[/bold]"
         )
         failed: list[str] = []
         for name in GGUF_MODELS:
@@ -66,11 +66,11 @@ def gguf_convert(
                 failed.append(name)
         if failed:
             console.print(
-                f"\n[red bold]{len(failed)} model(s) that bai: {', '.join(failed)}[/red bold]"
+                f"\n[red bold]{len(failed)} model(s) failed: {', '.join(failed)}[/red bold]"
             )
             raise typer.Exit(code=1)
         console.print(
-            f"\n[green bold]Tat ca {len(GGUF_MODELS)} models convert thanh cong![/green bold]"
+            f"\n[green bold]All {len(GGUF_MODELS)} models converted successfully![/green bold]"
         )
         return
 
@@ -80,12 +80,10 @@ def gguf_convert(
 def _gguf_convert_remote(
     model_name: str, *, force: bool = False, quant_type: str = "Q4_K_M"
 ) -> None:
-    """Goi Modal remote function de GGUF convert mot model."""
+    """Call Modal remote function to GGUF convert a model."""
     if model_name not in GGUF_MODELS:
         available = ", ".join(sorted(GGUF_MODELS.keys()))
-        console.print(
-            f"[red]Loi: Model '{model_name}' khong tim thay. Available: {available}[/red]"
-        )
+        console.print(f"[red]Error: Model '{model_name}' not found. Available: {available}[/red]")
         raise typer.Exit(code=1)
 
     config = GGUF_MODELS[model_name]
@@ -96,8 +94,8 @@ def _gguf_convert_remote(
     console.print(f"  Target: {config.hf_target}")
     console.print(f"  GGUF Name: {config.gguf_name}")
     console.print(f"  Quantization: {quant_type}")
-    console.print("  Chay tren: Modal CPU (32GB RAM)")
-    console.print("  Dau ra: HuggingFace Hub (existing repo)")
+    console.print("  Runs on: Modal CPU (32GB RAM)")
+    console.print("  Output: HuggingFace Hub (existing repo)")
     console.print(f"[bold cyan]{'=' * 60}[/bold cyan]")
 
     try:
@@ -115,29 +113,27 @@ def _gguf_convert_remote(
         status = result.get("status", "unknown")
         if status == "skipped":
             console.print(
-                f"[yellow]Bo qua {config.name} — file da ton tai tren HF Hub. "
-                f"Dung --force de ghi de.[/yellow]"
+                f"[yellow]Skipped {config.name} — file already exists on HF Hub. "
+                f"Use --force to overwrite.[/yellow]"
             )
         elif status == "success":
             size_mb = result.get("size_mb", 0)
             gguf_file = result.get("gguf_file", "")
             url = result.get("url", "")
             console.print(
-                f"[green]GGUF Convert {config.name}: THANH CONG "
+                f"[green]GGUF Convert {config.name}: SUCCESS "
                 f"({gguf_file}, {size_mb:.2f} MB)[/green]"
             )
             console.print(f"  [dim]{url}[/dim]")
         else:
-            console.print(
-                f"[red]GGUF Convert {config.name}: trang thai khong xac dinh — {result}[/red]"
-            )
+            console.print(f"[red]GGUF Convert {config.name}: unknown status — {result}[/red]")
             raise typer.Exit(code=1) from None
 
     except modal.exception.AuthError:
-        console.print("[red]Loi: Chua xac thuc Modal. Chay `modal token set` truoc.[/red]")
+        console.print("[red]Error: Modal not authenticated. Run `modal token set` first.[/red]")
         raise typer.Exit(code=1) from None
     except Exception as e:
-        console.print(f"[red]GGUF Convert {config.name}: THAT BAI — {e}[/red]")
+        console.print(f"[red]GGUF Convert {config.name}: FAILED — {e}[/red]")
         import traceback
 
         traceback.print_exc()
@@ -146,9 +142,9 @@ def _gguf_convert_remote(
 
 @app.command("list")
 def list_gguf_models() -> None:
-    """Liet ke tat ca GGUF models co the convert."""
+    """List all convertible GGUF models."""
     table = Table(title="GGUF Model Registry")
-    table.add_column("Ten", style="cyan")
+    table.add_column("Name", style="cyan")
     table.add_column("Source (HF)", style="dim")
     table.add_column("Target (HF)")
     table.add_column("GGUF Name")
