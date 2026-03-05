@@ -1,10 +1,18 @@
 # modalcom-ai-workers
 
-[![CI](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+**GPU-serverless AI workers on Modal.com for embedding, reranking, OCR, and ASR**
 
-GPU-serverless AI workers on [Modal.com](https://modal.com) for embedding, reranking, OCR, and ASR. All endpoints are [LiteLLM](https://docs.litellm.ai/)-compatible — consumer apps communicate through standard OpenAI/Cohere SDKs.
+[![CI](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/n24q02m/modalcom-ai-workers)](LICENSE)
+
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)](#)
+[![Modal](https://img.shields.io/badge/Modal-000000?logo=modal&logoColor=white)](https://modal.com)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-1A1F6C?logo=openai&logoColor=white)](https://docs.litellm.ai/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/python-semantic-release/python-semantic-release)
+[![Renovate](https://img.shields.io/badge/renovate-enabled-1A1F6C?logo=renovatebot&logoColor=white)](https://developer.mend.io/)
+
+All endpoints are [LiteLLM](https://docs.litellm.ai/)-compatible — consumer apps communicate through standard OpenAI/Cohere SDKs.
 
 ## Architecture
 
