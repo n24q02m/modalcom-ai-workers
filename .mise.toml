@@ -31,22 +31,18 @@ run = [
   "uv run ruff format .",
 ]
 
-# Deployment tasks require secrets (HF_TOKEN, MODAL_TOKEN_ID, MODAL_TOKEN_SECRET).
-# Internal: uses `infisical run` for secret injection.
-# Public contributors: export secrets manually or use your preferred secrets manager.
-
 [tasks.deploy]
 description = "Deploy worker to Modal.com"
-run = "infisical run --env=prod -- uv run python -m ai_workers deploy"
+run = "uv run python -m ai_workers deploy"
 
 [tasks.deploy-all]
 description = "Deploy all workers to Modal.com"
-run = "infisical run --env=prod -- uv run python -m ai_workers deploy --all"
+run = "uv run python -m ai_workers deploy --all"
 
 [tasks.onnx-convert]
 description = "Convert HuggingFace model to ONNX (INT8 + Q4F16) and push to HF Hub (Modal CPU)"
-run = "infisical run --env=prod -- uv run python -m ai_workers onnx-convert"
+run = "uv run python -m ai_workers onnx-convert"
 
 [tasks.gguf-convert]
 description = "Convert HuggingFace model to GGUF Q4_K_M and push to HF Hub (Modal CPU)"
-run = "infisical run --env=prod -- uv run python -m ai_workers gguf-convert"
+run = "uv run python -m ai_workers gguf-convert"
