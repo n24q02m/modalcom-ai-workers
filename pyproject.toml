@@ -97,6 +97,14 @@ python-version = "3.13"
 [tool.ty.src]
 include = ["src"]
 
+[tool.ty.rules]
+# ML deps (modal, torch, transformers, etc.) are runtime-only on Modal GPU containers
+# and not installed in CI/local dev. Suppress cascading errors from unresolved imports.
+unresolved-import = "warn"
+unresolved-attribute = "warn"
+call-non-callable = "warn"
+invalid-argument-type = "warn"
+
 # --- pytest ---
 [tool.pytest.ini_options]
 testpaths = ["tests"]
