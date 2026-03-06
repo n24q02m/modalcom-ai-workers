@@ -208,9 +208,10 @@ def test_load_image_from_url_network(server):
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
 
-    with patch("httpx.Client", return_value=mock_client):
-        # Patch socket.gethostbyname to simulate a safe IP
-        with patch("socket.gethostbyname", return_value="8.8.8.8"):
-            result = server._load_image_from_url("https://example.com/img.png")
+    with (
+        patch("httpx.Client", return_value=mock_client),
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
+    ):
+        result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"

@@ -115,6 +115,7 @@ class VLEmbeddingServer:
     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
         """Embed a single image+text pair."""
         import torch
+
         from ai_workers.common.utils import load_image_from_url
 
         model = self.models[model_name]

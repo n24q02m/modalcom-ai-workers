@@ -435,7 +435,7 @@ def test_vl_reranker_load_image():
     mock_client.__exit__ = MagicMock(return_value=False)
 
     with (
-        patch("httpx.Client", return_value=mock_client) as mock_client_cls,
+        patch("httpx.Client", return_value=mock_client),
         patch("socket.gethostbyname", return_value="8.8.8.8"),
         patch("PIL.Image.open", return_value=mock_image),
     ):

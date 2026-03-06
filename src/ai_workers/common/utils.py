@@ -1,7 +1,9 @@
 import socket
-from urllib.parse import urlparse, urljoin
-from loguru import logger
+from urllib.parse import urljoin, urlparse
+
 import httpx
+from loguru import logger
+
 
 def is_safe_url(url: str) -> bool:
     """Check if URL is safe from SSRF.
@@ -19,22 +21,24 @@ def is_safe_url(url: str) -> bool:
 
         ip = socket.gethostbyname(parsed.hostname)
         return not (
-            ip.startswith("127.") or
-            ip.startswith("10.") or
-            ip.startswith("192.168.") or
-            (ip.startswith("172.") and 16 <= int(ip.split(".")[1]) <= 31) or
-            ip.startswith("169.254.") or
-            ip.startswith("0.") or
-            ip == "255.255.255.255"
+            ip.startswith("127.")
+            or ip.startswith("10.")
+            or ip.startswith("192.168.")
+            or (ip.startswith("172.") and 16 <= int(ip.split(".")[1]) <= 31)
+            or ip.startswith("169.254.")
+            or ip.startswith("0.")
+            or ip == "255.255.255.255"
         )
     except Exception as e:
         logger.warning(f"Error checking URL {url}: {e}")
         return False
 
+
 def load_image_from_url(url: str, max_redirects: int = 3):
     """Load image from URL safely, mitigating SSRF and redirects."""
     import base64
     import io
+
     from PIL import Image
 
     if url.startswith("data:"):

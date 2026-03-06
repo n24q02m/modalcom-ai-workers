@@ -80,6 +80,7 @@ class OCRServer:
 
     def _load_image_from_url(self, url: str):
         from ai_workers.common.utils import load_image_from_url
+
         return load_image_from_url(url)
 
     def _run_ocr(self, image, prompt: str = "") -> str:
