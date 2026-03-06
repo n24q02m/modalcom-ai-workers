@@ -277,8 +277,16 @@ def test_vl_embedding_embed_multimodal_returns_list():
     mock_response = MagicMock()
     mock_response.raw = MagicMock()
 
+    mock_httpx = MagicMock()
+    mock_httpx.content = b"fake"
+    mock_client = MagicMock()
+    mock_client.get.return_value = mock_httpx
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
     with (
-        patch("requests.get", return_value=mock_response),
+        patch("httpx.Client", return_value=mock_client),
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
         patch("PIL.Image.open", return_value=mock_image),
     ):
         result = server._embed_multimodal(
@@ -386,8 +394,16 @@ def test_vl_reranker_score_pair_with_images():
     mock_response = MagicMock()
     mock_response.raw = MagicMock()
 
+    mock_httpx = MagicMock()
+    mock_httpx.content = b"fake"
+    mock_client = MagicMock()
+    mock_client.get.return_value = mock_httpx
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
     with (
-        patch("requests.get", return_value=mock_response),
+        patch("httpx.Client", return_value=mock_client),
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
         patch("PIL.Image.open", return_value=mock_image),
     ):
         score = server._score_pair(
@@ -411,11 +427,19 @@ def test_vl_reranker_load_image():
     mock_response = MagicMock()
     mock_response.raw = MagicMock()
 
+    mock_httpx = MagicMock()
+    mock_httpx.content = b"fake"
+    mock_client = MagicMock()
+    mock_client.get.return_value = mock_httpx
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
     with (
-        patch("requests.get", return_value=mock_response) as mock_get,
+        patch("httpx.Client", return_value=mock_client),
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
         patch("PIL.Image.open", return_value=mock_image),
     ):
         result = VLRerankerServer._load_image("https://example.com/img.jpg")
 
-    mock_get.assert_called_once_with("https://example.com/img.jpg", stream=True, timeout=30)
-    assert result is mock_image
+    assert result is mock_image.convert()
+    mock_client.get.assert_called_once()
