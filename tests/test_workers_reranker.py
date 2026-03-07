@@ -70,7 +70,7 @@ def test_rerank_unknown_model(server):
 
 
 def test_rerank_single_document(server):
-    server._score_pair = MagicMock(return_value=0.9)
+    server._score_batch = MagicMock(return_value=[0.9])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -81,6 +81,7 @@ def test_rerank_single_document(server):
                 "model": "qwen3-reranker-0.6b",
                 "query": "What is Python?",
                 "documents": ["Python is a language."],
+                "return_documents": True,
             },
             headers={"Authorization": "Bearer k"},
         )
@@ -90,12 +91,12 @@ def test_rerank_single_document(server):
     assert data["model"] == "qwen3-reranker-0.6b"
     assert len(data["results"]) == 1
     assert data["results"][0]["relevance_score"] == pytest.approx(0.9)
-    assert data["results"][0]["document"] == "Python is a language."
+    assert data["results"][0]["document"]["text"] == "Python is a language."
 
 
 def test_rerank_multiple_documents_sorted(server):
     scores = [0.3, 0.9, 0.5]
-    server._score_pair = MagicMock(side_effect=scores)
+    server._score_batch = MagicMock(return_value=scores)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -117,7 +118,7 @@ def test_rerank_multiple_documents_sorted(server):
 
 
 def test_rerank_top_n(server):
-    server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
+    server._score_batch = MagicMock(return_value=[0.3, 0.9, 0.5])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -137,7 +138,7 @@ def test_rerank_top_n(server):
 
 
 def test_rerank_heavy_model(server):
-    server._score_pair = MagicMock(return_value=0.7)
+    server._score_batch = MagicMock(return_value=[0.7])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()

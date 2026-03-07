@@ -134,40 +134,55 @@ def test_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
-    import torch
+def test_reranker_score_batch_returns_list_of_floats():
+    """_score_batch should return a list of floats between 0 and 1."""
+    from unittest.mock import MagicMock
 
-    server = RerankerServer()
+    # We mock torch globally so we can control arange
+    mock_torch = MagicMock()
 
-    # Build mock tokenizer with apply_chat_template
-    mock_tokenizer = MagicMock()
-    mock_tokenizer.apply_chat_template.return_value = "<prompt>"
-    mock_tokenizer.convert_tokens_to_ids.side_effect = lambda t: 1 if t == "yes" else 2
-
-    # Inputs mock
+    # Mock inputs logic
     mock_inputs = MagicMock()
-    mock_inputs.to.return_value = mock_inputs
-    mock_tokenizer.return_value = mock_inputs
+    mock_inputs.__getitem__.return_value = MagicMock()
+    mock_inputs.__getitem__.return_value.sum.return_value = MagicMock()
+    mock_inputs.__getitem__.return_value.sum.return_value.__sub__.return_value = MagicMock()
 
     # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
     mock_outputs = MagicMock()
-    mock_outputs.logits = torch.stack([logits_tensor.unsqueeze(0)] * 1).squeeze(0).unsqueeze(0)
-    # logits[0, -1, :] → logits_tensor
     mock_outputs.logits = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    # Mocking logits[:, yes_id] -> [2.0]
+    mock_outputs.logits.__getitem__.return_value = mock_outputs.logits
+    mock_outputs.logits.float.return_value = mock_outputs.logits
 
-    mock_model = MagicMock()
-    mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
+    # Mock sigmoid
+    mock_torch.sigmoid.return_value = MagicMock()
+    mock_torch.sigmoid.return_value.cpu.return_value.tolist.return_value = [0.88]
 
-    server.models = {"qwen3-reranker-0.6b": mock_model}
-    server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
+    with patch.dict("sys.modules", {"torch": mock_torch}):
+        from ai_workers.workers.reranker import RerankerServer
 
-    score = server._score_pair("qwen3-reranker-0.6b", "query", "document")
+        server = RerankerServer()
 
-    assert isinstance(score, float)
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.apply_chat_template.return_value = "<prompt>"
+        mock_tokenizer.convert_tokens_to_ids.side_effect = lambda t: 1 if t == "yes" else 2
+        mock_tokenizer_return = MagicMock()
+        mock_tokenizer_return.to.return_value = mock_inputs
+        mock_tokenizer.return_value = mock_tokenizer_return
+
+        mock_model = MagicMock()
+        mock_model.device = "cpu"
+        mock_model.return_value = mock_outputs
+
+        server.models = {"qwen3-reranker-0.6b": mock_model}
+        server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
+
+        scores = server._score_batch("qwen3-reranker-0.6b", "query", ["document"])
+
+        assert isinstance(scores, list)
+        assert len(scores) == 1
+        assert isinstance(scores[0], float)
+        assert scores[0] == 0.88
 
 
 # ---------------------------------------------------------------------------
