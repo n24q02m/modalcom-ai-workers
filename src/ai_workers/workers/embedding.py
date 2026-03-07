@@ -119,7 +119,7 @@ class EmbeddingServer:
         class EmbeddingRequest(BaseModel):
             model: str = "qwen3-embedding-0.6b"
             input: str | list[str]
-            encoding_format: str = "float"
+            encoding_format: str | None = "float"
 
         class EmbeddingData(BaseModel):
             object: str = "embedding"
