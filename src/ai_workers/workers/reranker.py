@@ -137,11 +137,17 @@ class RerankerServer:
             query: str
             documents: list[str]
             top_n: int | None = None
+            return_documents: bool = False
+            rank_fields: list[str] | None = None
+            max_tokens_per_doc: int | None = None
+
+        class RerankResultDocument(BaseModel):
+            text: str
 
         class RerankResult(BaseModel):
             index: int
             relevance_score: float
-            document: str
+            document: RerankResultDocument | None = None
 
         class RerankResponse(BaseModel):
             model: str
@@ -171,22 +177,20 @@ class RerankerServer:
                 "models": list(MODEL_CONFIGS.keys()),
             }
 
-        @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(body: RerankRequest = Body(...)):
+        async def _do_rerank(body: RerankRequest) -> RerankResponse:
             if body.model not in MODEL_CONFIGS:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": f"Unknown model: {body.model}. "
-                        f"Available: {list(MODEL_CONFIGS.keys())}"
-                    },
+                raise ValueError(
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
                 score = self._score_pair(body.model, body.query, doc)
-                results.append(RerankResult(index=i, relevance_score=score, document=doc))
+                result = RerankResult(index=i, relevance_score=score)
+                if body.return_documents:
+                    result.document = RerankResultDocument(text=doc)
+                results.append(result)
 
             # Sort by relevance score descending
             results.sort(key=lambda x: x.relevance_score, reverse=True)
@@ -196,5 +200,19 @@ class RerankerServer:
                 results = results[: body.top_n]
 
             return RerankResponse(model=body.model, results=results)
+
+        @app.post("/v1/rerank", response_model=RerankResponse)
+        async def rerank_v1(body: RerankRequest = Body(...)):
+            try:
+                return await _do_rerank(body)
+            except ValueError as e:
+                return JSONResponse(status_code=400, content={"error": str(e)})
+
+        @app.post("/v2/rerank", response_model=RerankResponse)
+        async def rerank_v2(body: RerankRequest = Body(...)):
+            try:
+                return await _do_rerank(body)
+            except ValueError as e:
+                return JSONResponse(status_code=400, content={"error": str(e)})
 
         return app
