@@ -21,6 +21,7 @@ dependencies = [
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
   "fastapi>=0.115",
+  "httpx>=0.28.1",
 ]
 
 [project.urls]

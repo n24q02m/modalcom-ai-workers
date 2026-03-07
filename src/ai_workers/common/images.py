@@ -42,6 +42,7 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
         "fastapi>=0.115",
         "loguru>=0.7",
         "pydantic>=2.0",
+        "httpx>=0.28.1",
     ]
     if flash_attn:
         # DeepSeek-OCR-2 custom modeling code dependencies
@@ -84,6 +85,7 @@ def transformers_audio_image() -> modal.Image:
             "fastapi>=0.115",
             "loguru>=0.7",
             "pydantic>=2.0",
+            "httpx>=0.28.1",
             "librosa>=0.10",
             "soundfile>=0.12",
             "python-multipart>=0.0.9",

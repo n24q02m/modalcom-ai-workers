@@ -190,7 +190,7 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use httpx.Client from ai_workers.common.utils."""
     import io
 
     from PIL import Image
@@ -201,11 +201,18 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.status_code = 200
+    mock_resp.iter_bytes.return_value = [buf.getvalue()]
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    mock_client_instance = MagicMock()
+    mock_client_instance.get.return_value = mock_resp
+    mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+    mock_client_instance.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch("httpx.Client", return_value=mock_client_instance),
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
+    ):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
