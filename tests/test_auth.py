@@ -1,6 +1,7 @@
 """Tests for Bearer token authentication middleware.
 
-Validates token verification, timing-safe comparison, and dev mode bypass.
+Validates token verification, timing-safe comparison, dev mode bypass,
+and multi-key support for per-app isolation.
 """
 
 from __future__ import annotations
@@ -11,7 +12,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+import ai_workers.common.auth as auth_module
 from ai_workers.common.auth import verify_api_key
+
+
+@pytest.fixture(autouse=True)
+def _reset_key_cache() -> None:
+    """Reset cached keys between tests."""
+    auth_module._valid_keys = None
 
 
 def _make_request(*, auth_header: str | None = None) -> MagicMock:
@@ -168,3 +176,61 @@ class TestEdgeCases:
             request = _make_request(auth_header="Bearer mysecret")
             with pytest.raises(HTTPException):
                 await verify_api_key(request)
+
+
+class TestMultiKeySupport:
+    """Test per-app multi-key authentication."""
+
+    @pytest.mark.asyncio
+    async def test_comma_separated_keys(self) -> None:
+        """WORKER_API_KEYS with comma-separated values should all be valid."""
+        env = {"WORKER_API_KEYS": "key-klprism,key-aiora", "WORKER_API_KEY": ""}
+        with patch.dict(os.environ, env, clear=False):
+            request = _make_request(auth_header="Bearer key-aiora")
+            await verify_api_key(request)  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_per_app_env_vars(self) -> None:
+        """WORKER_API_KEY_<APP> env vars should be accepted."""
+        env = {
+            "WORKER_API_KEY": "",
+            "WORKER_API_KEY_KLPRISM": "kp-secret",
+            "WORKER_API_KEY_AIORA": "aiora-secret",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            request = _make_request(auth_header="Bearer aiora-secret")
+            await verify_api_key(request)  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_per_app_key_rejects_invalid(self) -> None:
+        """Invalid token should be rejected even with multiple valid keys."""
+        env = {
+            "WORKER_API_KEY": "",
+            "WORKER_API_KEY_KLPRISM": "kp-secret",
+            "WORKER_API_KEY_AIORA": "aiora-secret",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            request = _make_request(auth_header="Bearer wrong-key")
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_api_key(request)
+            assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_mixed_key_sources(self) -> None:
+        """Keys from all sources should work together."""
+        env = {
+            "WORKER_API_KEY": "legacy-key",
+            "WORKER_API_KEYS": "multi-key-1,multi-key-2",
+            "WORKER_API_KEY_MYAPP": "app-key",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            # Legacy key works
+            request = _make_request(auth_header="Bearer legacy-key")
+            await verify_api_key(request)
+
+            # Reset cache for next check
+            auth_module._valid_keys = None
+
+            # Per-app key works
+            request = _make_request(auth_header="Bearer app-key")
+            await verify_api_key(request)
