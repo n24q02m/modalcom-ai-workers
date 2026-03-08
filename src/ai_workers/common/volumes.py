@@ -52,6 +52,7 @@ _download_image = (
         "huggingface_hub[hf_xet]",
         "transformers>=4.47",
         "torch>=2.4",
+        "loguru>=0.7",
     )
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})
 )
