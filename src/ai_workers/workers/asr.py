@@ -80,18 +80,27 @@ class ASRServer:
             self.models[name] = model
             logger.info("Loaded {} successfully", name)
 
-    def _load_audio(self, file_bytes: bytes) -> bytes:
-        """Pass through audio bytes for qwen-asr processing."""
-        return file_bytes
+    def _load_audio(self, file_bytes: bytes) -> tuple:
+        """Convert audio bytes to (numpy_array, sample_rate) tuple for qwen-asr.
 
-    def _transcribe(self, model_name: str, audio_bytes: bytes, language: str | None = None) -> str:
+        qwen-asr accepts: file path, URL, base64, or (ndarray, sr) tuple.
+        Since we receive multipart upload bytes, convert via soundfile.
+        """
+        import io
+
+        import soundfile as sf
+
+        audio_array, sample_rate = sf.read(io.BytesIO(file_bytes), dtype="float32")
+        return (audio_array, sample_rate)
+
+    def _transcribe(self, model_name: str, audio_data, language: str | None = None) -> str:
         """Transcribe audio using the specified model.
 
         qwen-asr returns a list of result objects with .text and .language attrs.
         Also handles str/dict returns for robustness.
         """
         model = self.models[model_name]
-        result = model.transcribe(audio=audio_bytes, language=language)
+        result = model.transcribe(audio=audio_data, language=language)
         if isinstance(result, str):
             return result.strip()
         if isinstance(result, dict):

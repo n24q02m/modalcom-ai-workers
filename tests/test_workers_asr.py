@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 from unittest.mock import MagicMock, patch
 
@@ -246,8 +247,21 @@ def test_transcribe_method_with_language(server):
     mock_model.transcribe.assert_called_once_with(audio=b"audio_data", language="es")
 
 
-def test_load_audio_returns_bytes(server):
-    """_load_audio should pass through audio bytes."""
-    audio = b"test audio bytes"
-    result = server._load_audio(audio)
-    assert result == audio
+def test_load_audio_returns_numpy_tuple(server):
+    """_load_audio should convert bytes to (numpy_array, sample_rate) tuple."""
+    import struct
+    import wave
+
+    # Generate minimal valid WAV file
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(struct.pack("10h", *([0] * 10)))
+    wav_bytes = buf.getvalue()
+
+    result = server._load_audio(wav_bytes)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert isinstance(result[1], int)  # sample rate
