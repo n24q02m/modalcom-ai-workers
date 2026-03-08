@@ -141,7 +141,7 @@ model_list:
     litellm_params:
       model: openai/qwen3-embedding-0.6b
       api_base: https://<workspace>--ai-workers-embedding-embeddingserver-serve.modal.run
-      api_key: ${WORKER_API_KEY}
+      api_key: ${KLPRISM_WORKER_API_KEY}  # Use the per-app key matching your app
 ```
 
 ### Consumer Usage (Python)
@@ -267,8 +267,37 @@ All model metadata lives in `src/ai_workers/common/config.py`. To add a new mode
 
 | Secret Name | Key | Used By |
 |------------|-----|---------|
-| `worker-api-key` | `WORKER_API_KEY` | All serving workers (endpoint auth) |
+| `worker-api-key` | `KLPRISM_WORKER_API_KEY` | KnowledgePrism endpoint auth |
+| `worker-api-key` | `AIORA_WORKER_API_KEY` | Aiora endpoint auth |
 | `hf-token` | `HF_TOKEN` | ONNX/GGUF converters (HuggingFace Hub push) |
+
+#### Per-App API Key Authentication
+
+Each consumer app gets its own key in the Modal secret `worker-api-key`, using the naming pattern `<APP>_WORKER_API_KEY` (e.g. `KLPRISM_WORKER_API_KEY`, `AIORA_WORKER_API_KEY`). This provides per-app credential isolation at the worker level.
+
+**Setup (Modal dashboard):**
+
+1. Go to **Secrets** in the Modal dashboard
+2. Edit the `worker-api-key` secret
+3. Add one environment variable per app:
+   - `KLPRISM_WORKER_API_KEY` = `<unique-key-for-klprism>`
+   - `AIORA_WORKER_API_KEY` = `<unique-key-for-aiora>`
+4. Redeploy workers (or wait for next CD)
+
+**Client-side configuration:**
+
+Each consumer app stores its key under its own prefix in Infisical:
+- KnowledgePrism: `KLPRISM_WORKER_API_KEY` in Infisical, sent as `Authorization: Bearer <key>`
+- Aiora: `AIORA_WORKER_API_KEY` in Infisical, sent as `Authorization: Bearer <key>`
+
+**Key resolution priority** (all sources are merged, any valid key is accepted):
+
+1. `API_KEY` — single key (backwards compat)
+2. `WORKER_API_KEY` — single key (legacy)
+3. `WORKER_API_KEYS` — comma-separated multi-key
+4. `<APP>_WORKER_API_KEY` — per-app keys (recommended)
+
+If no keys are configured, auth is skipped entirely (dev mode).
 
 ### CI/CD Secrets (GitHub Actions)
 

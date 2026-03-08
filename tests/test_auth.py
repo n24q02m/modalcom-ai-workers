@@ -191,11 +191,11 @@ class TestMultiKeySupport:
 
     @pytest.mark.asyncio
     async def test_per_app_env_vars(self) -> None:
-        """WORKER_API_KEY_<APP> env vars should be accepted."""
+        """<APP>_WORKER_API_KEY env vars should be accepted."""
         env = {
             "WORKER_API_KEY": "",
-            "WORKER_API_KEY_KLPRISM": "kp-secret",
-            "WORKER_API_KEY_AIORA": "aiora-secret",
+            "KLPRISM_WORKER_API_KEY": "kp-secret",
+            "AIORA_WORKER_API_KEY": "aiora-secret",
         }
         with patch.dict(os.environ, env, clear=False):
             request = _make_request(auth_header="Bearer aiora-secret")
@@ -206,8 +206,8 @@ class TestMultiKeySupport:
         """Invalid token should be rejected even with multiple valid keys."""
         env = {
             "WORKER_API_KEY": "",
-            "WORKER_API_KEY_KLPRISM": "kp-secret",
-            "WORKER_API_KEY_AIORA": "aiora-secret",
+            "KLPRISM_WORKER_API_KEY": "kp-secret",
+            "AIORA_WORKER_API_KEY": "aiora-secret",
         }
         with patch.dict(os.environ, env, clear=False):
             request = _make_request(auth_header="Bearer wrong-key")
@@ -221,7 +221,7 @@ class TestMultiKeySupport:
         env = {
             "WORKER_API_KEY": "legacy-key",
             "WORKER_API_KEYS": "multi-key-1,multi-key-2",
-            "WORKER_API_KEY_MYAPP": "app-key",
+            "MYAPP_WORKER_API_KEY": "app-key",
         }
         with patch.dict(os.environ, env, clear=False):
             # Legacy key works

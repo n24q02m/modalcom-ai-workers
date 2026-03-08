@@ -22,5 +22,6 @@ If you discover a security vulnerability, please report it responsibly:
 - All code changes require review before merging
 - CodeQL analysis runs on every push
 - No secrets are hardcoded in the repository
-- Modal workers use scoped API keys (`WORKER_API_KEY`) for endpoint authentication
-- LiteLLM virtual keys provide per-app credential isolation
+- Modal workers use per-app API keys (`<APP>_WORKER_API_KEY`) for endpoint authentication, providing credential isolation per consumer app
+- Key comparison uses `hmac.compare_digest` to prevent timing attacks
+- LiteLLM virtual keys provide additional per-app credential isolation at the proxy layer

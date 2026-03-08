@@ -19,7 +19,7 @@ def _resolve_keys() -> list[str]:
     1. ``API_KEY`` — single key (backwards compat)
     2. ``WORKER_API_KEY`` — single key (legacy)
     3. ``WORKER_API_KEYS`` — comma-separated multi-key
-    4. ``WORKER_API_KEY_*`` — per-app keys (e.g. WORKER_API_KEY_KLPRISM)
+    4. ``<APP>_WORKER_API_KEY`` — per-app keys (e.g. KLPRISM_WORKER_API_KEY)
 
     If none are set, returns empty list (dev mode — auth skipped).
     """
@@ -39,9 +39,9 @@ def _resolve_keys() -> list[str]:
             if k and k not in keys:
                 keys.append(k)
 
-    # Per-app keys: WORKER_API_KEY_<APP>
+    # Per-app keys: <APP>_WORKER_API_KEY (e.g. KLPRISM_WORKER_API_KEY)
     for env_name, env_val in os.environ.items():
-        if env_name.startswith("WORKER_API_KEY_") and env_name != "WORKER_API_KEYS":
+        if env_name.endswith("_WORKER_API_KEY") and env_name != "WORKER_API_KEY":
             val = env_val.strip()
             if val and val not in keys:
                 keys.append(val)
