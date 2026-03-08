@@ -76,11 +76,13 @@ class TTSServer:
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
             logger.info("Loading {} ...", hf_id)
+            # NOTE: Do NOT pass cache_dir here — qwen-tts sub-model loading
+            # (AutoFeatureExtractor for speech_tokenizer) doesn't propagate it.
+            # HF_HUB_CACHE env var handles cache resolution consistently.
             model = Qwen3TTSModel.from_pretrained(
                 hf_id,
                 dtype=torch.bfloat16,
                 device_map="cuda:0",
-                cache_dir=HF_CACHE_DIR,
             )
             self.models[name] = model
             logger.info("Loaded {} successfully", name)

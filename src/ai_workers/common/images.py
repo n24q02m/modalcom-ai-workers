@@ -82,7 +82,7 @@ def transformers_tts_image() -> modal.Image:
     """
     return (
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
-        .apt_install("libsndfile1")
+        .apt_install("libsndfile1", "sox")  # sox required by qwen-tts audio processing
         .uv_pip_install(
             "torch>=2.4",
             "transformers>=4.47",
@@ -100,6 +100,7 @@ def transformers_tts_image() -> modal.Image:
             {
                 "HF_XET_HIGH_PERFORMANCE": "1",
                 "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+                "HF_HUB_CACHE": "/root/.cache/huggingface",  # Align with Volume mount + snapshot_download cache_dir
             }
         )
         .add_local_python_source("ai_workers")
@@ -133,6 +134,7 @@ def transformers_asr_image() -> modal.Image:
             {
                 "HF_XET_HIGH_PERFORMANCE": "1",
                 "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+                "HF_HUB_CACHE": "/root/.cache/huggingface",  # Align with Volume mount + snapshot_download cache_dir
             }
         )
         .add_local_python_source("ai_workers")
