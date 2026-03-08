@@ -30,8 +30,8 @@ class TestModelRegistry:
         assert len(MODEL_REGISTRY) > 0
 
     def test_expected_model_count(self) -> None:
-        """We expect 10 models in the registry."""
-        assert len(MODEL_REGISTRY) == 10
+        """We expect 13 models in the registry."""
+        assert len(MODEL_REGISTRY) == 13
 
     @pytest.mark.parametrize(
         "name",
@@ -45,7 +45,10 @@ class TestModelRegistry:
             "qwen3-vl-reranker-2b",
             "qwen3-vl-reranker-8b",
             "deepseek-ocr-2",
-            "whisper-large-v3",
+            "qwen3-tts-0.6b",
+            "qwen3-tts-1.7b",
+            "qwen3-asr-0.6b",
+            "qwen3-asr-1.7b",
         ],
     )
     def test_model_exists(self, name: str) -> None:
@@ -81,7 +84,10 @@ class TestModelRegistry:
             "qwen3-vl-reranker-2b": "ai-workers-vl-reranker",
             "qwen3-vl-reranker-8b": "ai-workers-vl-reranker",
             "deepseek-ocr-2": "ai-workers-deepseek-ocr-2",
-            "whisper-large-v3": "ai-workers-whisper-large-v3",
+            "qwen3-tts-0.6b": "ai-workers-tts",
+            "qwen3-tts-1.7b": "ai-workers-tts",
+            "qwen3-asr-0.6b": "ai-workers-qwen3-asr",
+            "qwen3-asr-1.7b": "ai-workers-qwen3-asr",
         }
         for config in MODEL_REGISTRY.values():
             assert config.modal_app_name == expected_names[config.name], (
@@ -106,6 +112,18 @@ class TestModelRegistry:
         ocr = get_model("deepseek-ocr-2")
         assert ocr.precision == Precision.BF16
 
+    def test_qwen3_tts_is_bf16(self) -> None:
+        """Qwen3-TTS models must be BF16."""
+        for name in ("qwen3-tts-0.6b", "qwen3-tts-1.7b"):
+            model = get_model(name)
+            assert model.precision == Precision.BF16
+
+    def test_qwen3_asr_is_bf16(self) -> None:
+        """Qwen3-ASR models must be BF16."""
+        for name in ("qwen3-asr-0.6b", "qwen3-asr-1.7b"):
+            model = get_model(name)
+            assert model.precision == Precision.BF16
+
     def test_all_models_use_custom_fastapi(self) -> None:
         """All models should use CUSTOM_FASTAPI serving engine (no vLLM)."""
         for config in MODEL_REGISTRY.values():
@@ -119,7 +137,7 @@ class TestListModels:
 
     def test_list_all(self) -> None:
         models = list_models()
-        assert len(models) == 10
+        assert len(models) == 13
 
     def test_filter_by_task(self) -> None:
         embeddings = list_models(task=Task.EMBEDDING)
@@ -131,7 +149,7 @@ class TestListModels:
         assert all(m.tier == Tier.LIGHT for m in light)
         heavy = list_models(tier=Tier.HEAVY)
         assert all(m.tier == Tier.HEAVY for m in heavy)
-        assert len(light) + len(heavy) == 10
+        assert len(light) + len(heavy) == 13
 
     def test_filter_by_task_and_tier(self) -> None:
         light_embed = list_models(task=Task.EMBEDDING, tier=Tier.LIGHT)
@@ -193,6 +211,7 @@ class TestWorkerModulePaths:
             (Task.VL_EMBEDDING, "ai_workers.workers.vl_embedding"),
             (Task.VL_RERANKER, "ai_workers.workers.vl_reranker"),
             (Task.OCR, "ai_workers.workers.ocr"),
+            (Task.TTS, "ai_workers.workers.tts"),
             (Task.ASR, "ai_workers.workers.asr"),
         ],
     )
@@ -213,7 +232,10 @@ class TestWorkerModulePaths:
             ("qwen3-vl-reranker-2b", "vl_reranker_app"),
             ("qwen3-vl-reranker-8b", "vl_reranker_app"),
             ("deepseek-ocr-2", "ocr_app"),
-            ("whisper-large-v3", "asr_app"),
+            ("qwen3-tts-0.6b", "tts_app"),
+            ("qwen3-tts-1.7b", "tts_app"),
+            ("qwen3-asr-0.6b", "asr_app"),
+            ("qwen3-asr-1.7b", "asr_app"),
         ],
     )
     def test_modal_app_var_mapping(self, model_name: str, expected_var: str) -> None:

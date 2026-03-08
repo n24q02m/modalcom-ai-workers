@@ -1,4 +1,4 @@
-"""Tests for ASRServer FastAPI routes."""
+"""Tests for ASRServer FastAPI routes (Qwen3-ASR)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workers.workers.asr import MODEL_NAME, ASRServer
+from ai_workers.workers.asr import DEFAULT_MODEL, MODEL_CONFIGS, ASRServer
 
 
 @pytest.fixture()
@@ -37,7 +37,17 @@ def test_health(server):
     tc = TestClient(app)
     resp = tc.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["model"] == MODEL_NAME
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert set(data["models"]) == set(MODEL_CONFIGS.keys())
+
+
+def test_health_returns_model_names(server):
+    app = server.serve()
+    tc = TestClient(app)
+    resp = tc.get("/health")
+    assert "qwen3-asr-0.6b" in resp.json()["models"]
+    assert "qwen3-asr-1.7b" in resp.json()["models"]
 
 
 # ---------------------------------------------------------------------------
@@ -61,14 +71,14 @@ def test_transcribe_requires_auth(server):
 
 
 def test_transcribe_json_format(server):
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    server.pipe = MagicMock(return_value={"text": "hello world"})
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    server._transcribe = MagicMock(return_value="hello world")
 
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/transcriptions",
         files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"model": MODEL_NAME, "response_format": "json"},
+        data={"model": DEFAULT_MODEL, "response_format": "json"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
@@ -77,14 +87,14 @@ def test_transcribe_json_format(server):
 
 
 def test_transcribe_text_format(server):
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    server.pipe = MagicMock(return_value={"text": " plain text "})
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    server._transcribe = MagicMock(return_value="plain text")
 
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/transcriptions",
         files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"model": MODEL_NAME, "response_format": "text"},
+        data={"model": DEFAULT_MODEL, "response_format": "text"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
@@ -93,20 +103,14 @@ def test_transcribe_text_format(server):
 
 
 def test_transcribe_verbose_json(server):
-    pipe_result = {
-        "text": "hello",
-        "chunks": [
-            {"timestamp": (0.0, 2.5), "text": "hello"},
-        ],
-    }
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    server.pipe = MagicMock(return_value=pipe_result)
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    server._transcribe = MagicMock(return_value="hello")
 
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/transcriptions",
         files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"model": MODEL_NAME, "response_format": "verbose_json"},
+        data={"model": DEFAULT_MODEL, "response_format": "verbose_json"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
@@ -114,33 +118,15 @@ def test_transcribe_verbose_json(server):
     data = resp.json()
     assert data["task"] == "transcribe"
     assert data["text"] == "hello"
-    assert data["duration"] == pytest.approx(2.5)
-    assert len(data["segments"]) == 1
-    assert data["segments"][0]["start"] == pytest.approx(0.0)
-    assert data["segments"][0]["end"] == pytest.approx(2.5)
-
-
-def test_transcribe_verbose_json_empty_chunks(server):
-    """Verbose JSON with no chunks: duration should be 0.0."""
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    server.pipe = MagicMock(return_value={"text": "hi", "chunks": []})
-
-    tc, key = _client(server)
-    resp = tc.post(
-        "/v1/audio/transcriptions",
-        files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"response_format": "verbose_json"},
-        headers={"Authorization": f"Bearer {key}"},
-    )
-
-    assert resp.status_code == 200
-    assert resp.json()["duration"] == 0.0
+    assert data["language"] == "auto"
+    assert data["duration"] == 0.0
+    assert data["segments"] is None
 
 
 def test_transcribe_with_language(server):
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    mock_pipe = MagicMock(return_value={"text": "bonjour"})
-    server.pipe = mock_pipe
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    mock_transcribe = MagicMock(return_value="bonjour")
+    server._transcribe = mock_transcribe
 
     tc, key = _client(server)
     resp = tc.post(
@@ -151,47 +137,117 @@ def test_transcribe_with_language(server):
     )
 
     assert resp.status_code == 200
-    # Verify language was passed to pipe via generate_kwargs
-    call_kwargs = mock_pipe.call_args[1]
-    assert call_kwargs["generate_kwargs"]["language"] == "fr"
+    # Verify language was passed to _transcribe
+    call_kwargs = mock_transcribe.call_args
+    assert call_kwargs[1]["language"] == "fr"
 
 
-def test_transcribe_with_temperature(server):
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    mock_pipe = MagicMock(return_value={"text": "test"})
-    server.pipe = mock_pipe
+def test_transcribe_verbose_json_with_language(server):
+    """Verbose JSON with explicit language should use that language."""
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    server._transcribe = MagicMock(return_value="bonjour")
 
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/transcriptions",
         files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"temperature": "0.5"},
+        data={"language": "fr", "response_format": "verbose_json"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
     assert resp.status_code == 200
-    call_kwargs = mock_pipe.call_args[1]
-    assert call_kwargs["generate_kwargs"]["temperature"] == pytest.approx(0.5)
-    assert call_kwargs["generate_kwargs"]["do_sample"] is True
+    assert resp.json()["language"] == "fr"
 
 
-def test_transcribe_verbose_json_none_timestamps(server):
-    """Timestamps with None values should default to 0.0."""
-    pipe_result = {
-        "text": "hi",
-        "chunks": [{"timestamp": (None, None), "text": "hi"}],
-    }
-    server._load_audio = MagicMock(return_value={"raw": [], "sampling_rate": 16000})
-    server.pipe = MagicMock(return_value=pipe_result)
+# ---------------------------------------------------------------------------
+# Model routing
+# ---------------------------------------------------------------------------
+
+
+def test_transcribe_light_model(server):
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    mock_transcribe = MagicMock(return_value="light result")
+    server._transcribe = mock_transcribe
 
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/transcriptions",
         files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
-        data={"response_format": "verbose_json"},
+        data={"model": "qwen3-asr-0.6b"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
-    seg = resp.json()["segments"][0]
-    assert seg["start"] == 0.0
-    assert seg["end"] == 0.0
+    assert resp.status_code == 200
+    assert mock_transcribe.call_args[0][0] == "qwen3-asr-0.6b"
+
+
+def test_transcribe_heavy_model(server):
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    mock_transcribe = MagicMock(return_value="heavy result")
+    server._transcribe = mock_transcribe
+
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
+        data={"model": "qwen3-asr-1.7b"},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 200
+    assert mock_transcribe.call_args[0][0] == "qwen3-asr-1.7b"
+
+
+def test_transcribe_unknown_model(server):
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("audio.wav", _make_audio_bytes(), "audio/wav")},
+        data={"model": "nonexistent-model"},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 400
+    assert "Unknown model" in resp.json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# _transcribe method
+# ---------------------------------------------------------------------------
+
+
+def test_transcribe_method_string_result(server):
+    """_transcribe should handle string result from model."""
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = " hello world "
+    server.models = {DEFAULT_MODEL: mock_model}
+
+    result = server._transcribe(DEFAULT_MODEL, b"audio_data")
+    assert result == "hello world"
+
+
+def test_transcribe_method_dict_result(server):
+    """_transcribe should handle dict result with 'text' key."""
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = {"text": " bonjour "}
+    server.models = {DEFAULT_MODEL: mock_model}
+
+    result = server._transcribe(DEFAULT_MODEL, b"audio_data")
+    assert result == "bonjour"
+
+
+def test_transcribe_method_with_language(server):
+    """_transcribe should pass language to model."""
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = "hola"
+    server.models = {DEFAULT_MODEL: mock_model}
+
+    server._transcribe(DEFAULT_MODEL, b"audio_data", language="es")
+    mock_model.transcribe.assert_called_once_with(audio=b"audio_data", language="es")
+
+
+def test_load_audio_returns_bytes(server):
+    """_load_audio should pass through audio bytes."""
+    audio = b"test audio bytes"
+    result = server._load_audio(audio)
+    assert result == audio

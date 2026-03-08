@@ -20,6 +20,7 @@ class Task(enum.StrEnum):
     VL_RERANKER = "vl-reranker"
     OCR = "ocr"
     ASR = "automatic-speech-recognition"
+    TTS = "text-to-speech"
 
 
 class Precision(enum.StrEnum):
@@ -258,20 +259,69 @@ _register(
     )
 )
 
-# --- Whisper Large v3 ---
+# --- Qwen3 TTS (merged: light + heavy on single A10G) ---
 _register(
     ModelConfig(
-        name="whisper-large-v3",
-        hf_id="openai/whisper-large-v3",
-        task=Task.ASR,
-        tier=Tier.HEAVY,
-        precision=Precision.FP16,
-        gpu=GPU.T4,
+        name="qwen3-tts-0.6b",
+        hf_id="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        task=Task.TTS,
+        tier=Tier.LIGHT,
+        precision=Precision.BF16,
+        gpu=GPU.A10G,
         serving_engine=ServingEngine.CUSTOM_FASTAPI,
-        model_class=ModelClassType.SEQ2SEQ,
-        trust_remote_code=False,
+        model_class=ModelClassType.AUTO_MODEL,
+        worker_module="ai_workers.workers.tts",
+        modal_app_var="tts_app",
+        modal_app_name="ai-workers-tts",
+    )
+)
+
+_register(
+    ModelConfig(
+        name="qwen3-tts-1.7b",
+        hf_id="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        task=Task.TTS,
+        tier=Tier.HEAVY,
+        precision=Precision.BF16,
+        gpu=GPU.A10G,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
+        model_class=ModelClassType.AUTO_MODEL,
+        worker_module="ai_workers.workers.tts",
+        modal_app_var="tts_app",
+        modal_app_name="ai-workers-tts",
+    )
+)
+
+# --- Qwen3 ASR (merged: light + heavy on single A10G) ---
+_register(
+    ModelConfig(
+        name="qwen3-asr-0.6b",
+        hf_id="Qwen/Qwen3-ASR-0.6B",
+        task=Task.ASR,
+        tier=Tier.LIGHT,
+        precision=Precision.BF16,
+        gpu=GPU.A10G,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
+        model_class=ModelClassType.AUTO_MODEL,
         worker_module="ai_workers.workers.asr",
         modal_app_var="asr_app",
+        modal_app_name="ai-workers-qwen3-asr",
+    )
+)
+
+_register(
+    ModelConfig(
+        name="qwen3-asr-1.7b",
+        hf_id="Qwen/Qwen3-ASR-1.7B",
+        task=Task.ASR,
+        tier=Tier.HEAVY,
+        precision=Precision.BF16,
+        gpu=GPU.A10G,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
+        model_class=ModelClassType.AUTO_MODEL,
+        worker_module="ai_workers.workers.asr",
+        modal_app_var="asr_app",
+        modal_app_name="ai-workers-qwen3-asr",
     )
 )
 

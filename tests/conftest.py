@@ -201,6 +201,92 @@ _ensure_transformers_stub()
 
 
 # ---------------------------------------------------------------------------
+# qwen_tts stub
+# ---------------------------------------------------------------------------
+
+
+def _ensure_qwen_tts_stub() -> None:
+    """Inject a minimal qwen_tts stub if qwen-tts is not installed."""
+    if "qwen_tts" in sys.modules and not isinstance(sys.modules["qwen_tts"], MagicMock):
+        return
+    if importlib.util.find_spec("qwen_tts") is not None:
+        return
+
+    qwen_tts_stub = types.ModuleType("qwen_tts")
+    qwen_tts_stub.Qwen3TTSModel = MagicMock(name="Qwen3TTSModel")
+    sys.modules["qwen_tts"] = qwen_tts_stub
+
+
+_ensure_qwen_tts_stub()
+
+
+# ---------------------------------------------------------------------------
+# qwen_asr stub
+# ---------------------------------------------------------------------------
+
+
+def _ensure_qwen_asr_stub() -> None:
+    """Inject a minimal qwen_asr stub if qwen-asr is not installed."""
+    if "qwen_asr" in sys.modules and not isinstance(sys.modules["qwen_asr"], MagicMock):
+        return
+    if importlib.util.find_spec("qwen_asr") is not None:
+        return
+
+    qwen_asr_stub = types.ModuleType("qwen_asr")
+    qwen_asr_stub.Qwen3ASRModel = MagicMock(name="Qwen3ASRModel")
+    sys.modules["qwen_asr"] = qwen_asr_stub
+
+
+_ensure_qwen_asr_stub()
+
+
+# ---------------------------------------------------------------------------
+# soundfile stub
+# ---------------------------------------------------------------------------
+
+
+def _ensure_soundfile_stub() -> None:
+    """Inject a minimal soundfile stub if soundfile is not installed."""
+    if "soundfile" in sys.modules:
+        return
+    if importlib.util.find_spec("soundfile") is not None:
+        return
+
+    sf_stub = types.ModuleType("soundfile")
+    sf_stub.write = MagicMock()
+    sf_stub.read = MagicMock(return_value=(MagicMock(), 24000))
+    sys.modules["soundfile"] = sf_stub
+
+
+_ensure_soundfile_stub()
+
+
+# ---------------------------------------------------------------------------
+# numpy stub
+# ---------------------------------------------------------------------------
+
+
+def _ensure_numpy_stub() -> None:
+    """Inject a minimal numpy stub if numpy is not installed."""
+    if "numpy" in sys.modules:
+        return
+    if importlib.util.find_spec("numpy") is not None:
+        return
+
+    np_stub = types.ModuleType("numpy")
+    np_stub.ndarray = type("ndarray", (), {})
+    np_stub.zeros = MagicMock(return_value=MagicMock())
+    np_stub.array = MagicMock(return_value=MagicMock())
+    np_stub.float32 = "float32"
+    np_stub.isscalar = lambda obj: isinstance(obj, (int, float, complex, str, bytes))
+    np_stub.bool_ = type("bool_", (int,), {})
+    sys.modules["numpy"] = np_stub
+
+
+_ensure_numpy_stub()
+
+
+# ---------------------------------------------------------------------------
 # Autouse fixture: ensure WORKER_API_KEY is set so auth is enforced by default.
 # Tests that explicitly need dev-mode (no key) override this via patch.dict.
 # ---------------------------------------------------------------------------

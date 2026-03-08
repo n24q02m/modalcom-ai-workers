@@ -20,10 +20,17 @@ def test_transformers_image_flash_attn():
     assert img is not None
 
 
-def test_transformers_audio_image():
-    from ai_workers.common.images import transformers_audio_image
+def test_transformers_tts_image():
+    from ai_workers.common.images import transformers_tts_image
 
-    img = transformers_audio_image()
+    img = transformers_tts_image()
+    assert img is not None
+
+
+def test_transformers_asr_image():
+    from ai_workers.common.images import transformers_asr_image
+
+    img = transformers_asr_image()
     assert img is not None
 
 

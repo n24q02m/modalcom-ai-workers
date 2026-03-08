@@ -2,8 +2,10 @@
 
 All images use uv_pip_install (instead of pip_install) for ~50% faster install speed.
 
-Two types of images:
-- transformers_image(): For models served via custom FastAPI (embedding, reranker, VL, OCR, ASR)
+Image types:
+- transformers_image(): For models served via custom FastAPI (embedding, reranker, VL, OCR)
+- transformers_tts_image(): For Qwen3-TTS text-to-speech (qwen-tts package)
+- transformers_asr_image(): For Qwen3-ASR speech recognition (qwen-asr package)
 - onnx_converter_image(): For ONNX conversion pipeline (CPU-only)
 
 Models are loaded directly from HuggingFace Hub at container startup
@@ -64,16 +66,51 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     else:
         img = modal.Image.debian_slim(python_version=PYTHON_VERSION).uv_pip_install(*packages)
 
-    return img.env({
-        "HF_XET_HIGH_PERFORMANCE": "1",
-        "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
-    }).add_local_python_source("ai_workers")
+    return img.env(
+        {
+            "HF_XET_HIGH_PERFORMANCE": "1",
+            "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+        }
+    ).add_local_python_source("ai_workers")
 
 
-def transformers_audio_image() -> modal.Image:
-    """Build a Modal image with transformers + audio processing for Whisper.
+def transformers_tts_image() -> modal.Image:
+    """Build a Modal image with qwen-tts for Qwen3-TTS text-to-speech.
 
     Models are loaded from HuggingFace Hub via Xet protocol at container startup.
+    Includes soundfile and numpy for WAV audio output.
+    """
+    return (
+        modal.Image.debian_slim(python_version=PYTHON_VERSION)
+        .apt_install("libsndfile1")
+        .uv_pip_install(
+            "torch>=2.4",
+            "transformers>=4.47",
+            "safetensors>=0.4",
+            "accelerate>=1.0",
+            "huggingface_hub[hf_xet]",  # Fast model download via Xet protocol
+            "fastapi>=0.115",
+            "loguru>=0.7",
+            "pydantic>=2.0",
+            "qwen-tts",
+            "soundfile>=0.12",
+            "numpy>=2.0",
+        )
+        .env(
+            {
+                "HF_XET_HIGH_PERFORMANCE": "1",
+                "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+            }
+        )
+        .add_local_python_source("ai_workers")
+    )
+
+
+def transformers_asr_image() -> modal.Image:
+    """Build a Modal image with qwen-asr for Qwen3-ASR speech recognition.
+
+    Models are loaded from HuggingFace Hub via Xet protocol at container startup.
+    Includes soundfile and python-multipart for audio file upload handling.
     """
     return (
         modal.Image.debian_slim(python_version=PYTHON_VERSION)
@@ -87,14 +124,17 @@ def transformers_audio_image() -> modal.Image:
             "fastapi>=0.115",
             "loguru>=0.7",
             "pydantic>=2.0",
-            "librosa>=0.10",
+            "qwen-asr",
             "soundfile>=0.12",
+            "numpy>=2.0",
             "python-multipart>=0.0.9",
         )
-        .env({
-            "HF_XET_HIGH_PERFORMANCE": "1",
-            "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
-        })
+        .env(
+            {
+                "HF_XET_HIGH_PERFORMANCE": "1",
+                "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+            }
+        )
         .add_local_python_source("ai_workers")
     )
 

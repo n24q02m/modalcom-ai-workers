@@ -1,36 +1,48 @@
-"""ASR worker using Whisper Large v3 with Custom FastAPI.
+"""ASR worker using Qwen3-ASR with Custom FastAPI (merged light + heavy).
 
-Whisper Large v3 is a 1.55B parameter speech recognition model.
+Serves both Qwen3-ASR-0.6B (light) and Qwen3-ASR-1.7B (heavy)
+from a single A10G container. Routes by ``model`` field in request.
+
+Both models loaded at startup (BF16, A10G supports natively).
 Exposes OpenAI-compatible /v1/audio/transcriptions endpoint.
-Single app: whisper-large-v3 (T4, FP16).
 
 Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 
 LiteLLM integration:
-  model: openai/whisper-large-v3
+  model: openai/qwen3-asr-0.6b  (or qwen3-asr-1.7b)
   api_base: https://<modal-url>
 """
 
 import modal
 
-from ai_workers.common.images import transformers_audio_image
+from ai_workers.common.images import transformers_asr_image
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
-SCALEDOWN_WINDOW = 300
-KEEP_WARM = 0
-MODEL_NAME = "whisper-large-v3"
-HF_ID = "openai/whisper-large-v3"
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+SCALEDOWN_WINDOW = 300  # 5 minutes
+KEEP_WARM = 0  # Scale to zero when idle
+
+# Models served by this single app — loaded from HuggingFace Hub
+MODEL_CONFIGS = {
+    "qwen3-asr-0.6b": {"hf_id": "Qwen/Qwen3-ASR-0.6B"},
+    "qwen3-asr-1.7b": {"hf_id": "Qwen/Qwen3-ASR-1.7B"},
+}
+
+DEFAULT_MODEL = "qwen3-asr-0.6b"
 
 asr_app = modal.App(
-    "ai-workers-whisper-large-v3",
+    "ai-workers-qwen3-asr",
     secrets=[modal.Secret.from_name("worker-api-key")],
 )
 
 
 @asr_app.cls(
-    gpu="T4",
-    image=transformers_audio_image(),
+    gpu="A10G",
+    image=transformers_asr_image(),
     volumes={HF_CACHE_DIR: hf_cache_vol},
     scaledown_window=SCALEDOWN_WINDOW,
     min_containers=KEEP_WARM,
@@ -40,46 +52,59 @@ asr_app = modal.App(
 )
 @modal.concurrent(max_inputs=5)
 class ASRServer:
-    """Custom FastAPI ASR server for Whisper Large v3.
+    """Merged ASR server for Qwen3-ASR-0.6B + 1.7B.
 
-    Uses transformers pipeline for robust multilingual speech-to-text.
-    Supports chunked long-form audio with automatic language detection.
+    Both models loaded at startup. Routes request to correct model
+    via the ``model`` field. Uses qwen-asr package for inference.
+    BF16 precision — A10G supports natively.
     """
 
     @modal.enter(snap=True)
-    def load_model(self) -> None:
+    def load_models(self) -> None:
+        """Load both ASR models at container startup (snapshotted by GPU Memory Snapshot)."""
         import torch
         from loguru import logger
-        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+        from qwen_asr import Qwen3ASRModel
 
-        logger.info("Loading {} ...", HF_ID)
-        self.processor = AutoProcessor.from_pretrained(HF_ID, cache_dir=HF_CACHE_DIR)
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            HF_ID,
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-            cache_dir=HF_CACHE_DIR,
-        )
+        self.models: dict[str, object] = {}
 
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=self.processor.tokenizer,
-            feature_extractor=self.processor.feature_extractor,
-            torch_dtype=torch.float16,
-            device_map="auto",
-        )
-        logger.info("Loaded {} successfully", MODEL_NAME)
+        for name, cfg in MODEL_CONFIGS.items():
+            hf_id = cfg["hf_id"]
+            logger.info("Loading {} ...", hf_id)
+            model = Qwen3ASRModel.from_pretrained(
+                hf_id,
+                dtype=torch.bfloat16,
+                device_map="cuda:0",
+                cache_dir=HF_CACHE_DIR,
+            )
+            self.models[name] = model
+            logger.info("Loaded {} successfully", name)
 
-    def _load_audio(self, file_bytes: bytes) -> dict:
-        """Load audio bytes into the format expected by the pipeline."""
-        import io
+    def _load_audio(self, file_bytes: bytes) -> bytes:
+        """Pass through audio bytes for qwen-asr processing."""
+        return file_bytes
 
-        import librosa
+    def _transcribe(self, model_name: str, audio_bytes: bytes, language: str | None = None) -> str:
+        """Transcribe audio using the specified model.
 
-        audio, sr = librosa.load(io.BytesIO(file_bytes), sr=16000, mono=True)
-        return {"raw": audio, "sampling_rate": sr}
+        qwen-asr returns a list of result objects with .text and .language attrs.
+        Also handles str/dict returns for robustness.
+        """
+        model = self.models[model_name]
+        result = model.transcribe(audio=audio_bytes, language=language)
+        if isinstance(result, str):
+            return result.strip()
+        if isinstance(result, dict):
+            return result.get("text", "").strip()
+        # List of result objects (qwen-asr standard return)
+        if isinstance(result, list) and len(result) > 0:
+            item = result[0]
+            if hasattr(item, "text"):
+                return item.text.strip()
+            if isinstance(item, dict):
+                return item.get("text", "").strip()
+            return str(item).strip()
+        return str(result).strip()
 
     @modal.asgi_app()
     def serve(self):
@@ -87,7 +112,7 @@ class ASRServer:
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
-        app = FastAPI(title="Whisper Large v3")
+        app = FastAPI(title="Qwen3 ASR (Light + Heavy)")
 
         class TranscriptionResponse(BaseModel):
             text: str
@@ -118,64 +143,42 @@ class ASRServer:
 
         @app.get("/health")
         async def health():
-            return {"status": "ok", "model": MODEL_NAME}
+            return {
+                "status": "ok",
+                "models": list(MODEL_CONFIGS.keys()),
+            }
 
         @app.post("/v1/audio/transcriptions")
         async def transcribe(
             file: UploadFile = File(...),
-            model: str = Form(MODEL_NAME),
+            model: str = Form(DEFAULT_MODEL),
             language: str | None = Form(None),
-            prompt: str | None = Form(None),
             response_format: str = Form("json"),
-            temperature: float = Form(0.0),
         ):
             """OpenAI-compatible audio transcription endpoint.
 
             Accepts multipart/form-data with an audio file.
             Supports formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg.
+            Routes to light (0.6B) or heavy (1.7B) model via the model field.
             """
+            if model not in MODEL_CONFIGS:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Unknown model: {model}. Available: {list(MODEL_CONFIGS.keys())}"
+                    },
+                )
+
             file_bytes = await file.read()
-            audio_input = self._load_audio(file_bytes)
-
-            # Build generate_kwargs
-            generate_kwargs: dict = {}
-            if language:
-                generate_kwargs["language"] = language
-            if prompt:
-                generate_kwargs["initial_prompt"] = prompt
-            if temperature > 0:
-                generate_kwargs["temperature"] = temperature
-                generate_kwargs["do_sample"] = True
-
-            result = self.pipe(
-                audio_input,
-                chunk_length_s=30,
-                batch_size=8,
-                return_timestamps=response_format == "verbose_json",
-                generate_kwargs=generate_kwargs,
-            )
-
-            text = result.get("text", "").strip()
+            audio_data = self._load_audio(file_bytes)
+            text = self._transcribe(model, audio_data, language=language)
 
             if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
-                segments = []
-                for i, chunk in enumerate(chunks):
-                    ts = chunk.get("timestamp", (0, 0))
-                    segments.append(
-                        {
-                            "id": i,
-                            "start": ts[0] if ts[0] is not None else 0.0,
-                            "end": ts[1] if ts[1] is not None else 0.0,
-                            "text": chunk.get("text", ""),
-                        }
-                    )
-                duration = segments[-1]["end"] if segments else 0.0
                 return VerboseTranscriptionResponse(
                     language=language or "auto",
-                    duration=duration,
+                    duration=0.0,
                     text=text,
-                    segments=segments,
+                    segments=None,
                 )
 
             if response_format == "text":

@@ -140,26 +140,28 @@ class TestDeployAllGrouping:
         assert len(modules["ai_workers.workers.vl_reranker"]) == 2
         # OCR: 1 model
         assert len(modules["ai_workers.workers.ocr"]) == 1
-        # ASR: 1 model
-        assert len(modules["ai_workers.workers.asr"]) == 1
+        # TTS: 2 models (light + heavy) share one module
+        assert len(modules["ai_workers.workers.tts"]) == 2
+        # ASR: 2 models (light + heavy) share one module
+        assert len(modules["ai_workers.workers.asr"]) == 2
 
     def test_total_unique_modules(self) -> None:
-        """Should have 6 unique worker modules for 10 models."""
+        """Should have 7 unique worker modules for 13 models."""
         modules = {c.worker_module for c in MODEL_REGISTRY.values() if c.worker_module}
-        assert len(modules) == 6
+        assert len(modules) == 7
 
     def test_total_unique_deploy_targets(self) -> None:
-        """Merged apps: should have 6 unique (module, app_var) pairs for 10 models.
+        """Merged apps: should have 7 unique (module, app_var) pairs for 13 models.
 
-        Embedding, Reranker, VL Embedding, VL Reranker each merge light+heavy
-        into one app. Plus OCR and ASR = 6 total deploy targets.
+        Embedding, Reranker, VL Embedding, VL Reranker, TTS, ASR each merge light+heavy
+        into one app. Plus OCR = 7 total deploy targets.
         """
         targets = {
             (c.worker_module, c.modal_app_var)
             for c in MODEL_REGISTRY.values()
             if c.worker_module and c.modal_app_var
         }
-        assert len(targets) == 6
+        assert len(targets) == 7
 
     def test_merged_apps_share_app_var(self) -> None:
         """Light and heavy variants of merged tasks should share the same modal_app_var."""
@@ -170,6 +172,8 @@ class TestDeployAllGrouping:
             ("qwen3-reranker-0.6b", "qwen3-reranker-8b"),
             ("qwen3-vl-embedding-2b", "qwen3-vl-embedding-8b"),
             ("qwen3-vl-reranker-2b", "qwen3-vl-reranker-8b"),
+            ("qwen3-tts-0.6b", "qwen3-tts-1.7b"),
+            ("qwen3-asr-0.6b", "qwen3-asr-1.7b"),
         ]
         for light, heavy in pairs:
             light_cfg = get_model(light)
