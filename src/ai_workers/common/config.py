@@ -263,7 +263,7 @@ _register(
 _register(
     ModelConfig(
         name="qwen3-tts-0.6b",
-        hf_id="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        hf_id="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
         task=Task.TTS,
         tier=Tier.LIGHT,
         precision=Precision.BF16,
@@ -279,7 +279,7 @@ _register(
 _register(
     ModelConfig(
         name="qwen3-tts-1.7b",
-        hf_id="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        hf_id="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
         task=Task.TTS,
         tier=Tier.HEAVY,
         precision=Precision.BF16,

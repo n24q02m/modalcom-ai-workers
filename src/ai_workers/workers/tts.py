@@ -1,6 +1,6 @@
-"""TTS worker using Qwen3-TTS with Custom FastAPI (merged light + heavy).
+"""TTS worker using Qwen3-TTS CustomVoice with Custom FastAPI (merged light + heavy).
 
-Serves both Qwen3-TTS-12Hz-0.6B-Base (light) and Qwen3-TTS-12Hz-1.7B-Base (heavy)
+Serves both Qwen3-TTS-12Hz-0.6B-CustomVoice (light) and Qwen3-TTS-12Hz-1.7B-CustomVoice (heavy)
 from a single A10G container. Routes by ``model`` field in request.
 
 Both models loaded at startup (BF16, A10G supports natively).
@@ -9,14 +9,12 @@ Exposes OpenAI-compatible /v1/audio/speech endpoint.
 Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 
-Base models use voice cloning via generate_voice_clone():
-  - With ref_audio + ref_text: clone the reference voice
-  - With ref_audio only: x_vector_only_mode (timbre only, lower quality)
-  - Without ref_audio: x_vector_only_mode with no ref (default voice)
+CustomVoice models have 9 preset speakers:
+  aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian
 
 Endpoint:
   POST /v1/audio/speech
-  Input: JSON {model, input (text), language, ref_audio (optional base64/URL), ref_text (optional)}
+  Input: JSON {model, input (text), voice (speaker), language, instruct (optional)}
   Output: audio/wav response
 """
 
@@ -32,12 +30,26 @@ from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 DEFAULT_MODEL = "qwen3-tts-0.6b"
+DEFAULT_VOICE = "vivian"
 
 # Models served by this single app — loaded from HuggingFace Hub
 MODEL_CONFIGS = {
-    "qwen3-tts-0.6b": {"hf_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base"},
-    "qwen3-tts-1.7b": {"hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base"},
+    "qwen3-tts-0.6b": {"hf_id": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"},
+    "qwen3-tts-1.7b": {"hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"},
 }
+
+# 9 preset speakers available in CustomVoice models
+SUPPORTED_SPEAKERS = [
+    "aiden",
+    "dylan",
+    "eric",
+    "ono_anna",
+    "ryan",
+    "serena",
+    "sohee",
+    "uncle_fu",
+    "vivian",
+]
 
 tts_app = modal.App(
     "ai-workers-tts",
@@ -57,11 +69,11 @@ tts_app = modal.App(
 )
 @modal.concurrent(max_inputs=5)
 class TTSServer:
-    """Merged TTS server for Qwen3-TTS-12Hz-0.6B-Base + 1.7B-Base.
+    """Merged TTS server for Qwen3-TTS-12Hz-0.6B + 1.7B CustomVoice.
 
     Both models loaded at startup. Routes request to correct model
-    via the ``model`` field. Uses qwen-tts's Qwen3TTSModel for
-    voice-cloning TTS (10 languages, 12Hz tokenizer).
+    via the ``model`` field. Uses qwen-tts's Qwen3TTSModel with
+    generate_custom_voice() for preset speaker TTS (10 languages).
     """
 
     @modal.enter(snap=True)
@@ -76,9 +88,6 @@ class TTSServer:
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
             logger.info("Loading {} ...", hf_id)
-            # NOTE: Do NOT pass cache_dir here — qwen-tts sub-model loading
-            # (AutoFeatureExtractor for speech_tokenizer) doesn't propagate it.
-            # HF_HUB_CACHE env var handles cache resolution consistently.
             model = Qwen3TTSModel.from_pretrained(
                 hf_id,
                 dtype=torch.bfloat16,
@@ -91,36 +100,30 @@ class TTSServer:
         self,
         model_name: str,
         text: str,
+        voice: str = DEFAULT_VOICE,
         language: str = "Auto",
-        ref_audio: str | None = None,
-        ref_text: str | None = None,
+        instruct: str | None = None,
     ) -> tuple:
-        """Synthesize speech from text using voice cloning.
+        """Synthesize speech from text using a preset speaker.
 
         Returns (wav_numpy_array, sample_rate) tuple.
-        Base models always use generate_voice_clone():
-          - ref_audio + ref_text: full voice clone
-          - ref_audio only: x_vector_only_mode (timbre only)
-          - no ref_audio: x_vector_only_mode with no ref
+        Uses generate_custom_voice() with one of 9 preset speakers.
+        Optional instruct controls speaking style (e.g., "Very happy").
         """
         model = self.models[model_name]
 
         kwargs: dict = {
             "text": text,
             "language": language,
+            "speaker": voice,
         }
 
-        if ref_audio and ref_text:
-            kwargs["ref_audio"] = ref_audio
-            kwargs["ref_text"] = ref_text
-        elif ref_audio:
-            kwargs["ref_audio"] = ref_audio
-            kwargs["x_vector_only_mode"] = True
-        else:
-            kwargs["x_vector_only_mode"] = True
+        if instruct:
+            kwargs["instruct"] = instruct
 
-        wavs, sr = model.generate_voice_clone(**kwargs)
-        return wavs, sr
+        wavs, sr = model.generate_custom_voice(**kwargs)
+        # wavs is a list of arrays (one per input text)
+        return wavs[0] if isinstance(wavs, list) else wavs, sr
 
     @modal.asgi_app()
     def serve(self):
@@ -133,9 +136,9 @@ class TTSServer:
         class SpeechRequest(BaseModel):
             model: str = DEFAULT_MODEL
             input: str
+            voice: str = DEFAULT_VOICE  # OpenAI-compatible: preset speaker name
             language: str = "Auto"
-            ref_audio: str | None = None  # base64 data URI or URL
-            ref_text: str | None = None  # transcript of reference audio
+            instruct: str | None = None  # Speaking style instruction (optional)
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -159,14 +162,15 @@ class TTSServer:
             return {
                 "status": "ok",
                 "models": list(MODEL_CONFIGS.keys()),
+                "speakers": SUPPORTED_SPEAKERS,
             }
 
         @app.post("/v1/audio/speech")
         async def create_speech(body: SpeechRequest = Body(...)):
             """OpenAI-compatible TTS endpoint.
 
-            Returns WAV audio bytes. Supports voice cloning via ref_audio
-            (base64 data URI or URL) and ref_text.
+            Returns WAV audio bytes. Uses preset speakers from CustomVoice models.
+            Optional instruct field controls speaking style.
             """
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
@@ -174,6 +178,14 @@ class TTSServer:
                     content={
                         "error": f"Unknown model: {body.model}. "
                         f"Available: {list(MODEL_CONFIGS.keys())}"
+                    },
+                )
+
+            if body.voice.lower() not in SUPPORTED_SPEAKERS:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Unknown voice: {body.voice}. Available: {SUPPORTED_SPEAKERS}"
                     },
                 )
 
@@ -185,9 +197,9 @@ class TTSServer:
             wavs, sr = self._synthesize(
                 body.model,
                 body.input,
+                voice=body.voice,
                 language=body.language,
-                ref_audio=body.ref_audio,
-                ref_text=body.ref_text,
+                instruct=body.instruct,
             )
 
             # Convert to WAV bytes

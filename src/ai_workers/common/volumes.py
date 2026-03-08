@@ -38,9 +38,9 @@ ALL_MODEL_HF_IDS = [
     "Qwen/Qwen3-VL-Reranker-8B",
     # OCR
     "deepseek-ai/DeepSeek-OCR-2",
-    # TTS (0.6B + 1.7B)
-    "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    # TTS (0.6B + 1.7B) — CustomVoice variant with 9 preset speakers
+    "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
     # ASR (0.6B + 1.7B)
     "Qwen/Qwen3-ASR-0.6B",
     "Qwen/Qwen3-ASR-1.7B",

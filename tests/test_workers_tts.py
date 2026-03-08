@@ -1,4 +1,4 @@
-"""Tests for TTSServer FastAPI routes (Qwen3-TTS)."""
+"""Tests for TTSServer FastAPI routes (Qwen3-TTS CustomVoice)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workers.workers.tts import DEFAULT_MODEL, MODEL_CONFIGS, TTSServer
+from ai_workers.workers.tts import (
+    DEFAULT_MODEL,
+    DEFAULT_VOICE,
+    MODEL_CONFIGS,
+    SUPPORTED_SPEAKERS,
+    TTSServer,
+)
 
 
 @pytest.fixture()
@@ -20,14 +26,6 @@ def server():
 def client(server):
     app = server.serve()
     return TestClient(app, raise_server_exceptions=True)
-
-
-@pytest.fixture()
-def authed_client(server):
-    """Client with API key set in environment."""
-    with patch.dict(os.environ, {"API_KEY": "test-secret-key"}):
-        app = server.serve()
-        return TestClient(app, raise_server_exceptions=True), "test-secret-key"
 
 
 def _client(server, api_key="k"):
@@ -47,6 +45,8 @@ def test_health_no_auth(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert set(data["models"]) == set(MODEL_CONFIGS.keys())
+    assert "speakers" in data
+    assert "vivian" in data["speakers"]
 
 
 def test_health_returns_model_names(client):
@@ -87,7 +87,7 @@ def test_speech_with_valid_key(server):
 
 
 # ---------------------------------------------------------------------------
-# /v1/audio/speech — invalid model
+# /v1/audio/speech — invalid model / voice
 # ---------------------------------------------------------------------------
 
 
@@ -100,6 +100,17 @@ def test_speech_unknown_model(server):
     )
     assert resp.status_code == 400
     assert "Unknown model" in resp.json()["error"]
+
+
+def test_speech_unknown_voice(server):
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/audio/speech",
+        json={"model": "qwen3-tts-0.6b", "input": "hello", "voice": "nonexistent"},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    assert resp.status_code == 400
+    assert "Unknown voice" in resp.json()["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +171,22 @@ def test_speech_heavy_model(server):
     assert call_args[0][0] == "qwen3-tts-1.7b"
 
 
+def test_speech_with_voice(server):
+    import numpy as np
+
+    fake_wav = np.zeros(100, dtype=np.float32)
+    server._synthesize = MagicMock(return_value=(fake_wav, 24000))
+
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/audio/speech",
+        json={"model": "qwen3-tts-0.6b", "input": "Hello", "voice": "ryan"},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 200
+
+
 def test_speech_with_language(server):
     import numpy as np
 
@@ -169,14 +196,14 @@ def test_speech_with_language(server):
     tc, key = _client(server)
     resp = tc.post(
         "/v1/audio/speech",
-        json={"model": "qwen3-tts-0.6b", "input": "Bonjour", "language": "fr"},
+        json={"model": "qwen3-tts-0.6b", "input": "Bonjour", "language": "French"},
         headers={"Authorization": f"Bearer {key}"},
     )
 
     assert resp.status_code == 200
 
 
-def test_speech_with_voice_cloning(server):
+def test_speech_with_instruct(server):
     import numpy as np
 
     fake_wav = np.zeros(100, dtype=np.float32)
@@ -187,10 +214,9 @@ def test_speech_with_voice_cloning(server):
         "/v1/audio/speech",
         json={
             "model": "qwen3-tts-0.6b",
-            "input": "Clone this voice",
-            "language": "en",
-            "ref_audio": "data:audio/wav;base64,UklGRg==",
-            "ref_text": "Reference text",
+            "input": "I am so happy!",
+            "voice": "vivian",
+            "instruct": "Very happy and excited",
         },
         headers={"Authorization": f"Bearer {key}"},
     )
@@ -220,49 +246,51 @@ def test_speech_content_disposition_header(server):
 # ---------------------------------------------------------------------------
 
 
-def test_synthesize_without_ref_audio(server):
-    """_synthesize without ref_audio should use x_vector_only_mode."""
+def test_synthesize_default_speaker(server):
+    """_synthesize should use generate_custom_voice with default speaker."""
     import numpy as np
 
     mock_model = MagicMock()
-    mock_model.generate_voice_clone.return_value = (np.zeros(100, dtype=np.float32), 24000)
+    mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    _wavs, sample_rate = server._synthesize("qwen3-tts-0.6b", "hello", "en")
+    _wavs, sample_rate = server._synthesize("qwen3-tts-0.6b", "hello", "vivian", "English")
 
-    mock_model.generate_voice_clone.assert_called_once_with(
-        text="hello", language="en", x_vector_only_mode=True
+    mock_model.generate_custom_voice.assert_called_once_with(
+        text="hello", language="English", speaker="vivian"
     )
     assert sample_rate == 24000
 
 
-def test_synthesize_with_ref_audio_and_ref_text(server):
-    """_synthesize with ref_audio + ref_text should do full voice clone."""
+def test_synthesize_with_instruct(server):
+    """_synthesize with instruct should pass it to generate_custom_voice."""
     import numpy as np
 
     mock_model = MagicMock()
-    mock_model.generate_voice_clone.return_value = (np.zeros(100, dtype=np.float32), 24000)
+    mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    server._synthesize(
-        "qwen3-tts-0.6b", "hello", "en", ref_audio="data:audio/wav;base64,abc", ref_text="ref"
+    server._synthesize("qwen3-tts-0.6b", "hello", "ryan", "English", instruct="Angry tone")
+
+    mock_model.generate_custom_voice.assert_called_once_with(
+        text="hello", language="English", speaker="ryan", instruct="Angry tone"
     )
 
-    mock_model.generate_voice_clone.assert_called_once_with(
-        text="hello", language="en", ref_audio="data:audio/wav;base64,abc", ref_text="ref"
-    )
 
-
-def test_synthesize_with_ref_audio_only(server):
-    """_synthesize with ref_audio but no ref_text should use x_vector_only_mode."""
+def test_synthesize_different_speaker(server):
+    """_synthesize should pass the chosen speaker to generate_custom_voice."""
     import numpy as np
 
     mock_model = MagicMock()
-    mock_model.generate_voice_clone.return_value = (np.zeros(100, dtype=np.float32), 24000)
+    mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    server._synthesize("qwen3-tts-0.6b", "hello", "en", ref_audio="data:audio/wav;base64,abc")
+    server._synthesize("qwen3-tts-0.6b", "test", "aiden", "Auto")
 
-    mock_model.generate_voice_clone.assert_called_once_with(
-        text="hello", language="en", ref_audio="data:audio/wav;base64,abc", x_vector_only_mode=True
-    )
+    call_kwargs = mock_model.generate_custom_voice.call_args[1]
+    assert call_kwargs["speaker"] == "aiden"
+
+
+def test_default_voice_constant():
+    assert DEFAULT_VOICE == "vivian"
+    assert DEFAULT_VOICE in SUPPORTED_SPEAKERS
