@@ -6,8 +6,8 @@ from a single A10G container. Routes by ``model`` field in request.
 Both models loaded at startup (~17GB total on A10G 24GB VRAM).
 Custom transformers forward pass + mean pooling + L2 normalize.
 
-Models downloaded directly from HuggingFace Hub via Xet protocol
-at container startup (~1GB/s). No R2 storage needed.
+Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
+for fast cold start (~5-10s instead of >10 minutes).
 
 LiteLLM integration:
   model: openai/qwen3-embedding-0.6b  (or qwen3-embedding-8b)
@@ -17,6 +17,7 @@ LiteLLM integration:
 import modal
 
 from ai_workers.common.images import transformers_image
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -41,9 +42,12 @@ embedding_app = modal.App(
 @embedding_app.cls(
     gpu="A10G",
     image=transformers_image(),
+    volumes={HF_CACHE_DIR: hf_cache_vol},
     scaledown_window=SCALEDOWN_WINDOW,
     min_containers=KEEP_WARM,
     timeout=1800,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 @modal.concurrent(max_inputs=100)
 class EmbeddingServer:
@@ -54,9 +58,9 @@ class EmbeddingServer:
     with mean pooling and L2 normalization (no vLLM needed for embeddings).
     """
 
-    @modal.enter()
+    @modal.enter(snap=True)
     def load_models(self) -> None:
-        """Load both embedding models from HuggingFace Hub at container startup."""
+        """Load both embedding models at container startup (snapshotted by GPU Memory Snapshot)."""
         import torch
         from loguru import logger
         from transformers import AutoModel, AutoTokenizer
@@ -66,13 +70,18 @@ class EmbeddingServer:
 
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
-            logger.info("Loading {} from HuggingFace Hub...", hf_id)
-            tokenizer = AutoTokenizer.from_pretrained(hf_id, trust_remote_code=True)
+            logger.info("Loading {} ...", hf_id)
+            tokenizer = AutoTokenizer.from_pretrained(
+                hf_id,
+                trust_remote_code=True,
+                cache_dir=HF_CACHE_DIR,
+            )
             model = AutoModel.from_pretrained(
                 hf_id,
                 dtype=torch.float16,
                 trust_remote_code=True,
                 device_map="auto",
+                cache_dir=HF_CACHE_DIR,
             )
             model.eval()
             self.models[name] = model

@@ -64,7 +64,10 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     else:
         img = modal.Image.debian_slim(python_version=PYTHON_VERSION).uv_pip_install(*packages)
 
-    return img.env({"HF_XET_HIGH_PERFORMANCE": "1"}).add_local_python_source("ai_workers")
+    return img.env({
+        "HF_XET_HIGH_PERFORMANCE": "1",
+        "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+    }).add_local_python_source("ai_workers")
 
 
 def transformers_audio_image() -> modal.Image:
@@ -88,7 +91,10 @@ def transformers_audio_image() -> modal.Image:
             "soundfile>=0.12",
             "python-multipart>=0.0.9",
         )
-        .env({"HF_XET_HIGH_PERFORMANCE": "1"})
+        .env({
+            "HF_XET_HIGH_PERFORMANCE": "1",
+            "TORCHINDUCTOR_COMPILE_THREADS": "1",  # Required for GPU memory snapshot compatibility
+        })
         .add_local_python_source("ai_workers")
     )
 

@@ -9,8 +9,8 @@ Exposes OpenAI Vision-compatible /v1/chat/completions endpoint.
 Single app: deepseek-ocr-2 (A10G, BF16 — model trained in BF16, cannot
 convert to FP16 without degradation).
 
-Model downloaded directly from HuggingFace Hub via Xet protocol
-at container startup (~1GB/s). No R2 storage needed.
+Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
+for fast cold start (~5-10s instead of >10 minutes).
 
 LiteLLM integration:
   model: openai/deepseek-ocr-2
@@ -20,6 +20,7 @@ LiteLLM integration:
 import modal
 
 from ai_workers.common.images import transformers_image
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
@@ -35,9 +36,12 @@ ocr_app = modal.App(
 @ocr_app.cls(
     gpu="A10G",
     image=transformers_image(flash_attn=True),
+    volumes={HF_CACHE_DIR: hf_cache_vol},
     scaledown_window=SCALEDOWN_WINDOW,
     min_containers=KEEP_WARM,
     timeout=600,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 @modal.concurrent(max_inputs=5)
 class OCRServer:
@@ -48,20 +52,25 @@ class OCRServer:
     A10G supports BF16 natively; T4 does NOT.
     """
 
-    @modal.enter()
+    @modal.enter(snap=True)
     def load_model(self) -> None:
         import torch
         from loguru import logger
         from transformers import AutoModel, AutoProcessor
 
-        logger.info("Loading {} from HuggingFace Hub...", HF_ID)
-        self.processor = AutoProcessor.from_pretrained(HF_ID, trust_remote_code=True)
+        logger.info("Loading {} ...", HF_ID)
+        self.processor = AutoProcessor.from_pretrained(
+            HF_ID,
+            trust_remote_code=True,
+            cache_dir=HF_CACHE_DIR,
+        )
         self.model = AutoModel.from_pretrained(
             HF_ID,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
             device_map="auto",
             use_safetensors=True,
+            cache_dir=HF_CACHE_DIR,
         )
         self.model.eval()
         logger.info("Loaded {} successfully", MODEL_NAME)

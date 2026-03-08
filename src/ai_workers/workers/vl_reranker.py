@@ -8,13 +8,14 @@ Uses AutoModelForImageTextToText with yes/no logit scoring for relevance.
 
 Supports text-only and image+text multimodal query/document pairs.
 
-Models downloaded directly from HuggingFace Hub via Xet protocol
-at container startup (~1GB/s). No R2 storage needed.
+Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
+for fast cold start (~5-10s instead of >10 minutes).
 """
 
 import modal
 
 from ai_workers.common.images import transformers_image
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -41,9 +42,12 @@ vl_reranker_app = modal.App(
 @vl_reranker_app.cls(
     gpu="A10G",
     image=transformers_image(),
+    volumes={HF_CACHE_DIR: hf_cache_vol},
     scaledown_window=SCALEDOWN_WINDOW,
     min_containers=KEEP_WARM,
     timeout=1800,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 @modal.concurrent(max_inputs=100)
 class VLRerankerServer:
@@ -54,9 +58,9 @@ class VLRerankerServer:
     for relevance probability. Supports multimodal inputs.
     """
 
-    @modal.enter()
+    @modal.enter(snap=True)
     def load_models(self) -> None:
-        """Load both VL reranker models from HuggingFace Hub at container startup."""
+        """Load both VL reranker models at container startup (snapshotted by GPU Memory Snapshot)."""
         import torch
         from loguru import logger
         from transformers import AutoModelForImageTextToText, AutoProcessor
@@ -66,13 +70,18 @@ class VLRerankerServer:
 
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
-            logger.info("Loading {} from HuggingFace Hub...", hf_id)
-            processor = AutoProcessor.from_pretrained(hf_id, trust_remote_code=True)
+            logger.info("Loading {} ...", hf_id)
+            processor = AutoProcessor.from_pretrained(
+                hf_id,
+                trust_remote_code=True,
+                cache_dir=HF_CACHE_DIR,
+            )
             model = AutoModelForImageTextToText.from_pretrained(
                 hf_id,
                 torch_dtype=torch.float16,
                 trust_remote_code=True,
                 device_map="auto",
+                cache_dir=HF_CACHE_DIR,
             )
             model.eval()
             self.models[name] = model

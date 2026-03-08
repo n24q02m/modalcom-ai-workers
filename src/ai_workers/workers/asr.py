@@ -4,8 +4,8 @@ Whisper Large v3 is a 1.55B parameter speech recognition model.
 Exposes OpenAI-compatible /v1/audio/transcriptions endpoint.
 Single app: whisper-large-v3 (T4, FP16).
 
-Model downloaded directly from HuggingFace Hub via Xet protocol
-at container startup (~1GB/s). No R2 storage needed.
+Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
+for fast cold start (~5-10s instead of >10 minutes).
 
 LiteLLM integration:
   model: openai/whisper-large-v3
@@ -15,6 +15,7 @@ LiteLLM integration:
 import modal
 
 from ai_workers.common.images import transformers_audio_image
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
@@ -30,9 +31,12 @@ asr_app = modal.App(
 @asr_app.cls(
     gpu="T4",
     image=transformers_audio_image(),
+    volumes={HF_CACHE_DIR: hf_cache_vol},
     scaledown_window=SCALEDOWN_WINDOW,
     min_containers=KEEP_WARM,
     timeout=600,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 @modal.concurrent(max_inputs=5)
 class ASRServer:
@@ -42,19 +46,20 @@ class ASRServer:
     Supports chunked long-form audio with automatic language detection.
     """
 
-    @modal.enter()
+    @modal.enter(snap=True)
     def load_model(self) -> None:
         import torch
         from loguru import logger
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-        logger.info("Loading {} from HuggingFace Hub...", HF_ID)
-        self.processor = AutoProcessor.from_pretrained(HF_ID)
+        logger.info("Loading {} ...", HF_ID)
+        self.processor = AutoProcessor.from_pretrained(HF_ID, cache_dir=HF_CACHE_DIR)
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             HF_ID,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             device_map="auto",
+            cache_dir=HF_CACHE_DIR,
         )
 
         self.pipe = pipeline(

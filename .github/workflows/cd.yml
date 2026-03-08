@@ -86,6 +86,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --extra deploy
 
+      - name: Pre-download models to Volume
+        run: uv run modal run src/ai_workers/common/volumes.py
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
       - name: Deploy all workers
         run: uv run python -m ai_workers deploy --all
         env:
