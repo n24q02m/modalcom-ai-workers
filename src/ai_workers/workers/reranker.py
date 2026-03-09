@@ -133,7 +133,9 @@ class RerankerServer:
             batch_size = inputs["input_ids"].size(0)
 
             # Select the logits of the last valid token for each sequence
-            logits = outputs.logits[torch.arange(batch_size, device=model.device), last_token_indices, :]
+            logits = outputs.logits[
+                torch.arange(batch_size, device=model.device), last_token_indices, :
+            ]
 
             # Get logits for "yes" and "no" tokens
             yes_id = tokenizer.convert_tokens_to_ids("yes")

@@ -147,7 +147,10 @@ def test_reranker_score_batch_returns_float_list():
 
     # Inputs mock
     mock_inputs = MagicMock()
-    mock_inputs.to.return_value = {"input_ids": torch.tensor([[1, 2, 3]]), "attention_mask": torch.tensor([[1, 1, 1]])}
+    mock_inputs.to.return_value = {
+        "input_ids": torch.tensor([[1, 2, 3]]),
+        "attention_mask": torch.tensor([[1, 1, 1]]),
+    }
     mock_tokenizer.return_value = mock_inputs
 
     # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
