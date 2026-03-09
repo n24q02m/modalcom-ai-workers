@@ -100,12 +100,15 @@ class OCRServer:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Regular URL — input is from trusted API callers on Modal, not user-facing
-        import urllib.request
+        # Regular URL — enforce http/https and use httpx without following redirects to prevent SSRF
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("Invalid URL scheme. Only http/https are allowed.")
 
-        with urllib.request.urlopen(url) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            image_bytes = resp.read()
-        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        import httpx
+
+        resp = httpx.get(url, follow_redirects=False, timeout=30)
+        resp.raise_for_status()
+        return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
     def _run_ocr(self, image, prompt: str = "") -> str:
         """Run OCR on an image with optional prompt.

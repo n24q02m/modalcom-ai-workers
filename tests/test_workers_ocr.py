@@ -190,7 +190,7 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use httpx.get with SSRF protections."""
     import io
 
     from PIL import Image
@@ -201,11 +201,21 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.content = buf.getvalue()
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with patch("httpx.get", return_value=mock_resp) as mock_get:
         result = server._load_image_from_url("https://example.com/img.png")
 
+        mock_get.assert_called_once_with(
+            "https://example.com/img.png", follow_redirects=False, timeout=30
+        )
+        mock_resp.raise_for_status.assert_called_once()
+
     assert result.mode == "RGB"
+
+
+def test_load_image_from_url_network_invalid_scheme(server):
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid URL scheme"):
+        server._load_image_from_url("file:///etc/passwd")
