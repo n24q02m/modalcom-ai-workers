@@ -106,7 +106,11 @@ def _ensure_torch_stub() -> None:
     torch_stub.no_grad = MagicMock()
     torch_stub.no_grad.return_value.__enter__ = MagicMock(return_value=None)
     torch_stub.no_grad.return_value.__exit__ = MagicMock(return_value=False)
-    torch_stub.sigmoid = MagicMock(return_value=MagicMock(item=MagicMock(return_value=0.9)))
+    # mock torch.sigmoid to return an object that responds to item() or cpu().tolist()
+    _sigmoid_result = MagicMock()
+    _sigmoid_result.item.return_value = 0.9
+    _sigmoid_result.cpu.return_value = MagicMock(tolist=MagicMock(return_value=[0.9]))
+    torch_stub.sigmoid = MagicMock(return_value=_sigmoid_result)
 
     # Tensor creation functions — return MagicMock that supports tensor-like ops
     torch_stub.ones = MagicMock(return_value=MagicMock())
@@ -114,6 +118,7 @@ def _ensure_torch_stub() -> None:
     torch_stub.randn = MagicMock(return_value=MagicMock())
     torch_stub.stack = MagicMock(return_value=MagicMock())
     torch_stub.zeros = MagicMock(return_value=MagicMock())
+    torch_stub.arange = MagicMock(return_value=MagicMock())
 
     onnx_stub = types.ModuleType("torch.onnx")
     onnx_stub.export = MagicMock()

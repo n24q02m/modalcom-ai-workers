@@ -134,8 +134,8 @@ def test_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
+def test_reranker_score_batch_returns_float_list():
+    """_score_batch should return a list of floats between 0 and 1."""
     import torch
 
     server = RerankerServer()
@@ -147,14 +147,12 @@ def test_reranker_score_pair_returns_float():
 
     # Inputs mock
     mock_inputs = MagicMock()
-    mock_inputs.to.return_value = mock_inputs
+    mock_inputs.to.return_value = {"input_ids": torch.tensor([[1, 2, 3]]), "attention_mask": torch.tensor([[1, 1, 1]])}
     mock_tokenizer.return_value = mock_inputs
 
     # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
+    logits_tensor = torch.tensor([[0.0, 2.0, 0.0]])
     mock_outputs = MagicMock()
-    mock_outputs.logits = torch.stack([logits_tensor.unsqueeze(0)] * 1).squeeze(0).unsqueeze(0)
-    # logits[0, -1, :] → logits_tensor
     mock_outputs.logits = MagicMock()
     mock_outputs.logits.__getitem__.return_value = logits_tensor
 
@@ -165,9 +163,11 @@ def test_reranker_score_pair_returns_float():
     server.models = {"qwen3-reranker-0.6b": mock_model}
     server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
 
-    score = server._score_pair("qwen3-reranker-0.6b", "query", "document")
+    scores = server._score_batch("qwen3-reranker-0.6b", "query", ["document"])
 
-    assert isinstance(score, float)
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
 
 
 # ---------------------------------------------------------------------------
