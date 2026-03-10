@@ -127,6 +127,9 @@ class VLEmbeddingServer:
         import torch
         from PIL import Image
 
+        if not (image_url.startswith("http://") or image_url.startswith("https://")):
+            raise ValueError("Only http/https URLs are allowed for image fetching")
+
         model = self.models[model_name]
         processor = self.processors[model_name]
 
