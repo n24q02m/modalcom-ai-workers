@@ -43,3 +43,7 @@ Thumbs.db
 converted/
 temp/
 temp_test.json
+
+# AI Agent
+.jules/
+JULES.md
