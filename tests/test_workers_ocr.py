@@ -209,3 +209,17 @@ def test_load_image_from_url_network(server):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
+
+
+def test_load_image_from_url_base64_invalid_string(server):
+    """An invalid base64 string should raise an exception (ValueError or binascii.Error)."""
+    import binascii
+
+    with pytest.raises((ValueError, binascii.Error)):
+        server._load_image_from_url("data:image/png;base64,invalid-base64-string!")
+
+
+def test_load_image_from_url_base64_missing_comma(server):
+    """A data URI without a comma should raise ValueError."""
+    with pytest.raises(ValueError, match="not enough values to unpack"):
+        server._load_image_from_url("data:image/png;base64")
