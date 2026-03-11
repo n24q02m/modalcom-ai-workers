@@ -107,11 +107,22 @@ class OCRServer:
             image_bytes = resp.read()
         return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    def _run_ocr(self, image, prompt: str = "") -> str:
-        """Run OCR on an image with optional prompt.
+    def _run_ocr_infer(self, image, prompt: str = "") -> str:
+        """Run OCR using the model-specific infer method."""
+        import torch
 
-        DeepSeek-OCR-2 uses model-specific infer() method for OCR tasks.
-        """
+        with torch.no_grad():
+            outputs = self.model.infer(
+                images=image,
+                prompts=[prompt] if prompt else None,
+                processor=self.processor,
+            )
+            if isinstance(outputs, list):
+                return outputs[0] if outputs else ""
+            return str(outputs)
+
+    def _run_ocr_generate(self, image, prompt: str = "") -> str:
+        """Run OCR using the standard generate fallback method."""
         import torch
 
         # Build inputs using the processor
@@ -128,18 +139,7 @@ class OCRServer:
             ).to(self.model.device, torch.bfloat16)
 
         with torch.no_grad():
-            # Try model.infer() first (DeepSeek-OCR-2 specific), fallback to generate
-            if hasattr(self.model, "infer"):
-                outputs = self.model.infer(
-                    images=image,
-                    prompts=[prompt] if prompt else None,
-                    processor=self.processor,
-                )
-                if isinstance(outputs, list):
-                    return outputs[0] if outputs else ""
-                return str(outputs)
-
-            # Fallback: standard generate
+            # Standard generate
             generated_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=4096,
@@ -149,6 +149,16 @@ class OCRServer:
             generated_ids = generated_ids[:, inputs["input_ids"].shape[1] :]
             result = self.processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             return result[0] if result else ""
+
+    def _run_ocr(self, image, prompt: str = "") -> str:
+        """Run OCR on an image with optional prompt.
+
+        DeepSeek-OCR-2 uses model-specific infer() method for OCR tasks.
+        """
+        # Try model.infer() first (DeepSeek-OCR-2 specific), fallback to generate
+        if hasattr(self.model, "infer"):
+            return self._run_ocr_infer(image, prompt)
+        return self._run_ocr_generate(image, prompt)
 
     @modal.asgi_app()
     def serve(self):
