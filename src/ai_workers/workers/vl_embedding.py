@@ -85,82 +85,101 @@ class VLEmbeddingServer:
             self.processors[name] = processor
             logger.info("Loaded {} successfully", name)
 
-    def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
+    async def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
         """Embed text-only inputs using the specified model."""
+        import asyncio
+
+        def _do_embed():
+            import torch
+
+            model = self.models[model_name]
+            processor = self.processors[model_name]
+
+            # Wrap texts in chat format for VL model
+            messages_batch = [
+                [{"role": "user", "content": [{"type": "text", "text": t}]}] for t in texts
+            ]
+
+            # Process each message separately (VL processor handles one at a time)
+            all_embeddings = []
+            for messages in messages_batch:
+                text = processor.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                    # Mean pooling over sequence dimension
+                    attention_mask = inputs["attention_mask"].unsqueeze(-1)
+                    token_embeddings = outputs.last_hidden_state
+                    masked = token_embeddings * attention_mask
+                    summed = masked.sum(dim=1)
+                    counts = attention_mask.sum(dim=1).clamp(min=1e-9)
+                    embedding = summed / counts
+                    # L2 normalize
+                    embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+
+                all_embeddings.append(embedding[:, :EMBEDDING_DIM].cpu().tolist()[0])
+
+            return all_embeddings
+
+        return await asyncio.to_thread(_do_embed)
+
+    async def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
+        """Embed a single image+text pair."""
+        import asyncio
+        import io
+
+        import httpx
         import torch
+        from PIL import Image
+
+        if not (image_url.startswith("http://") or image_url.startswith("https://")):
+            raise ValueError("image_url must start with http:// or https://")
 
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        # Wrap texts in chat format for VL model
-        messages_batch = [
-            [{"role": "user", "content": [{"type": "text", "text": t}]}] for t in texts
-        ]
+        # Load image from URL
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(image_url)
+            response.raise_for_status()
+            image_bytes = response.content
 
-        # Process each message separately (VL processor handles one at a time)
-        all_embeddings = []
-        for messages in messages_batch:
-            text = processor.apply_chat_template(
+        def _do_embed():
+            image = Image.open(io.BytesIO(image_bytes))
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": text},
+                    ],
+                }
+            ]
+
+            text_input = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+            inputs = processor(
+                text=text_input, images=[image], return_tensors="pt", padding=True
+            ).to(model.device)
 
             with torch.no_grad():
                 outputs = model(**inputs)
-                # Mean pooling over sequence dimension
                 attention_mask = inputs["attention_mask"].unsqueeze(-1)
                 token_embeddings = outputs.last_hidden_state
                 masked = token_embeddings * attention_mask
                 summed = masked.sum(dim=1)
                 counts = attention_mask.sum(dim=1).clamp(min=1e-9)
                 embedding = summed / counts
-                # L2 normalize
                 embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
 
-            all_embeddings.append(embedding[:, :EMBEDDING_DIM].cpu().tolist()[0])
+            return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
 
-        return all_embeddings
-
-    def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
-        """Embed a single image+text pair."""
-        import requests as http_requests
-        import torch
-        from PIL import Image
-
-        model = self.models[model_name]
-        processor = self.processors[model_name]
-
-        # Load image from URL
-        image = Image.open(http_requests.get(image_url, stream=True, timeout=30).raw)
-
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": text},
-                ],
-            }
-        ]
-
-        text_input = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = processor(text=text_input, images=[image], return_tensors="pt", padding=True).to(
-            model.device
-        )
-
-        with torch.no_grad():
-            outputs = model(**inputs)
-            attention_mask = inputs["attention_mask"].unsqueeze(-1)
-            token_embeddings = outputs.last_hidden_state
-            masked = token_embeddings * attention_mask
-            summed = masked.sum(dim=1)
-            counts = attention_mask.sum(dim=1).clamp(min=1e-9)
-            embedding = summed / counts
-            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
-
-        return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
+        return await asyncio.to_thread(_do_embed)
 
     @modal.asgi_app()
     def serve(self):
@@ -231,25 +250,27 @@ class VLEmbeddingServer:
 
             if isinstance(body.input, str):
                 # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
+                embeddings = await self._embed_text(body.model, [body.input])
             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
+                embeddings = await self._embed_text(body.model, body.input)  # type: ignore
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
+                    emb = await self._embed_multimodal(
+                        body.model, body.input.text, body.input.image_url
+                    )
                     embeddings = [emb]
                 else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
+                    embeddings = await self._embed_text(body.model, [body.input.text])
             elif isinstance(body.input, list):
                 # List of multimodal inputs
                 for item in body.input:
                     if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        emb = self._embed_multimodal(body.model, item.text, item.image_url)
+                        emb = await self._embed_multimodal(body.model, item.text, item.image_url)
                         embeddings.append(emb)
                     elif isinstance(item, VLEmbeddingInput):
-                        embs = self._embed_text(body.model, [item.text])
+                        embs = await self._embed_text(body.model, [item.text])
                         embeddings.extend(embs)
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]

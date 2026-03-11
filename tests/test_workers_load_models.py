@@ -6,7 +6,9 @@ the container-startup code that cannot be reached via HTTP routes.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from ai_workers.workers.embedding import EmbeddingServer
 from ai_workers.workers.reranker import RerankerServer
@@ -208,7 +210,8 @@ def test_vl_embedding_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_vl_embedding_embed_text_returns_list():
+@pytest.mark.asyncio
+async def test_vl_embedding_embed_text_returns_list():
     """_embed_text should return a list of embeddings."""
     import torch
 
@@ -235,7 +238,7 @@ def test_vl_embedding_embed_text_returns_list():
     server.models = {"qwen3-vl-embedding-2b": mock_model}
     server.processors = {"qwen3-vl-embedding-2b": mock_processor}
 
-    result = server._embed_text("qwen3-vl-embedding-2b", ["hello"])
+    result = await server._embed_text("qwen3-vl-embedding-2b", ["hello"])
 
     assert isinstance(result, list)
     assert len(result) == 1
@@ -246,7 +249,8 @@ def test_vl_embedding_embed_text_returns_list():
 # ---------------------------------------------------------------------------
 
 
-def test_vl_embedding_embed_multimodal_returns_list():
+@pytest.mark.asyncio
+async def test_vl_embedding_embed_multimodal_returns_list():
     """_embed_multimodal should return a single embedding list."""
     import torch
 
@@ -277,11 +281,16 @@ def test_vl_embedding_embed_multimodal_returns_list():
     mock_response = MagicMock()
     mock_response.raw = MagicMock()
 
+    mock_client = MagicMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_response.content = b"fake"
+    mock_client.get = AsyncMock(return_value=mock_response)
+
     with (
-        patch("requests.get", return_value=mock_response),
+        patch("httpx.AsyncClient", return_value=mock_client),
         patch("PIL.Image.open", return_value=mock_image),
     ):
-        result = server._embed_multimodal(
+        result = await server._embed_multimodal(
             "qwen3-vl-embedding-2b", "describe image", "https://example.com/img.png"
         )
 
