@@ -293,6 +293,14 @@ _ensure_numpy_stub()
 
 
 @pytest.fixture(autouse=True)
+def reset_auth_cache() -> None:
+    """Reset auth module cache before each test to prevent cross-test contamination."""
+    import ai_workers.common.auth
+
+    ai_workers.common.auth._valid_keys = None
+
+
+@pytest.fixture(autouse=True)
 def _default_worker_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set a sentinel WORKER_API_KEY for every test so auth is enforced.
 
