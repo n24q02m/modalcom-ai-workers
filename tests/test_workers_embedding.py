@@ -64,6 +64,9 @@ def test_embeddings_requires_auth(client):
 
 def test_embeddings_with_valid_key(server):
     with patch.dict(os.environ, {"API_KEY": "my-key"}):
+        import ai_workers.common.auth as auth
+
+        auth._valid_keys = None
         app = server.serve()
         # Mock _embed so we don't need real torch
         fake_emb = [[0.1] * 10]

@@ -190,7 +190,7 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use httpx and check IP."""
     import io
 
     from PIL import Image
@@ -201,11 +201,32 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.content = buf.getvalue()
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with (
+        patch("socket.gethostbyname", return_value="8.8.8.8"),
+        patch("httpx.Client.get", return_value=mock_resp),
+    ):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
+
+
+def test_load_image_from_url_invalid_scheme(server):
+    """Should raise ValueError for non-http/https schemes or private IPs to prevent SSRF."""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"Invalid or unsafe URL provided\."):
+        server._load_image_from_url("file:///etc/passwd")
+
+    with (
+        patch("socket.gethostbyname", return_value="127.0.0.1"),
+        pytest.raises(ValueError, match=r"Invalid or unsafe URL provided\."),
+    ):
+        server._load_image_from_url("http://localhost/admin")
+
+    with (
+        patch("socket.gethostbyname", return_value="169.254.169.254"),
+        pytest.raises(ValueError, match=r"Invalid or unsafe URL provided\."),
+    ):
+        server._load_image_from_url("http://169.254.169.254/metadata")
