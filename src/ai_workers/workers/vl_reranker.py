@@ -95,6 +95,8 @@ class VLRerankerServer:
         document: str,
         query_image_url: str | None = None,
         document_image_url: str | None = None,
+        query_image: object | None = None,
+        document_image: object | None = None,
     ) -> float:
         """Score a single query-document pair using yes/no logit comparison.
 
@@ -112,13 +114,15 @@ class VLRerankerServer:
         # Query part
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            images.append(query_image if query_image else self._load_image(query_image_url))
         content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
 
         # Document part
         if document_image_url:
             content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
+            images.append(
+                document_image if document_image else self._load_image(document_image_url)
+            )
         content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
@@ -228,22 +232,34 @@ class VLRerankerServer:
                     },
                 )
 
+            # Pre-load query image once to avoid redundant downloads
+            query_image = None
+            if body.query_image_url:
+                query_image = self._load_image(body.query_image_url)
+
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
                 if isinstance(doc, str):
                     doc_text = doc
-                    doc_image = None
+                    doc_image_url = None
                 else:
                     doc_text = doc.text
-                    doc_image = doc.image_url
+                    doc_image_url = doc.image_url
+
+                # Load document image if present
+                doc_image = None
+                if doc_image_url:
+                    doc_image = self._load_image(doc_image_url)
 
                 score = self._score_pair(
                     body.model,
                     body.query,
                     doc_text,
                     query_image_url=body.query_image_url,
-                    document_image_url=doc_image,
+                    document_image_url=doc_image_url,
+                    query_image=query_image,
+                    document_image=doc_image,
                 )
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
