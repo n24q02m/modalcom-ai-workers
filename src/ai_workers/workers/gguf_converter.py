@@ -195,13 +195,13 @@ def gguf_convert_model(
     import tempfile
     from pathlib import Path
 
-    from huggingface_hub import HfApi, list_repo_tree
-    from loguru import logger
-
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
         msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
         raise ValueError(msg)
+
+    from huggingface_hub import HfApi, list_repo_tree
+    from loguru import logger
 
     api = HfApi(token=hf_token)
 
