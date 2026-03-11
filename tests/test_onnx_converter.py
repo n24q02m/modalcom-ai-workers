@@ -137,3 +137,45 @@ def test_generate_model_card_gguf_link():
     )
     card = _generate_model_card(cfg, int8_size_mb=50.0, q4f16_size_mb=30.0)
     assert "org/MyModel-GGUF" in card
+
+
+# ---------------------------------------------------------------------------
+# onnx_convert_model
+# ---------------------------------------------------------------------------
+
+
+def test_onnx_convert_model_missing_hf_token(monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from ai_workers.workers.onnx_converter import onnx_convert_model
+
+    # Ensure HF_TOKEN is not set in the environment
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    # Mock heavy dependencies that are imported inside the function
+    # Use monkeypatch to ensure they are cleaned up after the test
+    for mod in [
+        "onnx",
+        "torch",
+        "huggingface_hub",
+        "loguru",
+        "onnxruntime",
+        "onnxruntime.quantization",
+        "onnxruntime.quantization.matmul_nbits_quantizer",
+        "transformers",
+    ]:
+        monkeypatch.setitem(sys.modules, mod, MagicMock())
+
+    with pytest.raises(ValueError, match="HF_TOKEN is not set"):
+        # Since modal is mocked out in the test environment, the function is just
+        # a regular python function and we can call it directly.
+        onnx_convert_model(
+            model_name="test-model",
+            hf_source="test/source",
+            hf_target="test/target",
+            model_class="AutoModel",
+            output_attr="last_hidden_state",
+        )
