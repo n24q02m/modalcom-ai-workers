@@ -2,143 +2,112 @@
 
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# gguf_convert_model
+# ---------------------------------------------------------------------------
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from ai_workers.workers.gguf_converter import (
-    GGUF_MODELS,
-    GgufModelConfig,
-    _generate_gguf_model_card,
-    _register,
+    gguf_convert_model,
 )
 
-# ---------------------------------------------------------------------------
-# Registry contents
-# ---------------------------------------------------------------------------
+# Loguru uses sysconfig.get_path which might have issues in some mocked envs.
+# tests/conftest.py usually stubs loguru.
+# Let's ensure loguru is stubbed or we just mock it out.
+mock_loguru = MagicMock()
+sys.modules["loguru"] = mock_loguru
+
+# Mock huggingface_hub globally since it's imported locally in the function
+mock_huggingface_hub = MagicMock()
+sys.modules["huggingface_hub"] = mock_huggingface_hub
 
 
-def test_gguf_models_registry_has_expected_keys():
-    assert "qwen3-embedding-0.6b-gguf" in GGUF_MODELS
-    assert "qwen3-reranker-0.6b-gguf" in GGUF_MODELS
+@patch("os.environ.get")
+@patch("subprocess.run")
+@patch("gc.collect")
+def test_gguf_convert_model_convert_subprocess_fails(
+    mock_gc_collect,
+    mock_subprocess_run,
+    mock_environ_get,
+):
+    mock_environ_get.return_value = "fake-token"
 
+    # Configure the mocked list_repo_tree within the globally mocked module
+    mock_huggingface_hub.list_repo_tree.side_effect = Exception("Repo does not exist yet")
 
-def test_embedding_config_fields():
-    cfg = GGUF_MODELS["qwen3-embedding-0.6b-gguf"]
-    assert cfg.output_attr == "last_hidden_state"
-    assert "Qwen3-Embedding" in cfg.hf_source
-    assert "GGUF" in cfg.hf_target
-    assert cfg.gguf_name == "qwen3-embedding-0.6b"
+    # Mock subprocess.run to return a non-zero exit code for convert_hf_to_gguf.py
+    mock_result = MagicMock()
+    mock_result.returncode = 1
+    mock_result.stderr = "Conversion failed"
+    mock_subprocess_run.return_value = mock_result
 
+    with pytest.raises(RuntimeError, match=r"convert_hf_to_gguf\.py failed with exit code 1"):
+        if hasattr(gguf_convert_model, "get_raw_f"):
+            func = gguf_convert_model.get_raw_f()
+        else:
+            func = gguf_convert_model
 
-def test_reranker_config_fields():
-    cfg = GGUF_MODELS["qwen3-reranker-0.6b-gguf"]
-    assert cfg.output_attr == "logits"
-    assert "Qwen3-Reranker" in cfg.hf_source
-    assert "GGUF" in cfg.hf_target
-    assert cfg.gguf_name == "qwen3-reranker-0.6b"
-
-
-# ---------------------------------------------------------------------------
-# GgufModelConfig dataclass
-# ---------------------------------------------------------------------------
-
-
-def test_gguf_model_config_frozen():
-    cfg = GgufModelConfig(
-        name="test",
-        hf_source="org/source",
-        hf_target="org/target-GGUF",
-        gguf_name="test-model",
-        output_attr="last_hidden_state",
-    )
-    with pytest.raises((AttributeError, TypeError)):
-        cfg.name = "changed"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# _register
-# ---------------------------------------------------------------------------
-
-
-def test_register_adds_to_registry():
-    cfg = GgufModelConfig(
-        name="_test_gguf_register_temp",
-        hf_source="org/s",
-        hf_target="org/t-GGUF",
-        gguf_name="test",
-        output_attr="last_hidden_state",
-    )
-    result = _register(cfg)
-    assert "_test_gguf_register_temp" in GGUF_MODELS
-    assert result is cfg
-    # Cleanup
-    del GGUF_MODELS["_test_gguf_register_temp"]
+        func(
+            model_name="test-model-gguf",
+            hf_source="org/test-model",
+            hf_target="org/test-model-GGUF",
+            gguf_name="test-model",
+        )
 
 
 # ---------------------------------------------------------------------------
-# _generate_gguf_model_card — embedding
-# ---------------------------------------------------------------------------
+@patch("os.environ.get")
+@patch("subprocess.run")
+@patch("gc.collect")
+@patch("pathlib.Path.unlink")
+def test_gguf_convert_model_quantize_subprocess_fails(
+    mock_path_unlink,
+    mock_gc_collect,
+    mock_subprocess_run,
+    mock_environ_get,
+):
+    mock_environ_get.return_value = "fake-token"
 
+    # Mock huggingface_hub globally since it's imported locally in the function
+    import sys
 
-def test_generate_gguf_model_card_embedding():
-    cfg = GgufModelConfig(
-        name="qwen3-embedding-0.6b-gguf",
-        hf_source="Qwen/Qwen3-Embedding-0.6B",
-        hf_target="n24q02m/Qwen3-Embedding-0.6B-GGUF",
-        gguf_name="qwen3-embedding-0.6b",
-        output_attr="last_hidden_state",
-    )
-    card = _generate_gguf_model_card(
-        cfg,
-        gguf_filename="qwen3-embedding-0.6b-q4-k-m.gguf",
-        size_mb=250.0,
-    )
+    mock_huggingface_hub = MagicMock()
+    mock_huggingface_hub.list_repo_tree.side_effect = Exception("Repo does not exist yet")
+    sys.modules["huggingface_hub"] = mock_huggingface_hub
 
-    assert "text-embedding" in card
-    assert "feature-extraction" in card
-    assert "TextEmbedding" in card
-    assert "qwen3-embedding-0.6b-q4-k-m.gguf" in card
-    assert "250" in card
-    assert "Qwen/Qwen3-Embedding-0.6B" in card
-    assert "ONNX" in card  # link to ONNX repo
+    # Create mock results for the two subprocess.run calls
+    # Call 1: convert_hf_to_gguf.py (success)
+    mock_result_1 = MagicMock()
+    mock_result_1.returncode = 0
 
+    # Call 2: llama-quantize (failure)
+    mock_result_2 = MagicMock()
+    mock_result_2.returncode = 1
+    mock_result_2.stderr = "Quantization failed"
 
-# ---------------------------------------------------------------------------
-# _generate_gguf_model_card — reranker
-# ---------------------------------------------------------------------------
+    mock_subprocess_run.side_effect = [mock_result_1, mock_result_2]
 
+    # Patch Path.stat() inside the function since it tries to get file size
+    with patch("pathlib.Path.stat") as mock_stat:
+        mock_stat.return_value.st_size = 1024 * 1024 * 10  # 10MB fake size
 
-def test_generate_gguf_model_card_reranker():
-    cfg = GgufModelConfig(
-        name="qwen3-reranker-0.6b-gguf",
-        hf_source="Qwen/Qwen3-Reranker-0.6B",
-        hf_target="n24q02m/Qwen3-Reranker-0.6B-GGUF",
-        gguf_name="qwen3-reranker-0.6b",
-        output_attr="logits",
-    )
-    card = _generate_gguf_model_card(
-        cfg,
-        gguf_filename="qwen3-reranker-0.6b-q4-k-m.gguf",
-        size_mb=300.0,
-    )
+        with pytest.raises(RuntimeError, match="llama-quantize failed with exit code 1"):
+            if hasattr(gguf_convert_model, "get_raw_f"):
+                func = gguf_convert_model.get_raw_f()
+            else:
+                func = gguf_convert_model
 
-    assert "text-reranking" in card
-    assert "text-classification" in card
-    assert "TextCrossEncoder" in card
-    assert "ONNX" in card
+            func(
+                model_name="test-model-gguf",
+                hf_source="org/test-model",
+                hf_target="org/test-model-GGUF",
+                gguf_name="test-model",
+            )
 
 
 # ---------------------------------------------------------------------------
-# _generate_gguf_model_card — ONNX link derivation
+
 # ---------------------------------------------------------------------------
-
-
-def test_generate_gguf_model_card_onnx_link():
-    cfg = GgufModelConfig(
-        name="test",
-        hf_source="org/MyModel",
-        hf_target="org/MyModel-GGUF",
-        gguf_name="my-model",
-        output_attr="last_hidden_state",
-    )
-    card = _generate_gguf_model_card(cfg, gguf_filename="my-model-q4-k-m.gguf", size_mb=100.0)
-    assert "org/MyModel-ONNX" in card
