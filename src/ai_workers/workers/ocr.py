@@ -152,8 +152,7 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import Body, FastAPI, Request
-        from fastapi.responses import JSONResponse
+        from fastapi import Body, FastAPI
         from pydantic import BaseModel
 
         app = FastAPI(title="DeepSeek OCR v2")
@@ -189,22 +188,9 @@ class OCRServer:
         ChatMessage.model_rebuild()
         ChatCompletionRequest.model_rebuild()
 
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from fastapi import HTTPException as _HTTPException
+        from ai_workers.common.auth import auth_middleware
 
-            from ai_workers.common.auth import verify_api_key
-
-            try:
-                await verify_api_key(request)
-            except _HTTPException as exc:
-                return JSONResponse(
-                    status_code=exc.status_code,
-                    content={"detail": exc.detail},
-                )
-            return await call_next(request)
+        app.middleware("http")(auth_middleware)
 
         @app.get("/health")
         async def health():
