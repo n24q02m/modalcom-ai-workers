@@ -189,19 +189,20 @@ def gguf_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, gguf_file, size_mb.
     """
-    import gc
     import os
+
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token:
+        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
+        raise ValueError(msg)
+
+    import gc
     import subprocess
     import tempfile
     from pathlib import Path
 
     from huggingface_hub import HfApi, list_repo_tree
     from loguru import logger
-
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
-        raise ValueError(msg)
 
     api = HfApi(token=hf_token)
 
