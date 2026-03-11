@@ -20,7 +20,7 @@ def server():
 
 
 def _make_client(server, api_key="k"):
-    with patch.dict(os.environ, {"API_KEY": api_key}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": api_key}):
         app = server.serve()
     return TestClient(app, raise_server_exceptions=True), api_key
 
@@ -60,7 +60,7 @@ def test_embeddings_requires_auth(server):
 
 
 def test_embeddings_unknown_model(server):
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -80,7 +80,7 @@ def test_embeddings_unknown_model(server):
 def test_embeddings_string_input(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -106,7 +106,7 @@ def test_embeddings_string_input(server):
 def test_embeddings_list_of_strings(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -131,7 +131,7 @@ def test_embeddings_list_of_strings(server):
 def test_embeddings_vlinput_with_image_url(server):
     server._embed_multimodal = MagicMock(return_value=[0.5, 0.6, 0.7])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -160,7 +160,7 @@ def test_embeddings_vlinput_with_image_url(server):
 def test_embeddings_vlinput_without_image_url(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -185,7 +185,7 @@ def test_embeddings_list_of_vlinputs(server):
     server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -213,7 +213,7 @@ def test_embeddings_list_of_vlinputs(server):
 def test_embeddings_heavy_model(server):
     server._embed_text = MagicMock(return_value=[[0.1] * 10])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(

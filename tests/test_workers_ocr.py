@@ -17,7 +17,7 @@ def server():
 
 
 def _client(server, api_key="k"):
-    with patch.dict(os.environ, {"API_KEY": api_key}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": api_key}):
         app = server.serve()
     return TestClient(app, raise_server_exceptions=True), api_key
 

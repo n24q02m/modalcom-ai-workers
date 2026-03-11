@@ -54,7 +54,7 @@ def test_rerank_requires_auth(server):
 
 
 def test_rerank_unknown_model(server):
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -74,7 +74,7 @@ def test_rerank_unknown_model(server):
 def test_rerank_text_only_docs(server):
     server._score_pair = MagicMock(return_value=0.8)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -105,7 +105,7 @@ def test_rerank_text_only_docs(server):
 def test_rerank_multimodal_docs(server):
     server._score_pair = MagicMock(side_effect=[0.9, 0.4])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -140,7 +140,7 @@ def test_rerank_multimodal_docs(server):
 def test_rerank_sorted_descending(server):
     server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -166,7 +166,7 @@ def test_rerank_sorted_descending(server):
 def test_rerank_top_n(server):
     server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -191,7 +191,7 @@ def test_rerank_top_n(server):
 def test_rerank_with_query_image_url(server):
     server._score_pair = MagicMock(return_value=0.7)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -218,7 +218,7 @@ def test_rerank_with_query_image_url(server):
 def test_rerank_heavy_model(server):
     server._score_pair = MagicMock(return_value=0.6)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(

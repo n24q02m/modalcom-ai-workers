@@ -17,7 +17,7 @@ def server():
 
 
 def _make_client(server, api_key="k"):
-    with patch.dict(os.environ, {"API_KEY": api_key}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": api_key}):
         app = server.serve()
     return TestClient(app, raise_server_exceptions=True), api_key
 
@@ -52,7 +52,7 @@ def test_rerank_requires_auth(server):
 
 
 def test_rerank_unknown_model(server):
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -72,7 +72,7 @@ def test_rerank_unknown_model(server):
 def test_rerank_single_document(server):
     server._score_pair = MagicMock(return_value=0.9)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -98,7 +98,7 @@ def test_rerank_multiple_documents_sorted(server):
     scores = [0.3, 0.9, 0.5]
     server._score_pair = MagicMock(side_effect=scores)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -120,7 +120,7 @@ def test_rerank_multiple_documents_sorted(server):
 def test_rerank_top_n(server):
     server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -140,7 +140,7 @@ def test_rerank_top_n(server):
 def test_rerank_heavy_model(server):
     server._score_pair = MagicMock(return_value=0.7)
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "k"}):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
