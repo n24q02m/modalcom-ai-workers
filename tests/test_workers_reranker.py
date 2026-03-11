@@ -51,6 +51,19 @@ def test_rerank_requires_auth(server):
     assert resp.status_code == 401
 
 
+def test_rerank_missing_auth_header(server):
+    with patch.dict(os.environ, {"API_KEY": "k"}):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/rerank",
+            json={"model": "qwen3-reranker-0.6b", "query": "q", "documents": ["d1"]},
+            # Intentionally missing the Authorization header
+        )
+    assert resp.status_code == 401
+    assert "Missing Bearer token" in resp.json()["detail"]
+
+
 def test_rerank_unknown_model(server):
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
