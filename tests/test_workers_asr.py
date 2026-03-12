@@ -24,6 +24,8 @@ def _make_audio_bytes() -> bytes:
 
 def _client(server, api_key="k"):
     with patch.dict(os.environ, {"API_KEY": api_key}):
+        import ai_workers.common.auth as auth_mod
+        auth_mod._valid_keys = None
         app = server.serve()
     return TestClient(app, raise_server_exceptions=True), api_key
 
