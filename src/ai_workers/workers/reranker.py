@@ -94,51 +94,64 @@ class RerankerServer:
         """Score multiple query-document pairs using yes/no logit comparison in a batch."""
         import torch
 
+        if not documents:
+            return []
+
         model = self.models[model_name]
         tokenizer = self.tokenizers[model_name]
 
         # Ensure padding side is correct for batched inference
         tokenizer.padding_side = "right"
 
-        texts = []
-        for document in documents:
-            # Build chat messages following Qwen3-Reranker format
-            messages = [
-                {"role": "system", "content": RERANKER_PREFIX},
-                {
-                    "role": "user",
-                    "content": f"<Query>\n{query}\n</Query>\n\n<Document>\n{document}\n</Document>",
-                },
-            ]
+        batch_size_limit = 16
+        all_scores = []
 
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
+        for i in range(0, len(documents), batch_size_limit):
+            batch_docs = documents[i : i + batch_size_limit]
+            texts = []
+            for document in batch_docs:
+                # Build chat messages following Qwen3-Reranker format
+                messages = [
+                    {"role": "system", "content": RERANKER_PREFIX},
+                    {
+                        "role": "user",
+                        "content": f"<Query>\n{query}\n</Query>\n\n<Document>\n{document}\n</Document>",
+                    },
+                ]
+
+                text = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+                texts.append(text)
+
+            inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(
+                model.device
             )
-            texts.append(text)
 
-        inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
+            with torch.no_grad():
+                outputs = model(**inputs)
 
-        with torch.no_grad():
-            outputs = model(**inputs)
+                # Extract logits for the last valid token in each padded sequence
+                batch_size = inputs.input_ids.shape[0]
+                last_token_indices = inputs.attention_mask.sum(1) - 1
+                logits = outputs.logits[
+                    torch.arange(batch_size, device=model.device), last_token_indices, :
+                ]
 
-            # Extract logits for the last valid token in each padded sequence
-            batch_size = inputs.input_ids.shape[0]
-            last_token_indices = inputs.attention_mask.sum(1) - 1
-            logits = outputs.logits[torch.arange(batch_size, device=model.device), last_token_indices, :]
+                # Get logits for "yes" and "no" tokens
+                yes_id = tokenizer.convert_tokens_to_ids("yes")
+                no_id = tokenizer.convert_tokens_to_ids("no")
+                yes_logits = logits[:, yes_id].float()
+                no_logits = logits[:, no_id].float()
 
-            # Get logits for "yes" and "no" tokens
-            yes_id = tokenizer.convert_tokens_to_ids("yes")
-            no_id = tokenizer.convert_tokens_to_ids("no")
-            yes_logits = logits[:, yes_id].float()
-            no_logits = logits[:, no_id].float()
+                # Sigmoid of (yes - no) gives relevance probability
+                scores = torch.sigmoid(yes_logits - no_logits).tolist()
+                all_scores.extend(scores)
 
-            # Sigmoid of (yes - no) gives relevance probability
-            scores = torch.sigmoid(yes_logits - no_logits).tolist()
-
-        return scores
+        return all_scores
 
     @modal.asgi_app()
     def serve(self):

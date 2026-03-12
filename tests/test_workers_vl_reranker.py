@@ -76,6 +76,7 @@ def test_rerank_text_only_docs(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -109,6 +110,7 @@ def test_rerank_multimodal_docs(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -143,6 +145,7 @@ def test_rerank_sorted_descending(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -171,6 +174,7 @@ def test_rerank_top_n(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -198,6 +202,7 @@ def test_rerank_with_query_image_url(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -227,6 +232,7 @@ def test_rerank_heavy_model(server):
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         import ai_workers.common.auth as auth_mod
+
         auth_mod._valid_keys = None
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)

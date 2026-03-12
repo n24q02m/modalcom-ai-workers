@@ -102,14 +102,14 @@ class VLRerankerServer:
         """
         import torch
 
+        if not documents:
+            return []
+
         model = self.models[model_name]
         processor = self.processors[model_name]
 
         # Ensure padding side is correct for batched inference
         processor.tokenizer.padding_side = "right"
-
-        texts = []
-        all_images = []
 
         if document_image_urls is None:
             document_image_urls = [None] * len(documents)
@@ -117,64 +117,85 @@ class VLRerankerServer:
         # Pre-load query image if present
         query_image = self._load_image(query_image_url) if query_image_url else None
 
-        for document, document_image_url in zip(documents, document_image_urls, strict=False):
-            # Build user content with optional images
-            content_parts = []
-            images = []
+        batch_size_limit = 16
+        all_scores = []
 
-            # Query part
-            if query_image_url:
-                content_parts.append({"type": "image", "image": query_image_url})
-                images.append(query_image)
-            content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
+        for i in range(0, len(documents), batch_size_limit):
+            batch_docs = documents[i : i + batch_size_limit]
+            batch_urls = document_image_urls[i : i + batch_size_limit]
 
-            # Document part
-            if document_image_url:
-                content_parts.append({"type": "image", "image": document_image_url})
-                images.append(self._load_image(document_image_url))
-            content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
+            texts = []
+            all_images = []
 
-            messages = [
-                {"role": "system", "content": RERANKER_PREFIX},
-                {"role": "user", "content": content_parts},
-            ]
+            for document, document_image_url in zip(batch_docs, batch_urls, strict=False):
+                # Build user content with optional images
+                content_parts = []
+                images = []
 
-            text = processor.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-            texts.append(text)
-            all_images.append(images)
+                # Query part
+                if query_image_url:
+                    content_parts.append({"type": "image", "image": query_image_url})
+                    images.append(query_image)
+                content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
 
-        # Flatten all images for the processor (it expects a flat list)
-        flat_images = [img for sublist in all_images for img in sublist]
+                # Document part
+                if document_image_url:
+                    content_parts.append({"type": "image", "image": document_image_url})
+                    images.append(self._load_image(document_image_url))
+                content_parts.append(
+                    {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
+                )
 
-        if flat_images:
-            inputs = processor(text=texts, images=flat_images, return_tensors="pt", padding=True, truncation=True).to(
-                model.device
-            )
-        else:
-            inputs = processor(text=texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
+                messages = [
+                    {"role": "system", "content": RERANKER_PREFIX},
+                    {"role": "user", "content": content_parts},
+                ]
 
-        with torch.no_grad():
-            outputs = model(**inputs)
+                text = processor.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                texts.append(text)
+                all_images.append(images)
 
-            # Extract logits for the last valid token in each padded sequence
-            batch_size = inputs.input_ids.shape[0]
-            last_token_indices = inputs.attention_mask.sum(1) - 1
-            logits = outputs.logits[torch.arange(batch_size, device=model.device), last_token_indices, :]
+            # Flatten all images for the processor (it expects a flat list)
+            flat_images = [img for sublist in all_images for img in sublist]
 
-            # Get logits for "yes" and "no" tokens
-            yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
-            no_id = processor.tokenizer.convert_tokens_to_ids("no")
-            yes_logits = logits[:, yes_id].float()
-            no_logits = logits[:, no_id].float()
+            if flat_images:
+                inputs = processor(
+                    text=texts,
+                    images=flat_images,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                ).to(model.device)
+            else:
+                inputs = processor(
+                    text=texts, return_tensors="pt", padding=True, truncation=True
+                ).to(model.device)
 
-            # Sigmoid of (yes - no) gives relevance probability
-            scores = torch.sigmoid(yes_logits - no_logits).tolist()
+            with torch.no_grad():
+                outputs = model(**inputs)
 
-        return scores
+                # Extract logits for the last valid token in each padded sequence
+                batch_size = inputs.input_ids.shape[0]
+                last_token_indices = inputs.attention_mask.sum(1) - 1
+                logits = outputs.logits[
+                    torch.arange(batch_size, device=model.device), last_token_indices, :
+                ]
+
+                # Get logits for "yes" and "no" tokens
+                yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
+                no_id = processor.tokenizer.convert_tokens_to_ids("no")
+                yes_logits = logits[:, yes_id].float()
+                no_logits = logits[:, no_id].float()
+
+                # Sigmoid of (yes - no) gives relevance probability
+                scores = torch.sigmoid(yes_logits - no_logits).tolist()
+                all_scores.extend(scores)
+
+        return all_scores
 
     @staticmethod
     def _load_image(url: str):

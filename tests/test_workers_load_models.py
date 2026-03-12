@@ -154,7 +154,7 @@ def test_reranker_score_pairs_returns_list_of_floats():
     mock_inputs.input_ids = mock_input_ids
 
     mock_attention_mask = MagicMock()
-    mock_attention_mask.sum.return_value = torch.tensor([5])
+    mock_attention_mask.sum.return_value = torch.tensor([1])
     mock_inputs.attention_mask = mock_attention_mask
 
     mock_tokenizer.return_value = mock_inputs
@@ -170,8 +170,15 @@ def test_reranker_score_pairs_returns_list_of_floats():
     server.models = {"qwen3-reranker-0.6b": mock_model}
     server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
 
-    with patch.object(torch, "sigmoid", return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(), create=True), \
-         patch.object(torch, "arange", return_value=torch.tensor([0]), create=True):
+    with (
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
+    ):
         scores = server._score_pairs("qwen3-reranker-0.6b", "query", ["document"])
 
     assert isinstance(scores, list)
@@ -355,7 +362,7 @@ def test_vl_reranker_score_pairs_text_only():
     mock_inputs.input_ids = mock_input_ids
 
     mock_attention_mask = MagicMock()
-    mock_attention_mask.sum.return_value = torch.tensor([5])
+    mock_attention_mask.sum.return_value = torch.tensor([1])
     mock_inputs.attention_mask = mock_attention_mask
 
     mock_processor.return_value = mock_inputs
@@ -371,8 +378,15 @@ def test_vl_reranker_score_pairs_text_only():
     server.models = {"qwen3-vl-reranker-2b": mock_model}
     server.processors = {"qwen3-vl-reranker-2b": mock_processor}
 
-    with patch.object(torch, "sigmoid", return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(), create=True), \
-         patch.object(torch, "arange", return_value=torch.tensor([0]), create=True):
+    with (
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
+    ):
         scores = server._score_pairs("qwen3-vl-reranker-2b", "query", ["document"])
 
     assert isinstance(scores, list)
@@ -398,7 +412,7 @@ def test_vl_reranker_score_pairs_with_images():
     mock_inputs.input_ids = mock_input_ids
 
     mock_attention_mask = MagicMock()
-    mock_attention_mask.sum.return_value = torch.tensor([5])
+    mock_attention_mask.sum.return_value = torch.tensor([1])
     mock_inputs.attention_mask = mock_attention_mask
 
     mock_processor.return_value = mock_inputs
@@ -421,8 +435,13 @@ def test_vl_reranker_score_pairs_with_images():
     with (
         patch("requests.get", return_value=mock_response),
         patch("PIL.Image.open", return_value=mock_image),
-        patch.object(torch, "sigmoid", return_value=type("MockTensor", (), {"tolist": lambda self: [0.73]})(), create=True),
-        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True)
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.73]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
     ):
         scores = server._score_pairs(
             "qwen3-vl-reranker-2b",
