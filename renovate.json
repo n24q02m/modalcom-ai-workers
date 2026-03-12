@@ -90,6 +90,18 @@
         "java"
       ],
       "enabled": false
+    },
+    {
+      "description": "Disable runtime version updates from mise (pinned in CLAUDE.md)",
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "python",
+        "node",
+        "java"
+      ],
+      "enabled": false
     }
   ]
 }
