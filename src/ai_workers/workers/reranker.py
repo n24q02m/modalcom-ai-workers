@@ -90,45 +90,64 @@ class RerankerServer:
             self.tokenizers[name] = tokenizer
             logger.info("Loaded {} successfully", name)
 
-    def _score_pair(self, model_name: str, query: str, document: str) -> float:
-        """Score a single query-document pair using yes/no logit comparison."""
+    def _score_pairs(self, model_name: str, query: str, documents: list[str]) -> list[float]:
+        """Score a list of query-document pairs in batches using yes/no logit comparison."""
         import torch
 
         model = self.models[model_name]
         tokenizer = self.tokenizers[model_name]
 
-        # Build chat messages following Qwen3-Reranker format
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {
-                "role": "user",
-                "content": f"<Query>\n{query}\n</Query>\n\n<Document>\n{document}\n</Document>",
-            },
-        ]
+        tokenizer.padding_side = "right"
 
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
+        texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_PREFIX},
+                {
+                    "role": "user",
+                    "content": f"<Query>\n{query}\n</Query>\n\n<Document>\n{doc}\n</Document>",
+                },
+            ]
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            texts.append(text)
 
-        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        batch_size = 32
+        all_scores = []
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits[0, -1, :]  # Last token logits
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i : i + batch_size]
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True).to(
+                model.device
+            )
 
-            # Get logits for "yes" and "no" tokens
-            yes_id = tokenizer.convert_tokens_to_ids("yes")
-            no_id = tokenizer.convert_tokens_to_ids("no")
-            yes_logit = logits[yes_id].float()
-            no_logit = logits[no_id].float()
+            with torch.no_grad():
+                outputs = model(**inputs)
 
-            # Sigmoid of (yes - no) gives relevance probability
-            score = torch.sigmoid(yes_logit - no_logit).item()
+                # Extract logits for the last valid token of each sequence
+                attention_mask = inputs["attention_mask"]
+                last_token_indices = attention_mask.sum(1) - 1
+                current_batch_size = len(batch_texts)
 
-        return score
+                logits = outputs.logits[
+                    torch.arange(current_batch_size, device=model.device), last_token_indices, :
+                ]
+
+                # Get logits for "yes" and "no" tokens
+                yes_id = tokenizer.convert_tokens_to_ids("yes")
+                no_id = tokenizer.convert_tokens_to_ids("no")
+                yes_logits = logits[:, yes_id].float()
+                no_logits = logits[:, no_id].float()
+
+                # Sigmoid of (yes - no) gives relevance probability
+                scores = torch.sigmoid(yes_logits - no_logits).tolist()
+                all_scores.extend(scores)
+
+        return all_scores
 
     @modal.asgi_app()
     def serve(self):
@@ -192,10 +211,14 @@ class RerankerServer:
                     f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
-            # Score each document against the query
+            if not body.documents:
+                return RerankResponse(model=body.model, results=[])
+
+            # Score all documents against the query in batches
+            scores = self._score_pairs(body.model, body.query, body.documents)
+
             results = []
-            for i, doc in enumerate(body.documents):
-                score = self._score_pair(body.model, body.query, doc)
+            for i, (doc, score) in enumerate(zip(body.documents, scores, strict=True)):
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:
                     result.document = RerankResultDocument(text=doc)
