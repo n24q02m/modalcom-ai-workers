@@ -305,7 +305,7 @@ def onnx_convert_model(
             """
 
             TOKEN_YES_ID = 9693
-            TOKEN_NO_ID = 2132
+            TOKEN_NO_ID = 2152
 
             def __init__(self, inner: torch.nn.Module) -> None:
                 super().__init__()
