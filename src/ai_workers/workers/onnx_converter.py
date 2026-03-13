@@ -87,6 +87,16 @@ _register(
     )
 )
 
+_register(
+    OnnxModelConfig(
+        name="qwen3-reranker-0.6b-onnx-yesno",
+        hf_source="Qwen/Qwen3-Reranker-0.6B",
+        hf_target="n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo",
+        model_class="AutoModelForCausalLM",
+        output_attr="yesno_logits",
+    )
+)
+
 
 # ---------------------------------------------------------------------------
 # Model card template
@@ -287,7 +297,41 @@ def onnx_convert_model(
                 out = self.inner(input_ids=input_ids, attention_mask=attention_mask)
                 return getattr(out, self.attr)
 
-        wrapper = _OnnxWrapper(model, output_attr)
+        class _YesNoWrapper(torch.nn.Module):
+            """Wrapper that outputs only [no, yes] logits at the last token.
+
+            Reduces output from (batch, seq_len, vocab_size) to (batch, 2),
+            cutting runtime memory by ~150x for Qwen3 reranker models.
+            """
+
+            TOKEN_YES_ID = 9693
+            TOKEN_NO_ID = 2132
+
+            def __init__(self, inner: torch.nn.Module) -> None:
+                super().__init__()
+                self.model = inner.model  # Transformer backbone
+                lm_head_weight = inner.lm_head.weight.data  # (vocab, hidden)
+                self.yes_no_head = torch.nn.Linear(lm_head_weight.shape[1], 2, bias=False)
+                self.yes_no_head.weight.data = lm_head_weight[
+                    [self.TOKEN_NO_ID, self.TOKEN_YES_ID], :
+                ]
+
+            def forward(
+                self,
+                input_ids: torch.Tensor,
+                attention_mask: torch.Tensor,
+            ) -> torch.Tensor:
+                out = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                last_hidden = out.last_hidden_state[:, -1, :]  # (batch, hidden)
+                return self.yes_no_head(last_hidden)  # (batch, 2)
+
+        if output_attr == "yesno_logits":
+            wrapper = _YesNoWrapper(model)
+            # Override output_attr for ONNX naming
+            onnx_output_name = "logits"
+        else:
+            wrapper = _OnnxWrapper(model, output_attr)
+            onnx_output_name = output_attr
 
         # ------------------------------------------------------------------
         # Create dummy input for tracing
@@ -305,18 +349,24 @@ def onnx_convert_model(
 
         logger.info("Exporting ONNX FP32 -> {} (opset {})", fp32_path, opset_version)
 
+        # YesNo output is (batch, 2) — no sequence_length axis
+        dynamic_axes = {
+            "input_ids": {0: "batch_size", 1: "sequence_length"},
+            "attention_mask": {0: "batch_size", 1: "sequence_length"},
+        }
+        if output_attr == "yesno_logits":
+            dynamic_axes[onnx_output_name] = {0: "batch_size"}
+        else:
+            dynamic_axes[onnx_output_name] = {0: "batch_size", 1: "sequence_length"}
+
         with torch.no_grad():
             torch.onnx.export(
                 wrapper,
                 (dummy_ids, dummy_mask),
                 str(fp32_path),
                 input_names=["input_ids", "attention_mask"],
-                output_names=[output_attr],
-                dynamic_axes={
-                    "input_ids": {0: "batch_size", 1: "sequence_length"},
-                    "attention_mask": {0: "batch_size", 1: "sequence_length"},
-                    output_attr: {0: "batch_size", 1: "sequence_length"},
-                },
+                output_names=[onnx_output_name],
+                dynamic_axes=dynamic_axes,
                 opset_version=opset_version,
                 do_constant_folding=True,
             )
