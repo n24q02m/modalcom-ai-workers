@@ -190,7 +190,7 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use httpx.Client."""
     import io
 
     from PIL import Image
@@ -201,11 +201,25 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.content = buf.getvalue()
+    mock_resp.raise_for_status = MagicMock()
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    mock_client_instance = MagicMock()
+    mock_client_instance.get.return_value = mock_resp
+    mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+    mock_client_instance.__exit__ = MagicMock(return_value=False)
+
+    with patch("httpx.Client", return_value=mock_client_instance):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
+    mock_client_instance.get.assert_called_once_with("https://example.com/img.png")
+
+
+def test_load_image_from_url_invalid_scheme(server):
+    """Non-HTTP/HTTPS schemes should raise ValueError to prevent SSRF/LFI."""
+    with pytest.raises(ValueError, match="Invalid URL scheme: file:///etc/passwd"):
+        server._load_image_from_url("file:///etc/passwd")
+
+    with pytest.raises(ValueError, match=r"Invalid URL scheme: ftp://example.com/img.png"):
+        server._load_image_from_url("ftp://example.com/img.png")
