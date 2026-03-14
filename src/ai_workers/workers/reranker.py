@@ -99,10 +99,13 @@ class RerankerLightServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
+        from ai_workers.common.auth import auth_middleware
+
         app = FastAPI(title="Qwen3 Reranker Light")
+        app.middleware("http")(auth_middleware)
 
         class RerankRequest(BaseModel):
             model: str = MODEL_LIGHT
@@ -118,15 +121,6 @@ class RerankerLightServer:
         class RerankResponse(BaseModel):
             results: list[DocumentResult]
             model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
 
         @app.get("/health")
         async def health():
@@ -221,10 +215,13 @@ class RerankerHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import FastAPI, Request
+        from fastapi import FastAPI
         from pydantic import BaseModel
 
+        from ai_workers.common.auth import auth_middleware
+
         app = FastAPI(title="Qwen3 Reranker Heavy")
+        app.middleware("http")(auth_middleware)
 
         class RerankRequest(BaseModel):
             model: str = MODEL_HEAVY
@@ -240,15 +237,6 @@ class RerankerHeavyServer:
         class RerankResponse(BaseModel):
             results: list[DocumentResult]
             model: str
-
-        @app.middleware("http")
-        async def auth_middleware(request: Request, call_next):
-            if request.url.path in ("/health", "/"):
-                return await call_next(request)
-            from ai_workers.common.auth import verify_api_key
-
-            await verify_api_key(request)
-            return await call_next(request)
 
         @app.get("/health")
         async def health():
