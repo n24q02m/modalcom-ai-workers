@@ -29,6 +29,7 @@ name = "ai-workers"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "loguru" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -75,6 +76,7 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'convert'", specifier = ">=1.0" },
     { name = "ai-workers", extras = ["convert", "storage", "deploy"], marker = "extra == 'dev'" },
     { name = "boto3", marker = "extra == 'storage'", specifier = ">=1.35" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "huggingface-hub", marker = "extra == 'convert'", specifier = ">=0.26" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "modal", marker = "extra == 'deploy'", specifier = ">=0.73" },

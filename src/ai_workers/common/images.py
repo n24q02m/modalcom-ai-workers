@@ -47,6 +47,7 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
         "fastapi>=0.115",
         "loguru>=0.7",
         "pydantic>=2.0",
+        "httpx>=0.27",
     ]
     if flash_attn:
         packages.append("flash-attn>=2.6")
@@ -71,6 +72,7 @@ def transformers_audio_image() -> modal.Image:
             "fastapi>=0.115",
             "loguru>=0.7",
             "pydantic>=2.0",
+            "httpx>=0.27",
             "librosa>=0.10",
             "soundfile>=0.12",
             "python-multipart>=0.0.9",
