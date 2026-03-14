@@ -71,34 +71,36 @@ class VLRerankerLightServer:
         # Cache yes/no token IDs
         self.yes_token_id = self.processor.tokenizer.convert_tokens_to_ids("yes")
         self.no_token_id = self.processor.tokenizer.convert_tokens_to_ids("no")
+        self.processor.tokenizer.padding_side = "left"
 
-    def _score_pair(self, query: str, document: str) -> float:
-        """Score a single query-document pair."""
+    def _score_batch(self, query: str, documents: list[str]) -> list[float]:
+        """Score a batch of query-document pairs."""
         import torch
 
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {
-                "role": "user",
-                "content": f"<query>{query}</query>\n<document>{document}</document>",
-            },
-        ]
+        texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_PREFIX},
+                {
+                    "role": "user",
+                    "content": f"<query>{query}</query>\n<document>{doc}</document>",
+                },
+            ]
+            text = self.processor.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            texts.append(text)
 
-        text = self.processor.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = self.processor(text=[text], return_tensors="pt", padding=True).to(
-            self.model.device
-        )
+        inputs = self.processor(text=texts, return_tensors="pt", padding=True).to(self.model.device)
 
         with torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits[:, -1, :]
-            yes_logit = logits[:, self.yes_token_id]
-            no_logit = logits[:, self.no_token_id]
-            score = torch.sigmoid(yes_logit - no_logit)
+            yes_logits = logits[:, self.yes_token_id]
+            no_logits = logits[:, self.no_token_id]
+            scores = torch.sigmoid(yes_logits - no_logits)
 
-        return score.item()
+        return scores.tolist()
 
     @modal.asgi_app()
     def serve(self):
@@ -138,9 +140,14 @@ class VLRerankerLightServer:
 
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(request: RerankRequest):
+            if not request.documents:
+                return RerankResponse(results=[], model=request.model)
+
+            scores = self._score_batch(request.query, request.documents)
+
             scored = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
+            for i, score in enumerate(scores):
+                doc = request.documents[i]
                 scored.append((i, score, doc))
 
             scored.sort(key=lambda x: x[1], reverse=True)
@@ -201,33 +208,36 @@ class VLRerankerHeavyServer:
 
         self.yes_token_id = self.processor.tokenizer.convert_tokens_to_ids("yes")
         self.no_token_id = self.processor.tokenizer.convert_tokens_to_ids("no")
+        self.processor.tokenizer.padding_side = "left"
 
-    def _score_pair(self, query: str, document: str) -> float:
+    def _score_batch(self, query: str, documents: list[str]) -> list[float]:
+        """Score a batch of query-document pairs."""
         import torch
 
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {
-                "role": "user",
-                "content": f"<query>{query}</query>\n<document>{document}</document>",
-            },
-        ]
+        texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_PREFIX},
+                {
+                    "role": "user",
+                    "content": f"<query>{query}</query>\n<document>{doc}</document>",
+                },
+            ]
+            text = self.processor.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            texts.append(text)
 
-        text = self.processor.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = self.processor(text=[text], return_tensors="pt", padding=True).to(
-            self.model.device
-        )
+        inputs = self.processor(text=texts, return_tensors="pt", padding=True).to(self.model.device)
 
         with torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits[:, -1, :]
-            yes_logit = logits[:, self.yes_token_id]
-            no_logit = logits[:, self.no_token_id]
-            score = torch.sigmoid(yes_logit - no_logit)
+            yes_logits = logits[:, self.yes_token_id]
+            no_logits = logits[:, self.no_token_id]
+            scores = torch.sigmoid(yes_logits - no_logits)
 
-        return score.item()
+        return scores.tolist()
 
     @modal.asgi_app()
     def serve(self):
@@ -267,9 +277,14 @@ class VLRerankerHeavyServer:
 
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(request: RerankRequest):
+            if not request.documents:
+                return RerankResponse(results=[], model=request.model)
+
+            scores = self._score_batch(request.query, request.documents)
+
             scored = []
-            for i, doc in enumerate(request.documents):
-                score = self._score_pair(request.query, doc)
+            for i, score in enumerate(scores):
+                doc = request.documents[i]
                 scored.append((i, score, doc))
 
             scored.sort(key=lambda x: x[1], reverse=True)

@@ -11,6 +11,11 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
@@ -52,13 +57,16 @@ MODEL_LIGHT = "qwen3-reranker-0.6b"
 class RerankerLightServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
 
+    if TYPE_CHECKING:
+        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -181,13 +189,16 @@ MODEL_HEAVY = "qwen3-reranker-8b"
 class RerankerHeavyServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-8B."""
 
+    if TYPE_CHECKING:
+        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
