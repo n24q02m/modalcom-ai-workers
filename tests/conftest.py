@@ -301,3 +301,11 @@ def _default_worker_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if not os.environ.get("API_KEY") and not os.environ.get("WORKER_API_KEY"):
         monkeypatch.setenv("WORKER_API_KEY", "k")
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_middleware_state():
+    """Reset cached _valid_keys in auth middleware between tests."""
+    from ai_workers.common import auth
+
+    auth._valid_keys = None
