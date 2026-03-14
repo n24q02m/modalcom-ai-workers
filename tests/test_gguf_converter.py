@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from unittest.mock import patch
+
 import pytest
 
 from ai_workers.workers.gguf_converter import (
@@ -9,6 +12,7 @@ from ai_workers.workers.gguf_converter import (
     GgufModelConfig,
     _generate_gguf_model_card,
     _register,
+    gguf_convert_model,
 )
 
 # ---------------------------------------------------------------------------
@@ -142,3 +146,22 @@ def test_generate_gguf_model_card_onnx_link():
     )
     card = _generate_gguf_model_card(cfg, gguf_filename="my-model-q4-k-m.gguf", size_mb=100.0)
     assert "org/MyModel-ONNX" in card
+
+
+# ---------------------------------------------------------------------------
+# gguf_convert_model
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_model_missing_hf_token():
+    with patch.dict(os.environ, clear=True):
+        if "HF_TOKEN" in os.environ:
+            del os.environ["HF_TOKEN"]
+
+        with pytest.raises(ValueError, match="HF_TOKEN is not set"):
+            gguf_convert_model(
+                model_name="test-model",
+                hf_source="org/source",
+                hf_target="org/target",
+                gguf_name="test",
+            )
