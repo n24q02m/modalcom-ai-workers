@@ -12,6 +12,13 @@ from fastapi.testclient import TestClient
 from ai_workers.workers.asr import DEFAULT_MODEL, MODEL_CONFIGS, ASRServer
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_auth_cache():
+    import ai_workers.common.auth as auth
+
+    auth._valid_keys = None
+
+
 @pytest.fixture()
 def server():
     return ASRServer()
