@@ -46,7 +46,7 @@ def test_rerank_requires_auth(server):
     tc = TestClient(app)
     resp = tc.post(
         "/v1/rerank",
-        json={"model": "qwen3-reranker-0.6b", "query": "q", "documents": ["d1"]},
+        json={"model": "qwen3-reranker-8b", "query": "q", "documents": ["d1"]},
     )
     assert resp.status_code == 401
 
@@ -78,7 +78,7 @@ def test_rerank_single_document(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-reranker-0.6b",
+                "model": "qwen3-reranker-8b",
                 "query": "What is Python?",
                 "documents": ["Python is a language."],
                 "return_documents": True,
@@ -88,7 +88,7 @@ def test_rerank_single_document(server):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["model"] == "qwen3-reranker-0.6b"
+    assert data["model"] == "qwen3-reranker-8b"
     assert len(data["results"]) == 1
     assert data["results"][0]["relevance_score"] == pytest.approx(0.9)
     assert data["results"][0]["document"]["text"] == "Python is a language."
@@ -104,7 +104,7 @@ def test_rerank_multiple_documents_sorted(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-reranker-0.6b",
+                "model": "qwen3-reranker-8b",
                 "query": "query",
                 "documents": ["doc0", "doc1", "doc2"],
             },
@@ -126,7 +126,7 @@ def test_rerank_top_n(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-reranker-0.6b",
+                "model": "qwen3-reranker-8b",
                 "query": "query",
                 "documents": ["d0", "d1", "d2"],
                 "top_n": 2,

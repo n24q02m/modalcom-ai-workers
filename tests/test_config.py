@@ -30,19 +30,17 @@ class TestModelRegistry:
         assert len(MODEL_REGISTRY) > 0
 
     def test_expected_model_count(self) -> None:
-        """We expect 13 models in the registry."""
-        assert len(MODEL_REGISTRY) == 13
+        """We expect 11 models in the registry."""
+        assert len(MODEL_REGISTRY) == 11
 
     @pytest.mark.parametrize(
         "name",
         [
             "qwen3-embedding-0.6b",
             "qwen3-embedding-8b",
-            "qwen3-reranker-0.6b",
             "qwen3-reranker-8b",
             "qwen3-vl-embedding-2b",
             "qwen3-vl-embedding-8b",
-            "qwen3-vl-reranker-2b",
             "qwen3-vl-reranker-8b",
             "deepseek-ocr-2",
             "qwen3-tts-0.6b",
@@ -77,11 +75,9 @@ class TestModelRegistry:
         expected_names = {
             "qwen3-embedding-0.6b": "ai-workers-embedding",
             "qwen3-embedding-8b": "ai-workers-embedding",
-            "qwen3-reranker-0.6b": "ai-workers-reranker",
             "qwen3-reranker-8b": "ai-workers-reranker",
             "qwen3-vl-embedding-2b": "ai-workers-vl-embedding",
             "qwen3-vl-embedding-8b": "ai-workers-vl-embedding",
-            "qwen3-vl-reranker-2b": "ai-workers-vl-reranker",
             "qwen3-vl-reranker-8b": "ai-workers-vl-reranker",
             "deepseek-ocr-2": "ai-workers-deepseek-ocr-2",
             "qwen3-tts-0.6b": "ai-workers-tts",
@@ -137,7 +133,7 @@ class TestListModels:
 
     def test_list_all(self) -> None:
         models = list_models()
-        assert len(models) == 13
+        assert len(models) == 11
 
     def test_filter_by_task(self) -> None:
         embeddings = list_models(task=Task.EMBEDDING)
@@ -149,7 +145,7 @@ class TestListModels:
         assert all(m.tier == Tier.LIGHT for m in light)
         heavy = list_models(tier=Tier.HEAVY)
         assert all(m.tier == Tier.HEAVY for m in heavy)
-        assert len(light) + len(heavy) == 13
+        assert len(light) + len(heavy) == 11
 
     def test_filter_by_task_and_tier(self) -> None:
         light_embed = list_models(task=Task.EMBEDDING, tier=Tier.LIGHT)
@@ -225,11 +221,9 @@ class TestWorkerModulePaths:
         [
             ("qwen3-embedding-0.6b", "embedding_app"),
             ("qwen3-embedding-8b", "embedding_app"),
-            ("qwen3-reranker-0.6b", "reranker_app"),
             ("qwen3-reranker-8b", "reranker_app"),
             ("qwen3-vl-embedding-2b", "vl_embedding_app"),
             ("qwen3-vl-embedding-8b", "vl_embedding_app"),
-            ("qwen3-vl-reranker-2b", "vl_reranker_app"),
             ("qwen3-vl-reranker-8b", "vl_reranker_app"),
             ("deepseek-ocr-2", "ocr_app"),
             ("qwen3-tts-0.6b", "tts_app"),

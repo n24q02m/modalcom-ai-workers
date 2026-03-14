@@ -142,23 +142,7 @@ _register(
     )
 )
 
-# --- Qwen3 Reranker (merged: light + heavy on single A10G) ---
-_register(
-    ModelConfig(
-        name="qwen3-reranker-0.6b",
-        hf_id="Qwen/Qwen3-Reranker-0.6B",
-        task=Task.RERANKER_LLM,
-        tier=Tier.LIGHT,
-        precision=Precision.FP16,
-        gpu=GPU.A10G,
-        serving_engine=ServingEngine.CUSTOM_FASTAPI,
-        model_class=ModelClassType.CAUSAL_LM,
-        worker_module="ai_workers.workers.reranker",
-        modal_app_var="reranker_app",
-        modal_app_name="ai-workers-reranker",
-    )
-)
-
+# --- Qwen3 Reranker (8B only on A10G) ---
 _register(
     ModelConfig(
         name="qwen3-reranker-8b",
@@ -208,23 +192,7 @@ _register(
     )
 )
 
-# --- Qwen3 VL Reranker (merged: light + heavy on single A10G) ---
-_register(
-    ModelConfig(
-        name="qwen3-vl-reranker-2b",
-        hf_id="Qwen/Qwen3-VL-Reranker-2B",
-        task=Task.VL_RERANKER,
-        tier=Tier.LIGHT,
-        precision=Precision.FP16,
-        gpu=GPU.A10G,
-        serving_engine=ServingEngine.CUSTOM_FASTAPI,
-        model_class=ModelClassType.IMAGE_TEXT_TO_TEXT,
-        worker_module="ai_workers.workers.vl_reranker",
-        modal_app_var="vl_reranker_app",
-        modal_app_name="ai-workers-vl-reranker",
-    )
-)
-
+# --- Qwen3 VL Reranker (8B only on A10G) ---
 _register(
     ModelConfig(
         name="qwen3-vl-reranker-8b",

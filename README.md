@@ -1,6 +1,6 @@
 # modalcom-ai-workers
 
-**GPU-serverless AI workers on Modal.com for embedding, reranking, OCR, and ASR**
+**GPU-serverless AI workers on Modal.com for reranking, embedding, OCR, TTS, and ASR**
 
 [![CI](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/modalcom-ai-workers/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/modalcom-ai-workers/graph/badge.svg?token=5Z9ETF0G7B)](https://codecov.io/gh/n24q02m/modalcom-ai-workers)
@@ -22,48 +22,49 @@ Consumer Apps (OpenAI/Cohere SDK)
        │
   LiteLLM Proxy (routing + auth + cost tracking)
        │
-  ┌────┼────────────────────────────────────────┐
-  │    Modal.com GPU Serverless                  │
-  │                                              │
-  │  ┌──────────────┐  ┌──────────────┐         │
-  │  │ Embedding    │  │ Reranker     │         │
-  │  │ 0.6B + 8B   │  │ 0.6B + 8B   │         │
-  │  │ (A10G)      │  │ (A10G)       │         │
-  │  └──────────────┘  └──────────────┘         │
-  │                                              │
-  │  ┌──────────────┐  ┌──────────────┐         │
-  │  │ VL Embedding │  │ VL Reranker  │         │
-  │  │ 2B + 8B     │  │ 2B + 8B     │         │
-  │  │ (A10G)      │  │ (A10G)       │         │
-  │  └──────────────┘  └──────────────┘         │
-  │                                              │
-  │  ┌──────────────┐  ┌──────────────┐         │
-  │  │ OCR          │  │ ASR          │         │
-  │  │ DeepSeek-2   │  │ Whisper v3   │         │
-  │  │ BF16 (A10G) │  │ FP16 (T4)    │         │
-  │  └──────────────┘  └──────────────┘         │
-  │                                              │
-  │  Models loaded from HuggingFace Hub          │
-  │  via Xet protocol (~1GB/s)                   │
-  └──────────────────────────────────────────────┘
+  ┌────┼──────────────────────────────────────────────┐
+  │    Modal.com GPU Serverless                        │
+  │                                                    │
+  │  Currently Deployed:                               │
+  │  ┌──────────────┐  ┌──────────────┐               │
+  │  │ Reranker     │  │ VL Reranker  │               │
+  │  │ 8B           │  │ 8B           │               │
+  │  │ (A10G)       │  │ (A10G)       │               │
+  │  └──────────────┘  └──────────────┘               │
+  │                                                    │
+  │  Available (not deployed):                         │
+  │  Embedding (0.6B+8B), VL Embedding (2B+8B),       │
+  │  OCR (DeepSeek-2), TTS (0.6B+1.7B), ASR (0.6B+1.7B) │
+  │                                                    │
+  │  Models loaded from HuggingFace Hub                │
+  │  via Xet protocol (~1GB/s)                         │
+  └──────────────────────────────────────────────────────┘
 ```
 
-Light + Heavy model variants are merged into single Modal apps — both sizes share the same endpoint. Routing is done via the `model` field in the request body. All workers scale to zero when idle (5 min cooldown).
+All workers scale to zero when idle (5 min cooldown). The registry contains 11 models but only reranker apps are currently deployed — other apps can be deployed on demand.
 
 ## Worker Matrix
+
+### Currently Deployed
+
+| Model | HuggingFace ID | Task | GPU | Precision | Endpoint |
+|-------|---------------|------|-----|-----------|----------|
+| `qwen3-reranker-8b` | `Qwen/Qwen3-Reranker-8B` | Reranker | A10G | FP16 | `/v1/rerank` |
+| `qwen3-vl-reranker-8b` | `Qwen/Qwen3-VL-Reranker-8B` | VL Rerank | A10G | FP16 | `/v1/rerank` |
+
+### Available (Not Deployed)
 
 | Model | HuggingFace ID | Task | GPU | Precision | Endpoint |
 |-------|---------------|------|-----|-----------|----------|
 | `qwen3-embedding-0.6b` | `Qwen/Qwen3-Embedding-0.6B` | Embedding | A10G | FP16 | `/v1/embeddings` |
 | `qwen3-embedding-8b` | `Qwen/Qwen3-Embedding-8B` | Embedding | A10G | FP16 | `/v1/embeddings` |
-| `qwen3-reranker-0.6b` | `Qwen/Qwen3-Reranker-0.6B` | Reranker | A10G | FP16 | `/v1/rerank` |
-| `qwen3-reranker-8b` | `Qwen/Qwen3-Reranker-8B` | Reranker | A10G | FP16 | `/v1/rerank` |
 | `qwen3-vl-embedding-2b` | `Qwen/Qwen3-VL-Embedding-2B` | VL Embed | A10G | FP16 | `/v1/embeddings` |
 | `qwen3-vl-embedding-8b` | `Qwen/Qwen3-VL-Embedding-8B` | VL Embed | A10G | FP16 | `/v1/embeddings` |
-| `qwen3-vl-reranker-2b` | `Qwen/Qwen3-VL-Reranker-2B` | VL Rerank | A10G | FP16 | `/v1/rerank` |
-| `qwen3-vl-reranker-8b` | `Qwen/Qwen3-VL-Reranker-8B` | VL Rerank | A10G | FP16 | `/v1/rerank` |
 | `deepseek-ocr-2` | `deepseek-ai/DeepSeek-OCR-2` | OCR | A10G | BF16 | `/v1/chat/completions` |
-| `whisper-large-v3` | `openai/whisper-large-v3` | ASR | T4 | FP16 | `/v1/audio/transcriptions` |
+| `qwen3-tts-0.6b` | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | TTS | A10G | BF16 | `/v1/audio/speech` |
+| `qwen3-tts-1.7b` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | TTS | A10G | BF16 | `/v1/audio/speech` |
+| `qwen3-asr-0.6b` | `Qwen/Qwen3-ASR-0.6B` | ASR | A10G | BF16 | `/v1/audio/transcriptions` |
+| `qwen3-asr-1.7b` | `Qwen/Qwen3-ASR-1.7B` | ASR | A10G | BF16 | `/v1/audio/transcriptions` |
 
 ## Quick Start
 
@@ -126,21 +127,22 @@ A ready-to-use proxy config is provided at [`litellm/config.yaml`](litellm/confi
 
 | Task | LiteLLM Prefix | Example |
 |------|---------------|---------|
+| Reranker | `cohere/` | `cohere/qwen3-reranker-8b` |
+| VL Reranker | `cohere/` | `cohere/qwen3-vl-reranker-8b` |
 | Embedding | `openai/` | `openai/qwen3-embedding-0.6b` |
-| Reranker | `cohere/` | `cohere/qwen3-reranker-0.6b` |
 | VL Embedding | `openai/` | `openai/qwen3-vl-embedding-2b` |
-| VL Reranker | `cohere/` | `cohere/qwen3-vl-reranker-2b` |
 | OCR | `openai/` | `openai/deepseek-ocr-2` |
-| ASR | `openai/` | `openai/whisper-large-v3` |
+| TTS | `openai/` | `openai/qwen3-tts-0.6b` |
+| ASR | `openai/` | `openai/qwen3-asr-0.6b` |
 
 ### Proxy Config Example
 
 ```yaml
 model_list:
-  - model_name: qwen3-embedding-0.6b
+  - model_name: qwen3-reranker-8b
     litellm_params:
-      model: openai/qwen3-embedding-0.6b
-      api_base: https://<workspace>--ai-workers-embedding-embeddingserver-serve.modal.run
+      model: cohere/qwen3-reranker-8b
+      api_base: https://<workspace>--ai-workers-reranker-rerankerserver-serve.modal.run
       api_key: ${KLPRISM_WORKER_API_KEY}  # Use the per-app key matching your app
 ```
 
@@ -172,10 +174,10 @@ response = client.chat.completions.create(
     }],
 )
 
-# ASR
+# ASR (when deployed)
 with open("audio.mp3", "rb") as f:
     response = client.audio.transcriptions.create(
-        model="whisper-large-v3",
+        model="qwen3-asr-0.6b",
         file=f,
     )
 ```
@@ -193,7 +195,7 @@ curl -X POST http://localhost:4000/v1/embeddings \
 curl -X POST http://localhost:4000/v1/rerank \
   -H "Authorization: Bearer your-litellm-key" \
   -H "Content-Type: application/json" \
-  -d '{"model": "qwen3-reranker-0.6b", "query": "What is AI?", "documents": ["AI is...", "Cats are..."]}'
+  -d '{"model": "qwen3-reranker-8b", "query": "What is AI?", "documents": ["AI is...", "Cats are..."]}'
 ```
 
 ### Modal Endpoint URL Format
@@ -220,11 +222,12 @@ src/ai_workers/
 │   └── gguf_convert.py # GGUF conversion CLI
 └── workers/
     ├── embedding.py    # Text embedding (Qwen3-Embedding 0.6B + 8B)
-    ├── reranker.py     # Text reranker (Qwen3-Reranker 0.6B + 8B)
+    ├── reranker.py     # Text reranker (Qwen3-Reranker-8B)
     ├── vl_embedding.py # Vision-Language embedding (Qwen3-VL-Embedding 2B + 8B)
-    ├── vl_reranker.py  # Vision-Language reranker (Qwen3-VL-Reranker 2B + 8B)
+    ├── vl_reranker.py  # Vision-Language reranker (Qwen3-VL-Reranker-8B)
     ├── ocr.py          # Document OCR (DeepSeek-OCR-2)
-    ├── asr.py          # Speech-to-text (Whisper-Large-v3)
+    ├── tts.py          # Text-to-speech (Qwen3-TTS 0.6B + 1.7B)
+    ├── asr.py          # Speech-to-text (Qwen3-ASR 0.6B + 1.7B)
     ├── onnx_converter.py  # ONNX export + quantization (Modal CPU)
     └── gguf_converter.py  # GGUF conversion via llama.cpp (Modal CPU)
 litellm/

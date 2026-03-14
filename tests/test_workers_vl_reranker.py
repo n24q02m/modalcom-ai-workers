@@ -43,7 +43,7 @@ def test_rerank_requires_auth(server):
     tc = TestClient(app)
     resp = tc.post(
         "/v1/rerank",
-        json={"model": "qwen3-vl-reranker-2b", "query": "q", "documents": ["d"]},
+        json={"model": "qwen3-vl-reranker-8b", "query": "q", "documents": ["d"]},
     )
     assert resp.status_code == 401
 
@@ -80,7 +80,7 @@ def test_rerank_text_only_docs(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-vl-reranker-2b",
+                "model": "qwen3-vl-reranker-8b",
                 "query": "What is AI?",
                 "documents": ["AI is artificial intelligence.", "ML is machine learning."],
             },
@@ -89,7 +89,7 @@ def test_rerank_text_only_docs(server):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["model"] == "qwen3-vl-reranker-2b"
+    assert data["model"] == "qwen3-vl-reranker-8b"
     assert len(data["results"]) == 2
     # Verify _score_pair called with text-only (no image URLs)
     for call_args in server._score_pair.call_args_list:
@@ -111,7 +111,7 @@ def test_rerank_multimodal_docs(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-vl-reranker-2b",
+                "model": "qwen3-vl-reranker-8b",
                 "query": "describe",
                 "documents": [
                     {"text": "doc with image", "image_url": "http://example.com/img.jpg"},
@@ -146,7 +146,7 @@ def test_rerank_sorted_descending(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-vl-reranker-2b",
+                "model": "qwen3-vl-reranker-8b",
                 "query": "query",
                 "documents": ["d0", "d1", "d2"],
             },
@@ -172,7 +172,7 @@ def test_rerank_top_n(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-vl-reranker-2b",
+                "model": "qwen3-vl-reranker-8b",
                 "query": "query",
                 "documents": ["d0", "d1", "d2"],
                 "top_n": 2,
@@ -197,7 +197,7 @@ def test_rerank_with_query_image_url(server):
         resp = tc.post(
             "/v1/rerank",
             json={
-                "model": "qwen3-vl-reranker-2b",
+                "model": "qwen3-vl-reranker-8b",
                 "query": "q",
                 "query_image_url": "http://example.com/query.jpg",
                 "documents": ["d"],

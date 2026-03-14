@@ -1,6 +1,6 @@
 # AGENTS.md - modalcom-ai-workers
 
-GPU-serverless AI workers on Modal.com for embedding, reranking, OCR, and ASR. Python >= 3.13, uv, Modal.
+GPU-serverless AI workers on Modal.com for reranking, embedding, OCR, TTS, and ASR. Python >= 3.13, uv, Modal.
 
 ## Build / Lint / Test Commands
 
@@ -104,11 +104,12 @@ src/ai_workers/
   workers/
     __init__.py
     embedding.py                 # Text embedding worker (ONNX)
-    reranker.py                  # Text reranker worker (ONNX)
+    reranker.py                  # Text reranker worker (Qwen3-Reranker-8B)
     vl_embedding.py              # Vision-language embedding worker
-    vl_reranker.py               # Vision-language reranker worker
-    ocr.py                       # OCR worker (Docling)
-    asr.py                       # ASR worker (Whisper)
+    vl_reranker.py               # Vision-language reranker worker (Qwen3-VL-Reranker-8B)
+    ocr.py                       # OCR worker (DeepSeek-OCR-2)
+    tts.py                       # TTS worker (Qwen3-TTS)
+    asr.py                       # ASR worker (Qwen3-ASR)
     onnx_converter.py            # ONNX model conversion worker
     gguf_converter.py            # GGUF model conversion worker
 litellm/

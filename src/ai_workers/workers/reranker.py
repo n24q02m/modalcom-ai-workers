@@ -1,16 +1,13 @@
-"""Text Reranker worker using Custom FastAPI (merged light + heavy).
+"""Text Reranker worker using Custom FastAPI.
 
-Serves both Qwen3-Reranker-0.6B (light) and Qwen3-Reranker-8B (heavy)
-from a single A10G container. Routes by ``model`` field in request.
-
-Both models loaded at startup (~17GB total on A10G 24GB VRAM).
+Serves Qwen3-Reranker-8B on a single A10G container.
 Uses AutoModelForCausalLM with yes/no logit scoring for relevance.
 
 Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 
 LiteLLM integration:
-  model: openai/qwen3-reranker-0.6b  (or qwen3-reranker-8b)
+  model: openai/qwen3-reranker-8b
   api_base: https://<modal-url>
 """
 
@@ -26,9 +23,8 @@ from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 
-# Models served by this single app — loaded from HuggingFace Hub
+# Model served by this app — loaded from HuggingFace Hub
 MODEL_CONFIGS = {
-    "qwen3-reranker-0.6b": {"hf_id": "Qwen/Qwen3-Reranker-0.6B"},
     "qwen3-reranker-8b": {"hf_id": "Qwen/Qwen3-Reranker-8B"},
 }
 
@@ -53,16 +49,14 @@ reranker_app = modal.App(
 )
 @modal.concurrent(max_inputs=100)
 class RerankerServer:
-    """Merged reranker server for Qwen3-Reranker-0.6B + 8B.
+    """Reranker server for Qwen3-Reranker-8B.
 
-    Both models loaded at startup. Routes request to correct model
-    via the ``model`` field. Uses yes/no logit scoring with sigmoid
-    for relevance probability.
+    Uses yes/no logit scoring with sigmoid for relevance probability.
     """
 
     @modal.enter(snap=True)
     def load_models(self) -> None:
-        """Load both reranker models at container startup (snapshotted by GPU Memory Snapshot)."""
+        """Load reranker model at container startup (snapshotted by GPU Memory Snapshot)."""
         import torch
         from loguru import logger
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -136,13 +130,13 @@ class RerankerServer:
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
-        app = FastAPI(title="Qwen3 Reranker (Light + Heavy)")
+        app = FastAPI(title="Qwen3 Reranker (8B)")
 
         class RerankPair(BaseModel):
             document: str
 
         class RerankRequest(BaseModel):
-            model: str = "qwen3-reranker-0.6b"
+            model: str = "qwen3-reranker-8b"
             query: str
             documents: list[str]
             top_n: int | None = None

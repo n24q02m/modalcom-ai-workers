@@ -1,9 +1,6 @@
-"""Vision-Language Reranker worker using Custom FastAPI (merged light + heavy).
+"""Vision-Language Reranker worker using Custom FastAPI.
 
-Serves both Qwen3-VL-Reranker-2B (light) and Qwen3-VL-Reranker-8B (heavy)
-from a single A10G container. Routes by ``model`` field in request.
-
-Both models loaded at startup (~20GB total on A10G 24GB VRAM).
+Serves Qwen3-VL-Reranker-8B on a single A10G container.
 Uses AutoModelForImageTextToText with yes/no logit scoring for relevance.
 
 Supports text-only and image+text multimodal query/document pairs.
@@ -24,9 +21,8 @@ from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 
-# Models served by this single app — loaded from HuggingFace Hub
+# Model served by this app — loaded from HuggingFace Hub
 MODEL_CONFIGS = {
-    "qwen3-vl-reranker-2b": {"hf_id": "Qwen/Qwen3-VL-Reranker-2B"},
     "qwen3-vl-reranker-8b": {"hf_id": "Qwen/Qwen3-VL-Reranker-8B"},
 }
 
@@ -51,16 +47,15 @@ vl_reranker_app = modal.App(
 )
 @modal.concurrent(max_inputs=100)
 class VLRerankerServer:
-    """Merged VL reranker server for Qwen3-VL-Reranker-2B + 8B.
+    """VL reranker server for Qwen3-VL-Reranker-8B.
 
-    Both models loaded at startup. Routes request to correct model
-    via the ``model`` field. Uses yes/no logit scoring with sigmoid
-    for relevance probability. Supports multimodal inputs.
+    Uses yes/no logit scoring with sigmoid for relevance probability.
+    Supports multimodal inputs (text + image).
     """
 
     @modal.enter(snap=True)
     def load_models(self) -> None:
-        """Load both VL reranker models at container startup (snapshotted by GPU Memory Snapshot)."""
+        """Load VL reranker model at container startup (snapshotted by GPU Memory Snapshot)."""
         import torch
         from loguru import logger
         from transformers import AutoModelForImageTextToText, AutoProcessor
@@ -168,14 +163,14 @@ class VLRerankerServer:
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel
 
-        app = FastAPI(title="Qwen3 VL Reranker (Light + Heavy)")
+        app = FastAPI(title="Qwen3 VL Reranker (8B)")
 
         class VLRerankDocument(BaseModel):
             text: str
             image_url: str | None = None
 
         class VLRerankRequest(BaseModel):
-            model: str = "qwen3-vl-reranker-2b"
+            model: str = "qwen3-vl-reranker-8b"
             query: str
             query_image_url: str | None = None
             documents: list[str] | list[VLRerankDocument]
