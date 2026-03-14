@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import secrets
+
 from fastapi import HTTPException, Request, status
 from loguru import logger
 
@@ -12,8 +15,6 @@ async def verify_api_key(request: Request) -> None:
     The expected token is set via Modal Secret "worker-api-key".
     If WORKER_API_KEY env var is empty, authentication is skipped (dev mode).
     """
-    import os
-
     expected_key = os.getenv("WORKER_API_KEY", "")
 
     # Skip auth in dev mode (no key configured)
@@ -29,7 +30,7 @@ async def verify_api_key(request: Request) -> None:
         )
 
     token = auth_header.removeprefix("Bearer ").strip()
-    if token != expected_key:
+    if not secrets.compare_digest(token, expected_key):
         logger.warning(f"Invalid API key from {request.client}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
