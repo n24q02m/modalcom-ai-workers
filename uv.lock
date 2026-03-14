@@ -30,6 +30,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "loguru" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -74,6 +75,7 @@ dev = [
 requires-dist = [
     { name = "accelerate", marker = "extra == 'onnx-convert'", specifier = ">=1.0" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", marker = "extra == 'onnx-convert'", specifier = ">=0.26" },
     { name = "loguru", specifier = ">=0.7" },
     { name = "modal", marker = "extra == 'deploy'", specifier = ">=0.73" },

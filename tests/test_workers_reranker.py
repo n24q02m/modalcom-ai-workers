@@ -81,6 +81,7 @@ def test_rerank_single_document(server):
                 "model": "qwen3-reranker-0.6b",
                 "query": "What is Python?",
                 "documents": ["Python is a language."],
+                "return_documents": True,
             },
             headers={"Authorization": "Bearer k"},
         )
@@ -90,7 +91,7 @@ def test_rerank_single_document(server):
     assert data["model"] == "qwen3-reranker-0.6b"
     assert len(data["results"]) == 1
     assert data["results"][0]["relevance_score"] == pytest.approx(0.9)
-    assert data["results"][0]["document"] == "Python is a language."
+    assert data["results"][0]["document"]["text"] == "Python is a language."
 
 
 def test_rerank_multiple_documents_sorted(server):
