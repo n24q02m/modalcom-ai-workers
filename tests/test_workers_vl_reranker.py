@@ -16,6 +16,7 @@ def server():
     s = VLRerankerServer()
     s.models = {}
     s.processors = {}
+    s._load_image = MagicMock(return_value="mock_image")
     return s
 
 
