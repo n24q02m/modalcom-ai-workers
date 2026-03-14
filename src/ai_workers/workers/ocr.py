@@ -100,11 +100,36 @@ class OCRServer:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Regular URL — input is from trusted API callers on Modal, not user-facing
-        import urllib.request
+        def _is_safe_url(u: str) -> bool:
+            import ipaddress
+            import socket
+            from urllib.parse import urlparse
 
-        with urllib.request.urlopen(url) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            image_bytes = resp.read()
+            try:
+                parsed = urlparse(u)
+                if parsed.scheme not in ("http", "https"):
+                    return False
+                ip = socket.gethostbyname(parsed.hostname)
+                parsed_ip = ipaddress.ip_address(ip)
+                return not (
+                    parsed_ip.is_private
+                    or parsed_ip.is_loopback
+                    or parsed_ip.is_link_local
+                    or parsed_ip.is_multicast
+                )
+            except Exception:
+                return False
+
+        if not _is_safe_url(url):
+            raise ValueError("Invalid or unsafe URL provided.")
+
+        import httpx
+
+        with httpx.Client(follow_redirects=False) as client:
+            resp = client.get(url, timeout=30.0)
+            resp.raise_for_status()
+            image_bytes = resp.content
+
         return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
     def _run_ocr(self, image, prompt: str = "") -> str:
