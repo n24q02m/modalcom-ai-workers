@@ -160,6 +160,9 @@ class VLRerankerServer:
         import requests as http_requests
         from PIL import Image
 
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("Only http/https URLs are allowed for image fetching")
+
         return Image.open(http_requests.get(url, stream=True, timeout=30).raw)
 
     @modal.asgi_app()

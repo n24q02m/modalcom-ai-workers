@@ -100,6 +100,9 @@ class OCRServer:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("Only http/https URLs are allowed for image fetching")
+
         # Regular URL — input is from trusted API callers on Modal, not user-facing
         import urllib.request
 
