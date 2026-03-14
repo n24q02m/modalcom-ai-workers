@@ -100,12 +100,23 @@ class OCRServer:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Regular URL — input is from trusted API callers on Modal, not user-facing
-        import urllib.request
+        # Regular URL
+        import httpx
+        from fastapi import HTTPException
 
-        with urllib.request.urlopen(url) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            image_bytes = resp.read()
-        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        from ai_workers.common.utils import is_safe_url
+
+        if not is_safe_url(url):
+            raise HTTPException(status_code=400, detail="Invalid or unsafe image URL.")
+
+        try:
+            with httpx.Client(follow_redirects=False, timeout=30) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+                image_bytes = resp.content
+            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as err:
+            raise HTTPException(status_code=400, detail="Failed to fetch image.") from err
 
     def _run_ocr(self, image, prompt: str = "") -> str:
         """Run OCR on an image with optional prompt.
