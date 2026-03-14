@@ -141,6 +141,7 @@ class ASRServer:
                 generate_kwargs=generate_kwargs,
             )
 
+            assert isinstance(result, dict)
             text = result.get("text", "").strip()
 
             if response_format == "verbose_json":

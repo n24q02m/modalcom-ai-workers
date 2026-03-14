@@ -11,10 +11,15 @@ LiteLLM integration:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import modal
 
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
@@ -52,13 +57,18 @@ MODEL_LIGHT = "qwen3-reranker-0.6b"
 class RerankerLightServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-0.6B."""
 
+    tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
+    model: Any
+    yes_token_id: int
+    no_token_id: int
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_LIGHT}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -68,8 +78,12 @@ class RerankerLightServer:
         self.model.eval()
 
         # Pre-compute token IDs for "yes" and "no"
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        yes_id = self.tokenizer.convert_tokens_to_ids("yes")
+        no_id = self.tokenizer.convert_tokens_to_ids("no")
+        assert isinstance(yes_id, int)
+        assert isinstance(no_id, int)
+        self.yes_token_id = yes_id
+        self.no_token_id = no_id
 
     def _score_pair(self, query: str, document: str) -> float:
         """Score a single query-document pair using yes/no logits."""
@@ -82,9 +96,17 @@ class RerankerLightServer:
                 "content": f"Query: {query}\nDocument: {document}",
             },
         ]
+
+        # Type check to satisfy static analyzer
+        if self.tokenizer.chat_template is None:
+            # Fallback or error if template is missing, though Qwen should have it
+            pass
+
         input_text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        assert isinstance(input_text, str)
+
         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
 
         with torch.no_grad():
@@ -181,13 +203,18 @@ MODEL_HEAVY = "qwen3-reranker-8b"
 class RerankerHeavyServer:
     """Custom FastAPI reranker server for Qwen3-Reranker-8B."""
 
+    tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast
+    model: Any
+    yes_token_id: int
+    no_token_id: int
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         model_path = f"{MODELS_MOUNT_PATH}/{MODEL_HEAVY}"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
@@ -195,8 +222,12 @@ class RerankerHeavyServer:
             device_map="auto",
         )
         self.model.eval()
-        self.yes_token_id = self.tokenizer.convert_tokens_to_ids("yes")
-        self.no_token_id = self.tokenizer.convert_tokens_to_ids("no")
+        yes_id = self.tokenizer.convert_tokens_to_ids("yes")
+        no_id = self.tokenizer.convert_tokens_to_ids("no")
+        assert isinstance(yes_id, int)
+        assert isinstance(no_id, int)
+        self.yes_token_id = yes_id
+        self.no_token_id = no_id
 
     def _score_pair(self, query: str, document: str) -> float:
         import torch
@@ -208,6 +239,7 @@ class RerankerHeavyServer:
         input_text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        assert isinstance(input_text, str)
         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
 
         with torch.no_grad():
