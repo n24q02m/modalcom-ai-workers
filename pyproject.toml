@@ -79,8 +79,7 @@ known-first-party = ["ai_workers"]
 
 # --- ty ---
 [tool.ty]
-src = ["src"]
-python-version = "3.13"
+# Defaults to pyright if not specified
 
 # --- pytest ---
 [tool.pytest.ini_options]

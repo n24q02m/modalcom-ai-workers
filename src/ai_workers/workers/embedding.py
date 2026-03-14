@@ -164,7 +164,6 @@ class EmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
 

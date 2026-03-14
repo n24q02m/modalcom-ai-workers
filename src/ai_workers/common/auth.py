@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import HTTPException, Request, status
 from loguru import logger
 
@@ -12,8 +14,6 @@ async def verify_api_key(request: Request) -> None:
     The expected token is set via Modal Secret "worker-api-key".
     If WORKER_API_KEY env var is empty, authentication is skipped (dev mode).
     """
-    import os
-
     expected_key = os.getenv("WORKER_API_KEY", "")
 
     # Skip auth in dev mode (no key configured)
@@ -35,3 +35,12 @@ async def verify_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def auth_middleware(request: Request, call_next):
+    """Middleware to verify API key for all requests except health checks."""
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+
+    await verify_api_key(request)
+    return await call_next(request)
