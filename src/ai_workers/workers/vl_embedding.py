@@ -4,7 +4,8 @@ Serves both Qwen3-VL-Embedding-2B (light) and Qwen3-VL-Embedding-8B (heavy)
 from a single A10G container. Routes by ``model`` field in request.
 
 Both models loaded at startup (~20GB total on A10G 24GB VRAM).
-Uses AutoModel + AutoProcessor with mean pooling + L2 normalize.
+Uses official Qwen3-VL-Embedding approach: EOS token pooling + L2 normalize.
+System instruction: "Represent the user's input."
 
 Supports text-only and image+text multimodal inputs.
 
@@ -24,6 +25,9 @@ from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 EMBEDDING_DIM = 1024
+
+# Official system instruction for Qwen3-VL-Embedding
+DEFAULT_INSTRUCTION = "Represent the user's input."
 
 # Models served by this single app — loaded from HuggingFace Hub
 MODEL_CONFIGS = {
@@ -52,7 +56,8 @@ class VLEmbeddingServer:
     """Merged VL embedding server for Qwen3-VL-Embedding-2B + 8B.
 
     Both models loaded at startup. Routes request to correct model
-    via the ``model`` field. Supports text-only and multimodal (image+text) inputs.
+    via the ``model`` field. Uses official Qwen3-VL-Embedding approach:
+    EOS token pooling + L2 normalization. Supports text-only and multimodal inputs.
     """
 
     @modal.enter(snap=True)
@@ -71,6 +76,7 @@ class VLEmbeddingServer:
             processor = AutoProcessor.from_pretrained(
                 hf_id,
                 trust_remote_code=True,
+                padding_side="left",
                 cache_dir=HF_CACHE_DIR,
             )
             model = AutoModel.from_pretrained(
@@ -85,16 +91,34 @@ class VLEmbeddingServer:
             self.processors[name] = processor
             logger.info("Loaded {} successfully", name)
 
+    @staticmethod
+    def _last_token_pool(last_hidden_states, attention_mask):
+        """Official Qwen3-VL-Embedding pooling: extract EOS token hidden state."""
+        import torch
+
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if left_padding:
+            return last_hidden_states[:, -1]
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[
+            torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
+        ]
+
     def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
-        """Embed text-only inputs using the specified model."""
+        """Embed text-only inputs using EOS token pooling."""
         import torch
 
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        # Wrap texts in chat format for VL model
+        # Wrap texts in chat format with system instruction
         messages_batch = [
-            [{"role": "user", "content": [{"type": "text", "text": t}]}] for t in texts
+            [
+                {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+                {"role": "user", "content": [{"type": "text", "text": t}]},
+            ]
+            for t in texts
         ]
 
         # Process each message separately (VL processor handles one at a time)
@@ -107,13 +131,10 @@ class VLEmbeddingServer:
 
             with torch.no_grad():
                 outputs = model(**inputs)
-                # Mean pooling over sequence dimension
-                attention_mask = inputs["attention_mask"].unsqueeze(-1)
-                token_embeddings = outputs.last_hidden_state
-                masked = token_embeddings * attention_mask
-                summed = masked.sum(dim=1)
-                counts = attention_mask.sum(dim=1).clamp(min=1e-9)
-                embedding = summed / counts
+                # Official Qwen3-VL-Embedding: EOS token pooling
+                embedding = self._last_token_pool(
+                    outputs.last_hidden_state, inputs["attention_mask"]
+                )
                 # L2 normalize
                 embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
 
@@ -122,7 +143,7 @@ class VLEmbeddingServer:
         return all_embeddings
 
     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
-        """Embed a single image+text pair."""
+        """Embed a single image+text pair with EOS token pooling."""
         import requests as http_requests
         import torch
         from PIL import Image
@@ -134,13 +155,14 @@ class VLEmbeddingServer:
         image = Image.open(http_requests.get(image_url, stream=True, timeout=30).raw)
 
         messages = [
+            {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image},
                     {"type": "text", "text": text},
                 ],
-            }
+            },
         ]
 
         text_input = processor.apply_chat_template(
@@ -152,12 +174,8 @@ class VLEmbeddingServer:
 
         with torch.no_grad():
             outputs = model(**inputs)
-            attention_mask = inputs["attention_mask"].unsqueeze(-1)
-            token_embeddings = outputs.last_hidden_state
-            masked = token_embeddings * attention_mask
-            summed = masked.sum(dim=1)
-            counts = attention_mask.sum(dim=1).clamp(min=1e-9)
-            embedding = summed / counts
+            # Official Qwen3-VL-Embedding: EOS token pooling
+            embedding = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
 
         return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]

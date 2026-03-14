@@ -4,7 +4,7 @@ Serves both Qwen3-Embedding-0.6B (light) and Qwen3-Embedding-8B (heavy)
 from a single A10G container. Routes by ``model`` field in request.
 
 Both models loaded at startup (~17GB total on A10G 24GB VRAM).
-Custom transformers forward pass + mean pooling + L2 normalize.
+Uses official Qwen3-Embedding approach: last token (EOS) pooling + L2 normalize.
 
 Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
@@ -54,8 +54,8 @@ class EmbeddingServer:
     """Merged embedding server for Qwen3-Embedding-0.6B + 8B.
 
     Both models loaded at startup. Routes request to correct model
-    via the ``model`` field. Uses custom transformers forward pass
-    with mean pooling and L2 normalization (no vLLM needed for embeddings).
+    via the ``model`` field. Uses official Qwen3-Embedding approach:
+    last token (EOS) pooling + L2 normalization.
     """
 
     @modal.enter(snap=True)
@@ -74,11 +74,12 @@ class EmbeddingServer:
             tokenizer = AutoTokenizer.from_pretrained(
                 hf_id,
                 trust_remote_code=True,
+                padding_side="left",
                 cache_dir=HF_CACHE_DIR,
             )
             model = AutoModel.from_pretrained(
                 hf_id,
-                dtype=torch.float16,
+                torch_dtype=torch.float16,
                 trust_remote_code=True,
                 device_map="auto",
                 cache_dir=HF_CACHE_DIR,
@@ -88,8 +89,22 @@ class EmbeddingServer:
             self.tokenizers[name] = tokenizer
             logger.info("Loaded {} successfully", name)
 
+    @staticmethod
+    def _last_token_pool(last_hidden_states, attention_mask):
+        """Official Qwen3-Embedding pooling: extract last non-padding token hidden state."""
+        import torch
+
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if left_padding:
+            return last_hidden_states[:, -1]
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[
+            torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
+        ]
+
     def _embed(self, model_name: str, texts: list[str]) -> list[list[float]]:
-        """Embed texts using the specified model."""
+        """Embed texts using the specified model with last token (EOS) pooling."""
         import torch
 
         model = self.models[model_name]
@@ -105,13 +120,8 @@ class EmbeddingServer:
 
         with torch.no_grad():
             outputs = model(**inputs)
-            # Mean pooling over sequence dimension (ignore padding)
-            attention_mask = inputs["attention_mask"].unsqueeze(-1)
-            token_embeddings = outputs.last_hidden_state
-            masked = token_embeddings * attention_mask
-            summed = masked.sum(dim=1)
-            counts = attention_mask.sum(dim=1).clamp(min=1e-9)
-            embeddings = summed / counts
+            # Official Qwen3-Embedding: last token (EOS) pooling
+            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             # L2 normalize
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
