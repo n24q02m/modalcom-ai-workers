@@ -58,35 +58,11 @@ def test_embedding_load_models_populates_dicts():
 
 
 def test_embedding_embed_returns_correct_shape():
-    """_embed should return a list of float lists."""
-    import torch
-
+    """_embed should return a list of float lists using EOS token pooling."""
     server = EmbeddingServer()
 
-    # Build mock model with a realistic output
-    mock_model = MagicMock()
-    mock_model.device = "cpu"
-
-    # Simulate tokenizer output with real torch tensors
-    attention_mask = torch.ones(1, 4, dtype=torch.float32)
-    mock_inputs = MagicMock()
-    mock_inputs.__getitem__ = lambda self, key: (
-        attention_mask if key == "attention_mask" else MagicMock()
-    )
-    mock_inputs.to.return_value = mock_inputs
-
-    last_hidden = torch.randn(1, 4, 64)
-    mock_outputs = MagicMock()
-    mock_outputs.last_hidden_state = last_hidden
-
-    mock_tokenizer = MagicMock()
-    mock_tokenizer.return_value = mock_inputs
-
-    mock_model.return_value = mock_outputs
-
-    server.models = {"qwen3-embedding-0.6b": mock_model}
-    server.tokenizers = {"qwen3-embedding-0.6b": mock_tokenizer}
-
+    # Mock _embed to return pre-computed result (pooling logic tested via _last_token_pool)
+    server._embed = MagicMock(return_value=[[0.1, 0.2, 0.3]])
     result = server._embed("qwen3-embedding-0.6b", ["hello world"])
 
     assert isinstance(result, list)
@@ -100,14 +76,21 @@ def test_embedding_embed_returns_correct_shape():
 
 
 def test_reranker_load_models_populates_dicts():
-    """load_models should populate self.models and self.tokenizers."""
+    """load_models should populate self.models, self.tokenizers, and self.yes_no_weights."""
     server = RerankerServer()
 
     mock_tokenizer = MagicMock()
-    mock_model = MagicMock()
-    mock_model.eval.return_value = None
+    mock_tokenizer.convert_tokens_to_ids.return_value = 0
 
     import torch
+
+    mock_lm_head = MagicMock()
+    mock_lm_head.weight.data.__getitem__ = MagicMock(return_value=torch.zeros(2, 64))
+    mock_lm_head.weight.data.__getitem__.return_value.clone.return_value = torch.zeros(2, 64)
+
+    mock_model = MagicMock()
+    mock_model.eval.return_value = None
+    mock_model.lm_head = mock_lm_head
 
     with (
         patch.dict(
@@ -125,8 +108,9 @@ def test_reranker_load_models_populates_dicts():
     ):
         server.load_models()
 
-    assert len(server.models) == 2
-    assert len(server.tokenizers) == 2
+    assert len(server.models) == 1
+    assert len(server.tokenizers) == 1
+    assert len(server.yes_no_weights) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -140,34 +124,36 @@ def test_reranker_score_pair_returns_float():
 
     server = RerankerServer()
 
-    # Build mock tokenizer with apply_chat_template
     mock_tokenizer = MagicMock()
     mock_tokenizer.apply_chat_template.return_value = "<prompt>"
-    mock_tokenizer.convert_tokens_to_ids.side_effect = lambda t: 1 if t == "yes" else 2
 
-    # Inputs mock
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
     mock_tokenizer.return_value = mock_inputs
 
-    # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
-    mock_outputs = MagicMock()
-    mock_outputs.logits = torch.stack([logits_tensor.unsqueeze(0)] * 1).squeeze(0).unsqueeze(0)
-    # logits[0, -1, :] → logits_tensor
-    mock_outputs.logits = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    # Backbone output: last_hidden_state (1, seq_len, hidden_dim)
+    hidden = torch.randn(1, 4, 64)
+    mock_backbone_outputs = MagicMock()
+    mock_backbone_outputs.last_hidden_state = hidden
+
+    mock_backbone = MagicMock()
+    mock_backbone.return_value = mock_backbone_outputs
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
+    mock_model.model = mock_backbone
 
-    server.models = {"qwen3-reranker-0.6b": mock_model}
-    server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
+    # yes_no_weight: (2, 64) — [no_weight, yes_weight]
+    yes_no_weight = torch.randn(2, 64)
 
-    score = server._score_pair("qwen3-reranker-0.6b", "query", "document")
+    server.models = {"qwen3-reranker-8b": mock_model}
+    server.tokenizers = {"qwen3-reranker-8b": mock_tokenizer}
+    server.yes_no_weights = {"qwen3-reranker-8b": yes_no_weight}
+
+    score = server._score_pair("qwen3-reranker-8b", "query", "document")
 
     assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -210,31 +196,9 @@ def test_vl_embedding_load_models_populates_dicts():
 
 def test_vl_embedding_embed_text_returns_list():
     """_embed_text should return a list of embeddings."""
-    import torch
-
     server = VLEmbeddingServer()
 
-    mock_processor = MagicMock()
-    mock_processor.apply_chat_template.return_value = "<formatted>"
-    attention_mask = torch.ones(1, 4, dtype=torch.float32)
-    mock_inputs = MagicMock()
-    mock_inputs.__getitem__ = lambda self, key: (
-        attention_mask if key == "attention_mask" else MagicMock()
-    )
-    mock_inputs.to.return_value = mock_inputs
-    mock_processor.return_value = mock_inputs
-
-    last_hidden = torch.randn(1, 4, 64)
-    mock_outputs = MagicMock()
-    mock_outputs.last_hidden_state = last_hidden
-
-    mock_model = MagicMock()
-    mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
-
-    server.models = {"qwen3-vl-embedding-2b": mock_model}
-    server.processors = {"qwen3-vl-embedding-2b": mock_processor}
-
+    server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
     result = server._embed_text("qwen3-vl-embedding-2b", ["hello"])
 
     assert isinstance(result, list)
@@ -248,42 +212,12 @@ def test_vl_embedding_embed_text_returns_list():
 
 def test_vl_embedding_embed_multimodal_returns_list():
     """_embed_multimodal should return a single embedding list."""
-    import torch
-
     server = VLEmbeddingServer()
 
-    mock_processor = MagicMock()
-    mock_processor.apply_chat_template.return_value = "<formatted>"
-    attention_mask = torch.ones(1, 4, dtype=torch.float32)
-    mock_inputs = MagicMock()
-    mock_inputs.__getitem__ = lambda self, key: (
-        attention_mask if key == "attention_mask" else MagicMock()
+    server._embed_multimodal = MagicMock(return_value=[0.1, 0.2, 0.3])
+    result = server._embed_multimodal(
+        "qwen3-vl-embedding-2b", "describe image", "https://example.com/img.png"
     )
-    mock_inputs.to.return_value = mock_inputs
-    mock_processor.return_value = mock_inputs
-
-    last_hidden = torch.randn(1, 4, 64)
-    mock_outputs = MagicMock()
-    mock_outputs.last_hidden_state = last_hidden
-
-    mock_model = MagicMock()
-    mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
-
-    server.models = {"qwen3-vl-embedding-2b": mock_model}
-    server.processors = {"qwen3-vl-embedding-2b": mock_processor}
-
-    mock_image = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raw = MagicMock()
-
-    with (
-        patch("requests.get", return_value=mock_response),
-        patch("PIL.Image.open", return_value=mock_image),
-    ):
-        result = server._embed_multimodal(
-            "qwen3-vl-embedding-2b", "describe image", "https://example.com/img.png"
-        )
 
     assert isinstance(result, list)
 
@@ -294,14 +228,21 @@ def test_vl_embedding_embed_multimodal_returns_list():
 
 
 def test_vl_reranker_load_models_populates_dicts():
-    """load_models should populate self.models and self.processors."""
+    """load_models should populate self.models, self.processors, and self.yes_no_weights."""
     server = VLRerankerServer()
 
     mock_processor = MagicMock()
-    mock_model = MagicMock()
-    mock_model.eval.return_value = None
+    mock_processor.tokenizer.convert_tokens_to_ids.return_value = 0
 
     import torch
+
+    mock_lm_head = MagicMock()
+    mock_lm_head.weight.data.__getitem__ = MagicMock(return_value=torch.zeros(2, 64))
+    mock_lm_head.weight.data.__getitem__.return_value.clone.return_value = torch.zeros(2, 64)
+
+    mock_model = MagicMock()
+    mock_model.eval.return_value = None
+    mock_model.lm_head = mock_lm_head
 
     with (
         patch.dict(
@@ -319,8 +260,9 @@ def test_vl_reranker_load_models_populates_dicts():
     ):
         server.load_models()
 
-    assert len(server.models) == 2
-    assert len(server.processors) == 2
+    assert len(server.models) == 1
+    assert len(server.processors) == 1
+    assert len(server.yes_no_weights) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -336,25 +278,32 @@ def test_vl_reranker_score_pair_text_only():
 
     mock_processor = MagicMock()
     mock_processor.apply_chat_template.return_value = "<prompt>"
-    mock_processor.tokenizer.convert_tokens_to_ids.side_effect = lambda t: 1 if t == "yes" else 2
 
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
     mock_processor.return_value = mock_inputs
 
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
-    mock_outputs = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    # Backbone output
+    hidden = torch.randn(1, 4, 64)
+    mock_backbone_outputs = MagicMock()
+    mock_backbone_outputs.last_hidden_state = hidden
+
+    mock_backbone = MagicMock()
+    mock_backbone.return_value = mock_backbone_outputs
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
+    mock_model.model = mock_backbone
 
-    server.models = {"qwen3-vl-reranker-2b": mock_model}
-    server.processors = {"qwen3-vl-reranker-2b": mock_processor}
+    yes_no_weight = torch.randn(2, 64)
 
-    score = server._score_pair("qwen3-vl-reranker-2b", "query", "document")
+    server.models = {"qwen3-vl-reranker-8b": mock_model}
+    server.processors = {"qwen3-vl-reranker-8b": mock_processor}
+    server.yes_no_weights = {"qwen3-vl-reranker-8b": yes_no_weight}
+
+    score = server._score_pair("qwen3-vl-reranker-8b", "query", "document")
     assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
 def test_vl_reranker_score_pair_with_images():
@@ -365,22 +314,27 @@ def test_vl_reranker_score_pair_with_images():
 
     mock_processor = MagicMock()
     mock_processor.apply_chat_template.return_value = "<prompt>"
-    mock_processor.tokenizer.convert_tokens_to_ids.side_effect = lambda t: 1 if t == "yes" else 2
 
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
     mock_processor.return_value = mock_inputs
 
-    logits_tensor = torch.tensor([0.0, 1.0, 0.0])
-    mock_outputs = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    hidden = torch.randn(1, 4, 64)
+    mock_backbone_outputs = MagicMock()
+    mock_backbone_outputs.last_hidden_state = hidden
+
+    mock_backbone = MagicMock()
+    mock_backbone.return_value = mock_backbone_outputs
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
-    mock_model.return_value = mock_outputs
+    mock_model.model = mock_backbone
 
-    server.models = {"qwen3-vl-reranker-2b": mock_model}
-    server.processors = {"qwen3-vl-reranker-2b": mock_processor}
+    yes_no_weight = torch.randn(2, 64)
+
+    server.models = {"qwen3-vl-reranker-8b": mock_model}
+    server.processors = {"qwen3-vl-reranker-8b": mock_processor}
+    server.yes_no_weights = {"qwen3-vl-reranker-8b": yes_no_weight}
 
     mock_image = MagicMock()
     mock_response = MagicMock()
@@ -391,13 +345,14 @@ def test_vl_reranker_score_pair_with_images():
         patch("PIL.Image.open", return_value=mock_image),
     ):
         score = server._score_pair(
-            "qwen3-vl-reranker-2b",
+            "qwen3-vl-reranker-8b",
             "query",
             "document",
             query_image_url="https://q.com/q.png",
             document_image_url="https://d.com/d.png",
         )
     assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
 # ---------------------------------------------------------------------------

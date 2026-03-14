@@ -80,6 +80,8 @@ def _ensure_torch_stub() -> None:
     torch_stub.float16 = "float16"
     torch_stub.bfloat16 = "bfloat16"
     torch_stub.float32 = "float32"
+    torch_stub.long = "long"
+    torch_stub.int64 = "int64"
     torch_stub.no_grad = MagicMock(
         return_value=MagicMock(
             __enter__=MagicMock(return_value=None), __exit__=MagicMock(return_value=False)
@@ -97,6 +99,16 @@ def _ensure_torch_stub() -> None:
     _norm_result = MagicMock()
     _norm_result.__getitem__ = MagicMock(return_value=_indexed_norm)
     functional_stub.normalize = MagicMock(return_value=_norm_result)
+
+    # linear(input, weight) → (batch, 2) logits for yes/no scoring
+    _linear_result = MagicMock()
+    _linear_result.float.return_value = _linear_result
+    functional_stub.linear = MagicMock(return_value=_linear_result)
+
+    # softmax → probabilities, [0, 1].item() → 0.8
+    _probs = MagicMock()
+    _probs.__getitem__ = MagicMock(return_value=MagicMock(item=MagicMock(return_value=0.8)))
+    functional_stub.softmax = MagicMock(return_value=_probs)
 
     nn_stub.functional = functional_stub
     nn_stub.Module = object
@@ -296,8 +308,14 @@ _ensure_numpy_stub()
 def _default_worker_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set a sentinel WORKER_API_KEY for every test so auth is enforced.
 
+    Also resets the module-level key cache in auth.py to prevent
+    stale keys from leaking between tests.
+
     Tests that want dev-mode (skip auth) explicitly patch the env vars to empty
     or unset via ``unittest.mock.patch.dict``, which overrides this fixture.
     """
+    import ai_workers.common.auth as auth_mod
+
+    auth_mod._valid_keys = None  # Reset cached keys before each test
     if not os.environ.get("API_KEY") and not os.environ.get("WORKER_API_KEY"):
         monkeypatch.setenv("WORKER_API_KEY", "k")

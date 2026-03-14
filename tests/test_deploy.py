@@ -132,12 +132,12 @@ class TestDeployAllGrouping:
 
         # Embedding: 2 models (light + heavy) share one module
         assert len(modules["ai_workers.workers.embedding"]) == 2
-        # Reranker: 2 models share one module
-        assert len(modules["ai_workers.workers.reranker"]) == 2
+        # Reranker: 1 model (8B only)
+        assert len(modules["ai_workers.workers.reranker"]) == 1
         # VL Embedding: 2 models share one module
         assert len(modules["ai_workers.workers.vl_embedding"]) == 2
-        # VL Reranker: 2 models share one module
-        assert len(modules["ai_workers.workers.vl_reranker"]) == 2
+        # VL Reranker: 1 model (8B only)
+        assert len(modules["ai_workers.workers.vl_reranker"]) == 1
         # OCR: 1 model
         assert len(modules["ai_workers.workers.ocr"]) == 1
         # TTS: 2 models (light + heavy) share one module
@@ -146,15 +146,15 @@ class TestDeployAllGrouping:
         assert len(modules["ai_workers.workers.asr"]) == 2
 
     def test_total_unique_modules(self) -> None:
-        """Should have 7 unique worker modules for 13 models."""
+        """Should have 7 unique worker modules for 11 models."""
         modules = {c.worker_module for c in MODEL_REGISTRY.values() if c.worker_module}
         assert len(modules) == 7
 
     def test_total_unique_deploy_targets(self) -> None:
-        """Merged apps: should have 7 unique (module, app_var) pairs for 13 models.
+        """Merged apps: should have 7 unique (module, app_var) pairs for 11 models.
 
-        Embedding, Reranker, VL Embedding, VL Reranker, TTS, ASR each merge light+heavy
-        into one app. Plus OCR = 7 total deploy targets.
+        Embedding, VL Embedding, TTS, ASR each merge light+heavy into one app.
+        Reranker and VL Reranker have single 8B model each. Plus OCR = 7 total.
         """
         targets = {
             (c.worker_module, c.modal_app_var)
@@ -169,9 +169,7 @@ class TestDeployAllGrouping:
 
         pairs = [
             ("qwen3-embedding-0.6b", "qwen3-embedding-8b"),
-            ("qwen3-reranker-0.6b", "qwen3-reranker-8b"),
             ("qwen3-vl-embedding-2b", "qwen3-vl-embedding-8b"),
-            ("qwen3-vl-reranker-2b", "qwen3-vl-reranker-8b"),
             ("qwen3-tts-0.6b", "qwen3-tts-1.7b"),
             ("qwen3-asr-0.6b", "qwen3-asr-1.7b"),
         ]
