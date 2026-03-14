@@ -135,7 +135,7 @@ def test_reranker_load_models_populates_dicts():
 
 
 def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
+    """_score_pairs should return a list of floats between 0 and 1."""
     import torch
 
     server = RerankerServer()
@@ -148,15 +148,15 @@ def test_reranker_score_pair_returns_float():
     # Inputs mock
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
+    mock_inputs.__getitem__.return_value = torch.ones(1, 10)  # attention_mask
     mock_tokenizer.return_value = mock_inputs
 
     # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
     logits_tensor = torch.tensor([0.0, 2.0, 0.0])
     mock_outputs = MagicMock()
-    mock_outputs.logits = torch.stack([logits_tensor.unsqueeze(0)] * 1).squeeze(0).unsqueeze(0)
-    # logits[0, -1, :] → logits_tensor
+    # Batch size 1
     mock_outputs.logits = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    mock_outputs.logits.__getitem__.return_value = logits_tensor.unsqueeze(0)
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
@@ -165,9 +165,18 @@ def test_reranker_score_pair_returns_float():
     server.models = {"qwen3-reranker-0.6b": mock_model}
     server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
 
-    score = server._score_pair("qwen3-reranker-0.6b", "query", "document")
+    # Use patch.dict on sys.modules, but we also need torch.arange to work
+    # Because `torch` is imported locally in `_score_pairs`, we mock the torch module
+    mock_torch = MagicMock()
+    mock_torch.no_grad = torch.no_grad
+    mock_torch.tensor = torch.tensor
+    mock_torch.arange.return_value = torch.tensor([0])
+    mock_torch.sigmoid.return_value = MagicMock(tolist=lambda: [0.88])
 
-    assert isinstance(score, float)
+    with patch.dict("sys.modules", {"torch": mock_torch}):
+        scores = server._score_pairs("qwen3-reranker-0.6b", "query", ["document"])
+
+    assert isinstance(scores[0], float)
 
 
 # ---------------------------------------------------------------------------
