@@ -137,3 +137,44 @@ def test_generate_model_card_gguf_link():
     )
     card = _generate_model_card(cfg, int8_size_mb=50.0, q4f16_size_mb=30.0)
     assert "org/MyModel-GGUF" in card
+
+
+# ---------------------------------------------------------------------------
+# onnx_convert_model
+# ---------------------------------------------------------------------------
+
+
+def test_onnx_convert_invalid_model_class(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from ai_workers.workers.onnx_converter import onnx_convert_model
+
+    monkeypatch.setenv("HF_TOKEN", "dummy_token")
+
+    # Mock HfApi and repo_exists to prevent actual network calls
+    import sys
+
+    mock_hub = MagicMock()
+    mock_hub.repo_exists.return_value = False
+    sys.modules["huggingface_hub"] = mock_hub
+
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer = MagicMock()
+    sys.modules["transformers"] = mock_transformers
+    sys.modules["onnx"] = MagicMock()
+    sys.modules["onnxruntime"] = MagicMock()
+    sys.modules["onnxruntime.quantization"] = MagicMock()
+    sys.modules["onnxruntime.quantization.matmul_nbits_quantizer"] = MagicMock()
+
+    # Mock AutoTokenizer to prevent downloading models
+
+    with pytest.raises(ValueError, match=r"Model class 'InvalidClass' is invalid. Choose from:"):
+        onnx_convert_model(
+            model_name="test_model",
+            hf_source="Qwen/Qwen3-Embedding-0.6B",
+            hf_target="test/target",
+            model_class="InvalidClass",
+            output_attr="last_hidden_state",
+        )
