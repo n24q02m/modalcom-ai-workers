@@ -134,8 +134,8 @@ def test_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
+def test_reranker_score_pairs_returns_list_of_floats():
+    """_score_pairs should return a list of floats."""
     import torch
 
     server = RerankerServer()
@@ -148,15 +148,20 @@ def test_reranker_score_pair_returns_float():
     # Inputs mock
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
+
+    mock_input_ids = MagicMock()
+    mock_input_ids.shape = (1, 10)
+    mock_inputs.input_ids = mock_input_ids
+
+    mock_attention_mask = MagicMock()
+    mock_attention_mask.sum.return_value = torch.tensor([1])
+    mock_inputs.attention_mask = mock_attention_mask
+
     mock_tokenizer.return_value = mock_inputs
 
-    # Logits: yes_id=1, no_id=2 → logits[1]=2.0, logits[2]=0.0 → sigmoid(2.0)≈0.88
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
+    logits_tensor = torch.tensor([[[0.0, 2.0, 0.0]]])
     mock_outputs = MagicMock()
-    mock_outputs.logits = torch.stack([logits_tensor.unsqueeze(0)] * 1).squeeze(0).unsqueeze(0)
-    # logits[0, -1, :] → logits_tensor
-    mock_outputs.logits = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    mock_outputs.logits = logits_tensor
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
@@ -165,9 +170,20 @@ def test_reranker_score_pair_returns_float():
     server.models = {"qwen3-reranker-0.6b": mock_model}
     server.tokenizers = {"qwen3-reranker-0.6b": mock_tokenizer}
 
-    score = server._score_pair("qwen3-reranker-0.6b", "query", "document")
+    with (
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
+    ):
+        scores = server._score_pairs("qwen3-reranker-0.6b", "query", ["document"])
 
-    assert isinstance(score, float)
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +344,8 @@ def test_vl_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_vl_reranker_score_pair_text_only():
-    """_score_pair without images should return a float."""
+def test_vl_reranker_score_pairs_text_only():
+    """_score_pairs without images should return a list of floats."""
     import torch
 
     server = VLRerankerServer()
@@ -340,11 +356,20 @@ def test_vl_reranker_score_pair_text_only():
 
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
+
+    mock_input_ids = MagicMock()
+    mock_input_ids.shape = (1, 10)
+    mock_inputs.input_ids = mock_input_ids
+
+    mock_attention_mask = MagicMock()
+    mock_attention_mask.sum.return_value = torch.tensor([1])
+    mock_inputs.attention_mask = mock_attention_mask
+
     mock_processor.return_value = mock_inputs
 
-    logits_tensor = torch.tensor([0.0, 2.0, 0.0])
+    logits_tensor = torch.tensor([[[0.0, 2.0, 0.0]]])
     mock_outputs = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    mock_outputs.logits = logits_tensor
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
@@ -353,12 +378,24 @@ def test_vl_reranker_score_pair_text_only():
     server.models = {"qwen3-vl-reranker-2b": mock_model}
     server.processors = {"qwen3-vl-reranker-2b": mock_processor}
 
-    score = server._score_pair("qwen3-vl-reranker-2b", "query", "document")
-    assert isinstance(score, float)
+    with (
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.88]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
+    ):
+        scores = server._score_pairs("qwen3-vl-reranker-2b", "query", ["document"])
+
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
 
 
-def test_vl_reranker_score_pair_with_images():
-    """_score_pair with image URLs should load images and return a float."""
+def test_vl_reranker_score_pairs_with_images():
+    """_score_pairs with image URLs should load images and return a list of floats."""
     import torch
 
     server = VLRerankerServer()
@@ -369,11 +406,20 @@ def test_vl_reranker_score_pair_with_images():
 
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
+
+    mock_input_ids = MagicMock()
+    mock_input_ids.shape = (1, 10)
+    mock_inputs.input_ids = mock_input_ids
+
+    mock_attention_mask = MagicMock()
+    mock_attention_mask.sum.return_value = torch.tensor([1])
+    mock_inputs.attention_mask = mock_attention_mask
+
     mock_processor.return_value = mock_inputs
 
-    logits_tensor = torch.tensor([0.0, 1.0, 0.0])
+    logits_tensor = torch.tensor([[[0.0, 1.0, 0.0]]])
     mock_outputs = MagicMock()
-    mock_outputs.logits.__getitem__.return_value = logits_tensor
+    mock_outputs.logits = logits_tensor
 
     mock_model = MagicMock()
     mock_model.device = "cpu"
@@ -389,15 +435,25 @@ def test_vl_reranker_score_pair_with_images():
     with (
         patch("requests.get", return_value=mock_response),
         patch("PIL.Image.open", return_value=mock_image),
+        patch.object(
+            torch,
+            "sigmoid",
+            return_value=type("MockTensor", (), {"tolist": lambda self: [0.73]})(),
+            create=True,
+        ),
+        patch.object(torch, "arange", return_value=torch.tensor([0]), create=True),
     ):
-        score = server._score_pair(
+        scores = server._score_pairs(
             "qwen3-vl-reranker-2b",
             "query",
-            "document",
+            ["document"],
             query_image_url="https://q.com/q.png",
-            document_image_url="https://d.com/d.png",
+            document_image_urls=["https://d.com/d.png"],
         )
-    assert isinstance(score, float)
+
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
 
 
 # ---------------------------------------------------------------------------

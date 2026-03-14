@@ -88,71 +88,114 @@ class VLRerankerServer:
             self.processors[name] = processor
             logger.info("Loaded {} successfully", name)
 
-    def _score_pair(
+    def _score_pairs(
         self,
         model_name: str,
         query: str,
-        document: str,
+        documents: list[str],
         query_image_url: str | None = None,
-        document_image_url: str | None = None,
-    ) -> float:
-        """Score a single query-document pair using yes/no logit comparison.
+        document_image_urls: list[str | None] | None = None,
+    ) -> list[float]:
+        """Score multiple query-document pairs using yes/no logit comparison in a batch.
 
         Supports text-only and multimodal (image+text) query/document pairs.
         """
         import torch
 
+        if not documents:
+            return []
+
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        # Build user content with optional images
-        content_parts = []
-        images = []
+        # Ensure padding side is correct for batched inference
+        processor.tokenizer.padding_side = "right"
 
-        # Query part
-        if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
-        content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
+        if document_image_urls is None:
+            document_image_urls = [None] * len(documents)
 
-        # Document part
-        if document_image_url:
-            content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
-        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
+        # Pre-load query image if present
+        query_image = self._load_image(query_image_url) if query_image_url else None
 
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {"role": "user", "content": content_parts},
-        ]
+        batch_size_limit = 16
+        all_scores = []
 
-        text = processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
+        for i in range(0, len(documents), batch_size_limit):
+            batch_docs = documents[i : i + batch_size_limit]
+            batch_urls = document_image_urls[i : i + batch_size_limit]
 
-        if images:
-            inputs = processor(text=text, images=images, return_tensors="pt", padding=True).to(
-                model.device
-            )
-        else:
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+            texts = []
+            all_images = []
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits[0, -1, :]  # Last token logits
+            for document, document_image_url in zip(batch_docs, batch_urls, strict=False):
+                # Build user content with optional images
+                content_parts = []
+                images = []
 
-            # Get logits for "yes" and "no" tokens
-            yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
-            no_id = processor.tokenizer.convert_tokens_to_ids("no")
-            yes_logit = logits[yes_id].float()
-            no_logit = logits[no_id].float()
+                # Query part
+                if query_image_url:
+                    content_parts.append({"type": "image", "image": query_image_url})
+                    images.append(query_image)
+                content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
 
-            # Sigmoid of (yes - no) gives relevance probability
-            score = torch.sigmoid(yes_logit - no_logit).item()
+                # Document part
+                if document_image_url:
+                    content_parts.append({"type": "image", "image": document_image_url})
+                    images.append(self._load_image(document_image_url))
+                content_parts.append(
+                    {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
+                )
 
-        return score
+                messages = [
+                    {"role": "system", "content": RERANKER_PREFIX},
+                    {"role": "user", "content": content_parts},
+                ]
+
+                text = processor.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                texts.append(text)
+                all_images.append(images)
+
+            # Flatten all images for the processor (it expects a flat list)
+            flat_images = [img for sublist in all_images for img in sublist]
+
+            if flat_images:
+                inputs = processor(
+                    text=texts,
+                    images=flat_images,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                ).to(model.device)
+            else:
+                inputs = processor(
+                    text=texts, return_tensors="pt", padding=True, truncation=True
+                ).to(model.device)
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+
+                # Extract logits for the last valid token in each padded sequence
+                batch_size = inputs.input_ids.shape[0]
+                last_token_indices = inputs.attention_mask.sum(1) - 1
+                logits = outputs.logits[
+                    torch.arange(batch_size, device=model.device), last_token_indices, :
+                ]
+
+                # Get logits for "yes" and "no" tokens
+                yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
+                no_id = processor.tokenizer.convert_tokens_to_ids("no")
+                yes_logits = logits[:, yes_id].float()
+                no_logits = logits[:, no_id].float()
+
+                # Sigmoid of (yes - no) gives relevance probability
+                scores = torch.sigmoid(yes_logits - no_logits).tolist()
+                all_scores.extend(scores)
+
+        return all_scores
 
     @staticmethod
     def _load_image(url: str):
@@ -228,23 +271,28 @@ class VLRerankerServer:
                     },
                 )
 
-            # Score each document against the query
-            results = []
-            for i, doc in enumerate(body.documents):
+            # Prepare documents and images for batched scoring
+            doc_texts = []
+            doc_images = []
+            for doc in body.documents:
                 if isinstance(doc, str):
-                    doc_text = doc
-                    doc_image = None
+                    doc_texts.append(doc)
+                    doc_images.append(None)
                 else:
-                    doc_text = doc.text
-                    doc_image = doc.image_url
+                    doc_texts.append(doc.text)
+                    doc_images.append(doc.image_url)
 
-                score = self._score_pair(
-                    body.model,
-                    body.query,
-                    doc_text,
-                    query_image_url=body.query_image_url,
-                    document_image_url=doc_image,
-                )
+            # Score documents in a batch
+            scores = self._score_pairs(
+                body.model,
+                body.query,
+                doc_texts,
+                query_image_url=body.query_image_url,
+                document_image_urls=doc_images,
+            )
+
+            results = []
+            for i, (doc_text, score) in enumerate(zip(doc_texts, scores, strict=False)):
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
             # Sort by relevance score descending
