@@ -16,7 +16,7 @@ import gc
 import warnings
 from pathlib import Path
 
-import typer
+import typer  # type: ignore
 from rich.console import Console
 from rich.table import Table
 
