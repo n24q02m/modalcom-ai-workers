@@ -44,12 +44,15 @@ class ASRServer:
     Supports chunked long-form audio with automatic language detection.
     """
 
+    def __init__(self, model_name: str = MODEL_NAME):
+        self.model_name = model_name
+
     @modal.enter()
     def load_model(self) -> None:
         import torch
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
-        model_path = f"{MODELS_MOUNT_PATH}/{MODEL_NAME}"
+        model_path = f"{MODELS_MOUNT_PATH}/{self.model_name}"
         self.processor = AutoProcessor.from_pretrained(model_path)
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_path,
@@ -81,6 +84,9 @@ class ASRServer:
         from fastapi import FastAPI, File, Form, Request, UploadFile
         from pydantic import BaseModel
 
+        # Capture self.model_name in local scope for clarity, though self works too
+        model_name = self.model_name
+
         app = FastAPI(title="Whisper Large v3")
 
         class TranscriptionResponse(BaseModel):
@@ -104,12 +110,12 @@ class ASRServer:
 
         @app.get("/health")
         async def health():
-            return {"status": "ok", "model": MODEL_NAME}
+            return {"status": "ok", "model": model_name}
 
         @app.post("/v1/audio/transcriptions")
         async def transcribe(
             file: UploadFile = File(...),
-            model: str = Form(MODEL_NAME),
+            model: str = Form(model_name),
             language: str | None = Form(None),
             prompt: str | None = Form(None),
             response_format: str = Form("json"),
@@ -141,10 +147,10 @@ class ASRServer:
                 generate_kwargs=generate_kwargs,
             )
 
-            text = result.get("text", "").strip()
+            text = result.get("text", "").strip()  # type: ignore
 
             if response_format == "verbose_json":
-                chunks = result.get("chunks", [])
+                chunks = result.get("chunks", [])  # type: ignore
                 segments = []
                 for i, chunk in enumerate(chunks):
                     ts = chunk.get("timestamp", (0, 0))
