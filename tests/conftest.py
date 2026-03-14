@@ -299,5 +299,8 @@ def _default_worker_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     Tests that want dev-mode (skip auth) explicitly patch the env vars to empty
     or unset via ``unittest.mock.patch.dict``, which overrides this fixture.
     """
+    import ai_workers.common.auth
+
+    ai_workers.common.auth._valid_keys = None
     if not os.environ.get("API_KEY") and not os.environ.get("WORKER_API_KEY"):
         monkeypatch.setenv("WORKER_API_KEY", "k")

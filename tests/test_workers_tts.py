@@ -29,7 +29,7 @@ def client(server):
 
 
 def _client(server, api_key="k"):
-    with patch.dict(os.environ, {"API_KEY": api_key}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": api_key}):
         app = server.serve()
     return TestClient(app, raise_server_exceptions=True), api_key
 
@@ -61,7 +61,7 @@ def test_health_returns_model_names(client):
 
 
 def test_speech_requires_auth(server):
-    with patch.dict(os.environ, {"API_KEY": "secret"}):
+    with patch.dict(os.environ, {"WORKER_API_KEY": "secret"}):
         app = server.serve()
     tc = TestClient(app)
     resp = tc.post(
