@@ -35,3 +35,12 @@ async def verify_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def auth_middleware(request: Request, call_next):
+    """Middleware to enforce authentication on all endpoints except /health and /."""
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+
+    await verify_api_key(request)
+    return await call_next(request)
