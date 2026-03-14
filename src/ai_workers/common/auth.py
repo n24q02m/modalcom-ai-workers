@@ -6,6 +6,7 @@ import hmac
 import os
 
 from fastapi import HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 # Cache resolved keys at module level (env vars don't change at runtime)
@@ -82,3 +83,17 @@ async def verify_api_key(request: Request) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def auth_middleware(request: Request, call_next):
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+
+    try:
+        await verify_api_key(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    return await call_next(request)
