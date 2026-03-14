@@ -8,7 +8,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from ai_workers.common import auth
 from ai_workers.workers.embedding import MODEL_CONFIGS, EmbeddingServer
+
+
+@pytest.fixture(autouse=True)
+def reset_auth_cache():
+    auth._valid_keys = None
+    yield
+    auth._valid_keys = None
 
 
 @pytest.fixture()
@@ -54,12 +62,33 @@ def test_health_returns_model_names(client):
 # ---------------------------------------------------------------------------
 
 
-def test_embeddings_requires_auth(client):
+def test_embeddings_missing_auth_header(client):
     resp = client.post(
         "/v1/embeddings",
         json={"model": "qwen3-embedding-0.6b", "input": "hello"},
     )
     assert resp.status_code == 401
+    assert "Missing Bearer token" in resp.json()["detail"]
+
+
+def test_embeddings_invalid_api_key(client):
+    resp = client.post(
+        "/v1/embeddings",
+        json={"model": "qwen3-embedding-0.6b", "input": "hello"},
+        headers={"Authorization": "Bearer invalid-key"},
+    )
+    assert resp.status_code == 401
+    assert "Invalid API key" in resp.json()["detail"]
+
+
+def test_embeddings_missing_bearer_prefix(client):
+    resp = client.post(
+        "/v1/embeddings",
+        json={"model": "qwen3-embedding-0.6b", "input": "hello"},
+        headers={"Authorization": "secret-key-without-bearer"},
+    )
+    assert resp.status_code == 401
+    assert "Missing Bearer token" in resp.json()["detail"]
 
 
 def test_embeddings_with_valid_key(server):
