@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import modal
 
+from ai_workers.common.constants import KEEP_WARM, SCALEDOWN_WINDOW
 from ai_workers.common.images import MODELS_MOUNT_PATH, vllm_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
 # ---------------------------------------------------------------------------
 # Shared configuration
 # ---------------------------------------------------------------------------
-
-SCALEDOWN_WINDOW = 300  # 5 minutes
-KEEP_WARM = 0  # Scale to zero when idle
 
 r2_mount = get_modal_cloud_bucket_mount()
 
@@ -164,7 +162,6 @@ class EmbeddingHeavyServer:
 
     @modal.asgi_app()
     def serve(self):
-
         from fastapi import FastAPI, Request
         from pydantic import BaseModel
 

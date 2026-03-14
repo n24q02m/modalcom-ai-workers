@@ -14,19 +14,18 @@ from __future__ import annotations
 
 import modal
 
+from ai_workers.common.constants import KEEP_WARM, SCALEDOWN_WINDOW
 from ai_workers.common.images import MODELS_MOUNT_PATH, transformers_image
 from ai_workers.common.r2 import get_modal_cloud_bucket_mount
 
-SCALEDOWN_WINDOW = 300
-KEEP_WARM = 0
+r2_mount = get_modal_cloud_bucket_mount()
 
+# Qwen3-VL-Reranker chat template for relevance scoring
 RERANKER_PREFIX = (
     "Given a query and a document with text and/or image, "
     "judge whether the document is relevant to the query. "
     "Answer 'yes' or 'no'."
 )
-
-r2_mount = get_modal_cloud_bucket_mount()
 
 
 # ---------------------------------------------------------------------------
