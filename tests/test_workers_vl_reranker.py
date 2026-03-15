@@ -190,6 +190,7 @@ def test_rerank_top_n(server):
 
 def test_rerank_with_query_image_url(server):
     server._score_pair = MagicMock(return_value=0.7)
+    server._load_image = MagicMock(return_value="mock_image_obj")
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()

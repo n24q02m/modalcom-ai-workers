@@ -113,6 +113,7 @@ class VLRerankerServer:
         query_image_url: str | None = None,
         document_image_url: str | None = None,
         instruction: str | None = None,
+        query_image_obj: object | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
 
@@ -136,7 +137,10 @@ class VLRerankerServer:
         # Query part
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            if query_image_obj is not None:
+                images.append(query_image_obj)
+            else:
+                images.append(self._load_image(query_image_url))
         content_parts.append(
             {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
         )
@@ -253,6 +257,11 @@ class VLRerankerServer:
                     },
                 )
 
+            # Pre-download query image if provided to avoid redundant network requests
+            query_image_obj = None
+            if body.query_image_url:
+                query_image_obj = self._load_image(body.query_image_url)
+
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
@@ -269,6 +278,7 @@ class VLRerankerServer:
                     doc_text,
                     query_image_url=body.query_image_url,
                     document_image_url=doc_image,
+                    query_image_obj=query_image_obj,
                 )
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
