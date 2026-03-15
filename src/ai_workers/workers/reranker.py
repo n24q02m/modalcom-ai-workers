@@ -82,9 +82,12 @@ class RerankerServer:
             tokenizer = AutoTokenizer.from_pretrained(
                 hf_id,
                 trust_remote_code=True,
-                padding_side="left",
+                padding_side="right",
                 cache_dir=HF_CACHE_DIR,
             )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
             model = AutoModelForCausalLM.from_pretrained(
                 hf_id,
                 torch_dtype=torch.float16,
@@ -107,14 +110,15 @@ class RerankerServer:
                 "Loaded {} successfully (yes_no_weight shape: {})", name, yes_no_weight.shape
             )
 
-    def _score_pair(
-        self, model_name: str, query: str, document: str, instruction: str | None = None
-    ) -> float:
-        """Score a single query-document pair using optimized yes/no logit scoring.
+    def _score_batch(
+        self, model_name: str, query: str, documents: list[str], instruction: str | None = None
+    ) -> list[float]:
+        """Score a batch of query-document pairs using optimized yes/no logit scoring.
 
         Uses backbone-only forward pass + pre-extracted yes/no weights from lm_head,
         avoiding the full (hidden_dim x vocab_size) matmul.
         Scoring: log_softmax([no, yes]) then take yes probability.
+        Processes documents in batches to optimize GPU utilization.
         """
         import torch
         from torch.nn import functional as fn
@@ -125,37 +129,56 @@ class RerankerServer:
 
         instruction = instruction or DEFAULT_INSTRUCTION
 
-        # Build chat messages following official Qwen3-Reranker format
-        messages = [
-            {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {document}",
-            },
-        ]
+        # Prepare all texts
+        all_texts = []
+        for doc in documents:
+            messages = [
+                {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {doc}",
+                },
+            ]
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            all_texts.append(text)
 
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
-
-        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        batch_size = 32
+        all_scores = []
 
         with torch.no_grad():
-            # Backbone-only forward pass — skip lm_head matmul
-            outputs = model.model(**inputs)
-            hidden = outputs.last_hidden_state[:, -1, :]  # (1, hidden_dim)
+            for i in range(0, len(all_texts), batch_size):
+                batch_texts = all_texts[i : i + batch_size]
 
-            # Compute only yes/no logits using pre-extracted weights
-            logits_2 = fn.linear(hidden, yes_no_weight)  # (1, 2) = [no_logit, yes_logit]
+                inputs = tokenizer(
+                    batch_texts, padding=True, truncation=True, return_tensors="pt"
+                ).to(model.device)
 
-            # Official scoring: softmax then take yes probability
-            probs = fn.softmax(logits_2.float(), dim=-1)
-            score = probs[0, 1].item()  # Index 1 = yes
+                # Backbone-only forward pass — skip lm_head matmul
+                outputs = model.model(**inputs)
 
-        return score
+                # Extract hidden states of the last tokens
+                last_token_indices = inputs["attention_mask"].sum(1) - 1
+                batch_size_actual = len(batch_texts)
+                hidden = outputs.last_hidden_state[
+                    torch.arange(batch_size_actual, device=model.device), last_token_indices, :
+                ]  # (batch_size, hidden_dim)
+
+                # Compute only yes/no logits using pre-extracted weights
+                logits_2 = fn.linear(
+                    hidden, yes_no_weight
+                )  # (batch_size, 2) = [no_logit, yes_logit]
+
+                # Official scoring: softmax then take yes probability
+                probs = fn.softmax(logits_2.float(), dim=-1)
+                scores = probs[:, 1].tolist()  # Index 1 = yes
+                all_scores.extend(scores)
+
+        return all_scores
 
     @modal.asgi_app()
     def serve(self):
@@ -219,14 +242,15 @@ class RerankerServer:
                     f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
-            # Score each document against the query
+            # Score all documents against the query in batches
             results = []
-            for i, doc in enumerate(body.documents):
-                score = self._score_pair(body.model, body.query, doc)
-                result = RerankResult(index=i, relevance_score=score)
-                if body.return_documents:
-                    result.document = RerankResultDocument(text=doc)
-                results.append(result)
+            if body.documents:
+                scores = self._score_batch(body.model, body.query, body.documents)
+                for i, (doc, score) in enumerate(zip(body.documents, scores, strict=True)):
+                    result = RerankResult(index=i, relevance_score=score)
+                    if body.return_documents:
+                        result.document = RerankResultDocument(text=doc)
+                    results.append(result)
 
             # Sort by relevance score descending
             results.sort(key=lambda x: x.relevance_score, reverse=True)
