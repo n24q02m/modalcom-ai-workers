@@ -224,3 +224,39 @@ def test_embeddings_heavy_model(server):
 
     assert resp.status_code == 200
     assert resp.json()["model"] == "qwen3-vl-embedding-8b"
+
+
+# ---------------------------------------------------------------------------
+# /v1/embeddings — VLEmbeddingInput with image fetch failure
+# ---------------------------------------------------------------------------
+
+
+def test_embeddings_vlinput_image_fetch_failure(server):
+    mock_qwen_vl_utils = MagicMock()
+    mock_qwen_vl_utils.process_vision_info.side_effect = ValueError("Failed to load image")
+
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch.dict("sys.modules", {"qwen_vl_utils": mock_qwen_vl_utils}),
+    ):
+        app = server.serve()
+        # Ensure raise_server_exceptions is False so it returns a 500 status code
+        tc = TestClient(app, raise_server_exceptions=False)
+
+        # _embed_multimodal needs actual server structure for this test to reach process_vision_info
+        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
+
+        mock_processor = MagicMock()
+        mock_processor.apply_chat_template.return_value = "chat_text"
+        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
+
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": {"text": "describe this image", "image_url": "http://example.com/bad.jpg"},
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+    assert resp.status_code == 500
