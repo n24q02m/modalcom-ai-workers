@@ -176,7 +176,7 @@ class EmbeddingServer:
             }
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
-        async def create_embeddings(body: EmbeddingRequest = Body(...)):
+        def create_embeddings(body: EmbeddingRequest = Body(...)):
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
                     status_code=400,
