@@ -118,9 +118,10 @@ def test_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
-    import torch
+def test_reranker_score_batch_returns_list_of_floats(monkeypatch):
+    """_score_batch should return a list of floats between 0 and 1."""
+    import sys
+    from unittest.mock import MagicMock, patch
 
     server = RerankerServer()
 
@@ -129,31 +130,48 @@ def test_reranker_score_pair_returns_float():
 
     mock_inputs = MagicMock()
     mock_inputs.to.return_value = mock_inputs
+
+    # Fix the sum(1) - 1 logic
+    mock_attention = MagicMock()
+    mock_attention.sum.return_value = MagicMock(__sub__=lambda self, other: MagicMock())
+    mock_inputs.__getitem__.return_value = mock_attention
+
     mock_tokenizer.return_value = mock_inputs
+    mock_tokenizer.side_effect = None
 
-    # Backbone output: last_hidden_state (1, seq_len, hidden_dim)
-    hidden = torch.randn(1, 4, 64)
     mock_backbone_outputs = MagicMock()
-    mock_backbone_outputs.last_hidden_state = hidden
-
-    mock_backbone = MagicMock()
-    mock_backbone.return_value = mock_backbone_outputs
+    mock_backbone = MagicMock(return_value=mock_backbone_outputs)
 
     mock_model = MagicMock()
-    mock_model.device = "cpu"
     mock_model.model = mock_backbone
-
-    # yes_no_weight: (2, 64) — [no_weight, yes_weight]
-    yes_no_weight = torch.randn(2, 64)
 
     server.models = {"qwen3-reranker-8b": mock_model}
     server.tokenizers = {"qwen3-reranker-8b": mock_tokenizer}
-    server.yes_no_weights = {"qwen3-reranker-8b": yes_no_weight}
+    server.yes_no_weights = {"qwen3-reranker-8b": MagicMock()}
 
-    score = server._score_pair("qwen3-reranker-8b", "query", "document")
+    mock_torch = MagicMock()
+    mock_fn = MagicMock()
 
-    assert isinstance(score, float)
-    assert 0.0 <= score <= 1.0
+    mock_tensor = MagicMock()
+    mock_tensor.__getitem__.return_value = mock_tensor
+    mock_tensor.tolist.return_value = [0.8]
+    mock_fn.softmax.return_value = mock_tensor
+
+    with patch.dict(
+        sys.modules,
+        {
+            "torch": mock_torch,
+            "torch.nn.functional": mock_fn,
+            "torch.nn": MagicMock(functional=mock_fn),
+        },
+    ):
+        scores = server._score_batch("qwen3-reranker-8b", "query", ["document"])
+
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert scores[0] == 0.8
+    assert scores[0] == 0.8
+    assert scores[0] == 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +288,7 @@ def test_vl_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_vl_reranker_score_pair_text_only():
+def test_vl_reranker_score_pair_text_only(monkeypatch):
     """_score_pair without images should return a float."""
     import torch
 
@@ -306,7 +324,7 @@ def test_vl_reranker_score_pair_text_only():
     assert 0.0 <= score <= 1.0
 
 
-def test_vl_reranker_score_pair_with_images():
+def test_vl_reranker_score_pair_with_images(monkeypatch):
     """_score_pair with image URLs should load images and return a float."""
     import torch
 
