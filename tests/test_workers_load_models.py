@@ -308,6 +308,8 @@ def test_vl_reranker_score_pair_text_only():
 
 def test_vl_reranker_score_pair_with_images():
     """_score_pair with image URLs should load images and return a float."""
+    from unittest.mock import MagicMock, patch
+
     import torch
 
     server = VLRerankerServer()
@@ -337,12 +339,9 @@ def test_vl_reranker_score_pair_with_images():
     server.yes_no_weights = {"qwen3-vl-reranker-8b": yes_no_weight}
 
     mock_image = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raw = MagicMock()
 
-    with (
-        patch("requests.get", return_value=mock_response),
-        patch("PIL.Image.open", return_value=mock_image),
+    with patch(
+        "ai_workers.workers.vl_reranker.VLRerankerServer._load_image", return_value=mock_image
     ):
         score = server._score_pair(
             "qwen3-vl-reranker-8b",
@@ -351,26 +350,19 @@ def test_vl_reranker_score_pair_with_images():
             query_image_url="https://q.com/q.png",
             document_image_url="https://d.com/d.png",
         )
+
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
 
 
-# ---------------------------------------------------------------------------
-# VLRerankerServer — _load_image
-# ---------------------------------------------------------------------------
-
-
 def test_vl_reranker_load_image():
-    """_load_image should call requests.get and return a PIL Image."""
-    mock_image = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raw = MagicMock()
+    """_load_image should call load_image_from_url and return a PIL Image."""
+    from unittest.mock import MagicMock, patch
 
-    with (
-        patch("requests.get", return_value=mock_response) as mock_get,
-        patch("PIL.Image.open", return_value=mock_image),
-    ):
+    mock_image = MagicMock()
+
+    with patch("ai_workers.common.utils.load_image_from_url", return_value=mock_image) as mock_load:
         result = VLRerankerServer._load_image("https://example.com/img.jpg")
 
-    mock_get.assert_called_once_with("https://example.com/img.jpg", stream=True, timeout=30)
+    mock_load.assert_called_once_with("https://example.com/img.jpg")
     assert result is mock_image

@@ -190,22 +190,13 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
-    import io
-
+    """Regular URL should use load_image_from_url from common utils."""
     from PIL import Image
 
-    img = Image.new("RGB", (2, 2), color=(0, 255, 0))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
+    mock_image = Image.new("RGB", (2, 2), color=(0, 255, 0))
 
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with patch("ai_workers.common.utils.load_image_from_url", return_value=mock_image) as mock_load:
         result = server._load_image_from_url("https://example.com/img.png")
 
-    assert result.mode == "RGB"
+    mock_load.assert_called_once_with("https://example.com/img.png")
+    assert result is mock_image
