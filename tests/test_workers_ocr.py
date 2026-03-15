@@ -82,7 +82,9 @@ def test_chat_completions_no_image(server):
 
 def test_chat_completions_with_image_url(server):
     fake_image = MagicMock()
-    server._load_image_from_url = MagicMock(return_value=fake_image)
+    from unittest.mock import AsyncMock
+
+    server._load_image_from_url = AsyncMock(return_value=fake_image)
     server._run_ocr = MagicMock(return_value="Extracted text from image")
 
     tc, key = _client(server)
@@ -112,7 +114,9 @@ def test_chat_completions_with_image_url(server):
 
 
 def test_chat_completions_response_has_id(server):
-    server._load_image_from_url = MagicMock(return_value=MagicMock())
+    from unittest.mock import AsyncMock
+
+    server._load_image_from_url = AsyncMock(return_value=MagicMock())
     server._run_ocr = MagicMock(return_value="text")
 
     tc, key = _client(server)
@@ -184,13 +188,16 @@ def test_load_image_from_url_base64(server):
     b64 = base64.b64encode(buf.getvalue()).decode()
     data_uri = f"data:image/png;base64,{b64}"
 
-    result = server._load_image_from_url(data_uri)
+    import asyncio
+
+    result = asyncio.run(server._load_image_from_url(data_uri))
     assert result.mode == "RGB"
     assert result.size == (1, 1)
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use load_image_async."""
+    import asyncio
     import io
 
     from PIL import Image
@@ -200,12 +207,12 @@ def test_load_image_from_url_network(server):
     img.save(buf, format="PNG")
     buf.seek(0)
 
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    from unittest.mock import AsyncMock
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = server._load_image_from_url("https://example.com/img.png")
+    mock_img = Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
+
+    with patch("ai_workers.common.http.load_image_async", new_callable=AsyncMock) as mock_load:
+        mock_load.return_value = mock_img
+        result = asyncio.run(server._load_image_from_url("https://example.com/img.png"))
 
     assert result.mode == "RGB"

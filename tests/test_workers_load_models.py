@@ -340,10 +340,7 @@ def test_vl_reranker_score_pair_with_images():
     mock_response = MagicMock()
     mock_response.raw = MagicMock()
 
-    with (
-        patch("requests.get", return_value=mock_response),
-        patch("PIL.Image.open", return_value=mock_image),
-    ):
+    with patch("ai_workers.common.http.load_image_sync", return_value=mock_image):
         score = server._score_pair(
             "qwen3-vl-reranker-8b",
             "query",
@@ -361,16 +358,12 @@ def test_vl_reranker_score_pair_with_images():
 
 
 def test_vl_reranker_load_image():
-    """_load_image should call requests.get and return a PIL Image."""
+    """_load_image should call load_image_sync."""
     mock_image = MagicMock()
-    mock_response = MagicMock()
-    mock_response.raw = MagicMock()
 
-    with (
-        patch("requests.get", return_value=mock_response) as mock_get,
-        patch("PIL.Image.open", return_value=mock_image),
-    ):
+    with patch("ai_workers.common.http.load_image_sync", return_value=mock_image) as mock_load:
         result = VLRerankerServer._load_image("https://example.com/img.jpg")
 
-    mock_get.assert_called_once_with("https://example.com/img.jpg", stream=True, timeout=30)
+    assert result == mock_image
+    mock_load.assert_called_once_with("https://example.com/img.jpg")
     assert result is mock_image

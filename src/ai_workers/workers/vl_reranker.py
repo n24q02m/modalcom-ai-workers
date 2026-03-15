@@ -181,11 +181,10 @@ class VLRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL."""
-        import requests as http_requests
-        from PIL import Image
+        """Load a PIL Image from URL safely."""
+        from ai_workers.common.http import load_image_sync
 
-        return Image.open(http_requests.get(url, stream=True, timeout=30).raw)
+        return load_image_sync(url)
 
     @modal.asgi_app()
     def serve(self):
