@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -82,7 +82,7 @@ def test_chat_completions_no_image(server):
 
 def test_chat_completions_with_image_url(server):
     fake_image = MagicMock()
-    server._load_image_from_url = MagicMock(return_value=fake_image)
+    server._load_image_from_url = AsyncMock(return_value=fake_image)
     server._run_ocr = MagicMock(return_value="Extracted text from image")
 
     tc, key = _client(server)
@@ -112,7 +112,7 @@ def test_chat_completions_with_image_url(server):
 
 
 def test_chat_completions_response_has_id(server):
-    server._load_image_from_url = MagicMock(return_value=MagicMock())
+    server._load_image_from_url = AsyncMock(return_value=MagicMock())
     server._run_ocr = MagicMock(return_value="text")
 
     tc, key = _client(server)
@@ -171,7 +171,8 @@ def test_process_image_content_image_only(server):
 # ---------------------------------------------------------------------------
 
 
-def test_load_image_from_url_base64(server):
+@pytest.mark.asyncio
+async def test_load_image_from_url_base64(server):
     """base64 data URI should be decoded without network call."""
     import base64
 
@@ -184,12 +185,13 @@ def test_load_image_from_url_base64(server):
     b64 = base64.b64encode(buf.getvalue()).decode()
     data_uri = f"data:image/png;base64,{b64}"
 
-    result = server._load_image_from_url(data_uri)
+    result = await server._load_image_from_url(data_uri)
     assert result.mode == "RGB"
     assert result.size == (1, 1)
 
 
-def test_load_image_from_url_network(server):
+@pytest.mark.asyncio
+async def test_load_image_from_url_network(server):
     """Regular URL should use urllib.request.urlopen."""
     import io
 
@@ -200,12 +202,14 @@ def test_load_image_from_url_network(server):
     img.save(buf, format="PNG")
     buf.seek(0)
 
+    mock_client = AsyncMock()
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.content = buf.getvalue()
+    mock_client.get.return_value = mock_resp
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = server._load_image_from_url("https://example.com/img.png")
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        result = await server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
