@@ -210,10 +210,13 @@ def test_load_image_from_url_network(server):
 
     assert result.mode == "RGB"
 
+
 def test_load_image_from_url_network_error(server):
     """Network errors during URL fetching should be raised."""
     import urllib.error
 
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Network Error")):
-        with pytest.raises(urllib.error.URLError, match="Network Error"):
-            server._load_image_from_url("https://example.com/img.png")
+    with (
+        patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Network Error")),
+        pytest.raises(urllib.error.URLError, match="Network Error"),
+    ):
+        server._load_image_from_url("https://example.com/img.png")
