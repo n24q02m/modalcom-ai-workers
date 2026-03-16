@@ -87,18 +87,21 @@ def test_chat_completions_with_image_url(server):
     tc, key = _client(server)
     with patch("ai_workers.common.utils.load_image_from_url", return_value=fake_image) as mock_load:
         resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract all text"},
-                        {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
-                    ],
-                }
-            ],
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract all text"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example.com/img.png"},
+                            },
+                        ],
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {key}"},
         )
@@ -117,17 +120,20 @@ def test_chat_completions_response_has_id(server):
     tc, key = _client(server)
     with patch("ai_workers.common.utils.load_image_from_url", return_value=MagicMock()):
         resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
-                    ],
-                }
-            ],
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example.com/img.png"},
+                            },
+                        ],
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {key}"},
         )
@@ -164,5 +170,3 @@ def test_process_image_content_image_only(server):
     text, url = server._process_image_content(content)
     assert text == ""
     assert url == "http://a.b/c.jpg"
-
-
