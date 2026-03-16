@@ -144,15 +144,15 @@ class VLEmbeddingServer:
 
     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
         """Embed a single image+text pair with EOS token pooling."""
-        import requests as http_requests
         import torch
-        from PIL import Image
+
+        from ai_workers.common.utils import load_image_from_url
 
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        # Load image from URL
-        image = Image.open(http_requests.get(image_url, stream=True, timeout=30).raw)
+        # Load image from URL securely
+        image = load_image_from_url(image_url)
 
         messages = [
             {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},

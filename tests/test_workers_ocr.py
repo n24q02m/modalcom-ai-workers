@@ -82,11 +82,11 @@ def test_chat_completions_no_image(server):
 
 def test_chat_completions_with_image_url(server):
     fake_image = MagicMock()
-    server._load_image_from_url = MagicMock(return_value=fake_image)
     server._run_ocr = MagicMock(return_value="Extracted text from image")
 
     tc, key = _client(server)
-    resp = tc.post(
+    with patch("ai_workers.common.utils.load_image_from_url", return_value=fake_image) as mock_load:
+        resp = tc.post(
         "/v1/chat/completions",
         json={
             "model": MODEL_NAME,
@@ -99,24 +99,24 @@ def test_chat_completions_with_image_url(server):
                     ],
                 }
             ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
     assert resp.status_code == 200
     data = resp.json()
     assert data["choices"][0]["message"]["content"] == "Extracted text from image"
     assert data["choices"][0]["message"]["role"] == "assistant"
-    server._load_image_from_url.assert_called_once_with("https://example.com/img.png")
+    mock_load.assert_called_once_with("https://example.com/img.png")
     server._run_ocr.assert_called_once_with(fake_image, "Extract all text")
 
 
 def test_chat_completions_response_has_id(server):
-    server._load_image_from_url = MagicMock(return_value=MagicMock())
     server._run_ocr = MagicMock(return_value="text")
 
     tc, key = _client(server)
-    resp = tc.post(
+    with patch("ai_workers.common.utils.load_image_from_url", return_value=MagicMock()):
+        resp = tc.post(
         "/v1/chat/completions",
         json={
             "model": MODEL_NAME,
@@ -128,9 +128,9 @@ def test_chat_completions_response_has_id(server):
                     ],
                 }
             ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
     data = resp.json()
     assert data["id"].startswith("chatcmpl-")
@@ -166,46 +166,3 @@ def test_process_image_content_image_only(server):
     assert url == "http://a.b/c.jpg"
 
 
-# ---------------------------------------------------------------------------
-# _load_image_from_url unit tests
-# ---------------------------------------------------------------------------
-
-
-def test_load_image_from_url_base64(server):
-    """base64 data URI should be decoded without network call."""
-    import base64
-
-    from PIL import Image
-
-    # Create a tiny 1x1 red PNG
-    img = Image.new("RGB", (1, 1), color=(255, 0, 0))
-    buf = __import__("io").BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    data_uri = f"data:image/png;base64,{b64}"
-
-    result = server._load_image_from_url(data_uri)
-    assert result.mode == "RGB"
-    assert result.size == (1, 1)
-
-
-def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
-    import io
-
-    from PIL import Image
-
-    img = Image.new("RGB", (2, 2), color=(0, 255, 0))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = server._load_image_from_url("https://example.com/img.png")
-
-    assert result.mode == "RGB"

@@ -87,26 +87,6 @@ class OCRServer:
                 image_url = url_data.get("url", "")
         return text, image_url
 
-    def _load_image_from_url(self, url: str):
-        """Load image from URL or base64 data URI."""
-        import base64
-        import io
-
-        from PIL import Image
-
-        if url.startswith("data:"):
-            # data:image/png;base64,<base64-data>
-            _header, b64_data = url.split(",", 1)
-            image_bytes = base64.b64decode(b64_data)
-            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-        # Regular URL — input is from trusted API callers on Modal, not user-facing
-        import urllib.request
-
-        with urllib.request.urlopen(url) as resp:  # nosemgrep: dynamic-urllib-use-detected
-            image_bytes = resp.read()
-        return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
     def _run_ocr(self, image, prompt: str = "") -> str:
         """Run OCR on an image with optional prompt.
 
@@ -223,7 +203,9 @@ class OCRServer:
                     if isinstance(msg.content, list):
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
-                            image = self._load_image_from_url(image_url)
+                            from ai_workers.common.utils import load_image_from_url
+
+                            image = load_image_from_url(image_url)
                     elif isinstance(msg.content, str):
                         text_prompt = msg.content
                     break
