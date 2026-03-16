@@ -118,8 +118,9 @@ def test_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_reranker_score_pair_returns_float():
-    """_score_pair should return a float between 0 and 1."""
+def test_reranker_score_batch_returns_list_of_floats():
+    """_score_batch should return a list of floats between 0 and 1."""
+    import sys
     import torch
 
     server = RerankerServer()
@@ -127,14 +128,28 @@ def test_reranker_score_pair_returns_float():
     mock_tokenizer = MagicMock()
     mock_tokenizer.apply_chat_template.return_value = "<prompt>"
 
-    mock_inputs = MagicMock()
-    mock_inputs.to.return_value = mock_inputs
-    mock_tokenizer.return_value = mock_inputs
+    # Needs to be an object that has a __getitem__ for "attention_mask" which gives an object that has a sum(1) which has a __sub__(1)
+    class MockAttentionMask:
+        def sum(self, dim):
+            # return tensor of 3s so 3 - 1 = 2 (last valid index)
+            class MockSub:
+                def __sub__(self, other):
+                    return MagicMock() # Will be passed to list indexing, we can mock the list indexing natively below
+            return MockSub()
+
+    mock_inputs = {"attention_mask": MockAttentionMask()}
+    mock_inputs_obj = MagicMock()
+    mock_inputs_obj.__getitem__.side_effect = lambda k: mock_inputs[k]
+
+    mock_tokenizer.return_value = mock_inputs_obj
+    mock_inputs_obj.to.return_value = mock_inputs_obj
 
     # Backbone output: last_hidden_state (1, seq_len, hidden_dim)
-    hidden = torch.randn(1, 4, 64)
+    # mock_backbone_outputs.last_hidden_state needs to be indexed by [arange(), last_token_indices]
     mock_backbone_outputs = MagicMock()
-    mock_backbone_outputs.last_hidden_state = hidden
+    mock_backbone_outputs.last_hidden_state = MagicMock()
+    # It will be passed to linear, so we need its indexed return value to be acceptable by linear.
+    # We can mock linear directly.
 
     mock_backbone = MagicMock()
     mock_backbone.return_value = mock_backbone_outputs
@@ -144,16 +159,54 @@ def test_reranker_score_pair_returns_float():
     mock_model.model = mock_backbone
 
     # yes_no_weight: (2, 64) — [no_weight, yes_weight]
-    yes_no_weight = torch.randn(2, 64)
+    yes_no_weight = MagicMock()
 
     server.models = {"qwen3-reranker-8b": mock_model}
     server.tokenizers = {"qwen3-reranker-8b": mock_tokenizer}
     server.yes_no_weights = {"qwen3-reranker-8b": yes_no_weight}
 
-    score = server._score_pair("qwen3-reranker-8b", "query", "document")
+    class MockTorch:
+        @staticmethod
+        def no_grad():
+            class NoGrad:
+                def __enter__(self): pass
+                def __exit__(self, exc_type, exc_val, exc_tb): pass
+            return NoGrad()
 
-    assert isinstance(score, float)
-    assert 0.0 <= score <= 1.0
+        @staticmethod
+        def arange(*args, **kwargs):
+            return MagicMock()
+
+    class MockFn:
+        @staticmethod
+        def linear(*args, **kwargs):
+            return MagicMock()
+        @staticmethod
+        def softmax(*args, **kwargs):
+            class MockProbs:
+                def __getitem__(self, idx):
+                    class MockTolist:
+                        def tolist(self):
+                            return [0.75]
+                    return MockTolist()
+            return MockProbs()
+
+    import builtins
+    original_import = builtins.__import__
+    def mock_import(name, *args, **kwargs):
+        if name == "torch":
+            return MockTorch
+        if name == "torch.nn":
+            return MagicMock(functional=MockFn)
+        return original_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mock_import):
+        scores = server._score_batch("qwen3-reranker-8b", "query", ["document"])
+
+    assert isinstance(scores, list)
+    assert len(scores) == 1
+    assert isinstance(scores[0], float)
+    assert 0 <= scores[0] <= 1
 
 
 # ---------------------------------------------------------------------------
