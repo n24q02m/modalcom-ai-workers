@@ -120,8 +120,6 @@ def test_reranker_load_models_populates_dicts():
 
 def test_reranker_score_batch_returns_list_of_floats():
     """_score_batch should return a list of floats between 0 and 1."""
-    import sys
-    import torch
 
     server = RerankerServer()
 
@@ -134,7 +132,8 @@ def test_reranker_score_batch_returns_list_of_floats():
             # return tensor of 3s so 3 - 1 = 2 (last valid index)
             class MockSub:
                 def __sub__(self, other):
-                    return MagicMock() # Will be passed to list indexing, we can mock the list indexing natively below
+                    return MagicMock()  # Will be passed to list indexing, we can mock the list indexing natively below
+
             return MockSub()
 
     mock_inputs = {"attention_mask": MockAttentionMask()}
@@ -169,8 +168,12 @@ def test_reranker_score_batch_returns_list_of_floats():
         @staticmethod
         def no_grad():
             class NoGrad:
-                def __enter__(self): pass
-                def __exit__(self, exc_type, exc_val, exc_tb): pass
+                def __enter__(self):
+                    pass
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+
             return NoGrad()
 
         @staticmethod
@@ -181,6 +184,7 @@ def test_reranker_score_batch_returns_list_of_floats():
         @staticmethod
         def linear(*args, **kwargs):
             return MagicMock()
+
         @staticmethod
         def softmax(*args, **kwargs):
             class MockProbs:
@@ -188,11 +192,15 @@ def test_reranker_score_batch_returns_list_of_floats():
                     class MockTolist:
                         def tolist(self):
                             return [0.75]
+
                     return MockTolist()
+
             return MockProbs()
 
     import builtins
+
     original_import = builtins.__import__
+
     def mock_import(name, *args, **kwargs):
         if name == "torch":
             return MockTorch
