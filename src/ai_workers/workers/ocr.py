@@ -100,10 +100,16 @@ class OCRServer:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # Regular URL — input is from trusted API callers on Modal, not user-facing
+        # Security: Prevent SSRF by explicitly restricting to http/https
         import urllib.request
+        from urllib.parse import urlparse
 
-        with urllib.request.urlopen(url) as resp:  # nosemgrep: dynamic-urllib-use-detected
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Disallowed URL scheme: {parsed.scheme}")
+
+        req = urllib.request.Request(url, headers={"User-Agent": "AI-Worker"})
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep
             image_bytes = resp.read()
         return Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
