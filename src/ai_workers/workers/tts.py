@@ -129,13 +129,13 @@ class TTSServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse, Response
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         app = FastAPI(title="Qwen3 TTS (Light + Heavy)")
 
         class SpeechRequest(BaseModel):
             model: str = DEFAULT_MODEL
-            input: str
+            input: str = Field(max_length=4096)
             voice: str = DEFAULT_VOICE  # OpenAI-compatible: preset speaker name
             language: str = "Auto"
             instruct: str | None = None  # Speaking style instruction (optional)

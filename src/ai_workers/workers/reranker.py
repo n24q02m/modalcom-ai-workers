@@ -238,14 +238,14 @@ class RerankerServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         app = FastAPI(title="Qwen3 Reranker (8B)")
 
         class RerankRequest(BaseModel):
             model: str = "qwen3-reranker-8b"
             query: str
-            documents: list[str]
+            documents: list[str] = Field(max_length=256)
             top_n: int | None = None
             return_documents: bool = False
             rank_fields: list[str] | None = None

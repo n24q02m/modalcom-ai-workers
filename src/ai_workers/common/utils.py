@@ -13,6 +13,11 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
+# Maximum image size: 20 MB
+MAX_IMAGE_SIZE = 20 * 1024 * 1024
+# Base64 encoding inflates size by ~4/3, so 20 MB decoded ~ 28 MB encoded
+MAX_BASE64_SIZE = 28 * 1024 * 1024
+
 
 def is_safe_url(url: str) -> bool:
     """Validate that a URL is safe to fetch (no SSRF).
@@ -93,8 +98,13 @@ def load_image_from_url(url: str):
 
     # Handle base64 data URIs (no network call needed)
     if url.startswith("data:"):
+        _header, b64_data = url.split(",", 1)
+        if len(b64_data) > MAX_BASE64_SIZE:
+            raise ValueError(
+                f"Base64 image data exceeds size limit "
+                f"({len(b64_data)} bytes encoded > {MAX_BASE64_SIZE} bytes max)"
+            )
         try:
-            _header, b64_data = url.split(",", 1)
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
         except Exception as e:
@@ -104,7 +114,7 @@ def load_image_from_url(url: str):
     if not is_safe_url(url):
         raise ValueError(f"URL blocked by SSRF protection: {url}")
 
-    # Fetch image with safety controls
+    # Fetch image with safety controls and size limit
     try:
         import requests
 
@@ -115,7 +125,20 @@ def load_image_from_url(url: str):
             stream=True,
         )
         response.raise_for_status()
-        return Image.open(io.BytesIO(response.content)).convert("RGB")
+
+        # Read response in chunks with size limit to prevent memory exhaustion
+        chunks: list[bytes] = []
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            downloaded += len(chunk)
+            if downloaded > MAX_IMAGE_SIZE:
+                response.close()
+                raise ValueError(
+                    f"Image from URL exceeds size limit ({MAX_IMAGE_SIZE} bytes max): {url}"
+                )
+            chunks.append(chunk)
+
+        return Image.open(io.BytesIO(b"".join(chunks))).convert("RGB")
     except ValueError:
         raise
     except Exception as e:

@@ -131,13 +131,13 @@ class EmbeddingServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         app = FastAPI(title="Qwen3 Embedding (Light + Heavy)")
 
         class EmbeddingRequest(BaseModel):
             model: str = "qwen3-embedding-0.6b"
-            input: str | list[str]
+            input: str | list[str] = Field(max_length=256)
             encoding_format: str | None = "float"
 
         class EmbeddingData(BaseModel):

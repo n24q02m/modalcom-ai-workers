@@ -201,7 +201,7 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.content = buf.getvalue()
+    mock_resp.iter_content = MagicMock(return_value=iter([buf.getvalue()]))
     mock_resp.raise_for_status = MagicMock()
 
     with (
