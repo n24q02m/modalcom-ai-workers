@@ -191,6 +191,7 @@ def gguf_convert_model(
     """
     import gc
     import os
+    import re
     import subprocess
     import tempfile
     from pathlib import Path
@@ -198,6 +199,10 @@ def gguf_convert_model(
     from huggingface_hub import HfApi, list_repo_tree
     from loguru import logger
 
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", gguf_name):
+        raise ValueError(f"Invalid gguf_name: {gguf_name}")
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", quant_type):
+        raise ValueError(f"Invalid quant_type: {quant_type}")
     hf_token = os.environ.get("HF_TOKEN")
     if not hf_token:
         msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
@@ -247,7 +252,7 @@ def gguf_convert_model(
 
         snapshot_download(
             repo_id=hf_source,
-            local_dir=str(model_dir),
+            local_dir=str(model_dir.resolve()),
             token=hf_token,
         )
         logger.info("Model downloaded to {}", model_dir)
@@ -263,9 +268,9 @@ def gguf_convert_model(
         convert_cmd = [
             "python",
             "/opt/llama.cpp/convert_hf_to_gguf.py",
-            str(model_dir),
+            str(model_dir.resolve()),
             "--outfile",
-            str(f16_path),
+            str(f16_path.resolve()),
             "--outtype",
             "f16",
         ]
@@ -293,8 +298,8 @@ def gguf_convert_model(
 
         quantize_cmd = [
             "/opt/llama.cpp/build/bin/llama-quantize",
-            str(f16_path),
-            str(q4_path),
+            str(f16_path.resolve()),
+            str(q4_path.resolve()),
             quant_type,
         ]
         result = subprocess.run(
@@ -332,7 +337,7 @@ def gguf_convert_model(
         )
 
         api.upload_file(
-            path_or_fileobj=str(q4_path),
+            path_or_fileobj=str(q4_path.resolve()),
             path_in_repo=gguf_repo_path,
             repo_id=hf_target,
             repo_type="model",
