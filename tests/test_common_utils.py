@@ -158,7 +158,7 @@ class TestLoadImageFromUrl:
     def test_http_url_success(self):
         img_bytes = _make_test_image_bytes()
         mock_resp = MagicMock()
-        mock_resp.content = img_bytes
+        mock_resp.iter_content = MagicMock(return_value=iter([img_bytes]))
         mock_resp.raise_for_status = MagicMock()
 
         with (
@@ -198,7 +198,7 @@ class TestLoadImageFromUrl:
         """Verify allow_redirects=False is passed to prevent redirect-based SSRF."""
         img_bytes = _make_test_image_bytes()
         mock_resp = MagicMock()
-        mock_resp.content = img_bytes
+        mock_resp.iter_content = MagicMock(return_value=iter([img_bytes]))
         mock_resp.raise_for_status = MagicMock()
 
         with (

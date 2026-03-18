@@ -193,9 +193,11 @@ class VLEmbeddingServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, field_validator
 
         app = FastAPI(title="Qwen3 VL Embedding (Light + Heavy)")
+
+        max_input_length = 64
 
         class VLEmbeddingInput(BaseModel):
             text: str
@@ -205,6 +207,17 @@ class VLEmbeddingServer:
             model: str = "qwen3-vl-embedding-2b"
             input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
             encoding_format: str = "float"
+
+            @field_validator("input")
+            @classmethod
+            def validate_input_length(cls, v):
+                if isinstance(v, list) and len(v) > max_input_length:
+                    msg = (
+                        f"Input list too long ({len(v)} items). "
+                        f"Maximum allowed: {max_input_length}."
+                    )
+                    raise ValueError(msg)
+                return v
 
         class EmbeddingData(BaseModel):
             object: str = "embedding"

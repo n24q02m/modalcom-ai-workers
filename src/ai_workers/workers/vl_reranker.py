@@ -190,7 +190,7 @@ class VLRerankerServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         app = FastAPI(title="Qwen3 VL Reranker (8B)")
 
@@ -202,7 +202,7 @@ class VLRerankerServer:
             model: str = "qwen3-vl-reranker-8b"
             query: str
             query_image_url: str | None = None
-            documents: list[str] | list[VLRerankDocument]
+            documents: list[str] | list[VLRerankDocument] = Field(max_length=64)
             top_n: int | None = None
 
         class RerankResult(BaseModel):
