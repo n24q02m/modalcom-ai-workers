@@ -144,22 +144,18 @@ class VLEmbeddingServer:
 
     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
         """Embed a single image+text pair with EOS token pooling."""
-        import requests as http_requests
         import torch
-        from PIL import Image
+        from qwen_vl_utils import process_vision_info
 
         model = self.models[model_name]
         processor = self.processors[model_name]
-
-        # Load image from URL
-        image = Image.open(http_requests.get(image_url, stream=True, timeout=30).raw)
 
         messages = [
             {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
             {
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": image},
+                    {"type": "image", "image": image_url},
                     {"type": "text", "text": text},
                 ],
             },
@@ -168,9 +164,15 @@ class VLEmbeddingServer:
         text_input = processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = processor(text=text_input, images=[image], return_tensors="pt", padding=True).to(
-            model.device
-        )
+        image_inputs, video_inputs = process_vision_info(messages)
+
+        inputs = processor(
+            text=[text_input],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        ).to(model.device)
 
         with torch.no_grad():
             outputs = model(**inputs)
