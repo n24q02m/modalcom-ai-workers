@@ -181,16 +181,10 @@ class VLRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL."""
-        try:
-            import requests as http_requests
-            from PIL import Image
+        """Load a PIL Image from URL with SSRF protection."""
+        from ai_workers.common.utils import load_image_from_url
 
-            response = http_requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-            return Image.open(response.raw)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load image from URL: {url}") from e
+        return load_image_from_url(url)
 
     @modal.asgi_app()
     def serve(self):

@@ -242,7 +242,14 @@ def test_rerank_heavy_model(server):
 
 def test_load_image_error(server):
     with (
-        patch("requests.get", side_effect=Exception("Connection error")),
+        patch(
+            "ai_workers.common.utils.is_safe_url",
+            return_value=True,
+        ),
+        patch(
+            "requests.get",
+            side_effect=Exception("Connection error"),
+        ),
         pytest.raises(RuntimeError, match=r"Failed to load image from URL: http://bad.url"),
     ):
         server._load_image("http://bad.url")

@@ -190,7 +190,7 @@ def test_load_image_from_url_base64(server):
 
 
 def test_load_image_from_url_network(server):
-    """Regular URL should use urllib.request.urlopen."""
+    """Regular URL should use centralized load_image_from_url with SSRF check."""
     import io
 
     from PIL import Image
@@ -201,11 +201,13 @@ def test_load_image_from_url_network(server):
     buf.seek(0)
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = buf.getvalue()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.content = buf.getvalue()
+    mock_resp.raise_for_status = MagicMock()
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
+    with (
+        patch("ai_workers.common.utils.is_safe_url", return_value=True),
+        patch("requests.get", return_value=mock_resp),
+    ):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
