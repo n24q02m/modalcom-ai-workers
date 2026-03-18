@@ -103,7 +103,7 @@ class EmbeddingServer:
             torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
         ]
 
-    def _embed(self, model_name: str, texts: list[str]) -> list[list[float]]:
+    def _embed(self, model_name: str, texts: list[str]) -> tuple[list[list[float]], int]:
         """Embed texts using the specified model with last token (EOS) pooling."""
         import torch
 
@@ -125,7 +125,11 @@ class EmbeddingServer:
             # L2 normalize
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
-        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
+            # Bolt optimization: Compute total tokens from attention mask directly
+            # to avoid redundant tokenization in the API route.
+            total_tokens = inputs["attention_mask"].sum().item()
+
+        return embeddings[:, :EMBEDDING_DIM].cpu().tolist(), int(total_tokens)
 
     @modal.asgi_app()
     def serve(self):
@@ -187,10 +191,9 @@ class EmbeddingServer:
                 )
 
             texts = body.input if isinstance(body.input, list) else [body.input]
-            embeddings = self._embed(body.model, texts)
+            embeddings, total_tokens = self._embed(body.model, texts)
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
-            total_tokens = sum(len(self.tokenizers[body.model].encode(t)) for t in texts)
 
             return EmbeddingResponse(
                 data=data,
