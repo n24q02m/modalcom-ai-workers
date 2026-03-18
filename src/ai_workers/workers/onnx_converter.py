@@ -57,6 +57,7 @@ class OnnxModelConfig:
     hf_target: str  # HuggingFace target repo for ONNX output
     model_class: str  # "AutoModel" | "AutoModelForCausalLM"
     output_attr: str  # "last_hidden_state" | "logits"
+    trust_remote_code: bool = False
 
 
 ONNX_MODELS: dict[str, OnnxModelConfig] = {}
@@ -187,6 +188,7 @@ def onnx_convert_model(
     model_class: str,
     output_attr: str,
     *,
+    trust_remote_code: bool = False,
     opset_version: int = 21,
     force: bool = False,
 ) -> dict[str, object]:
@@ -254,7 +256,7 @@ def onnx_convert_model(
         # ------------------------------------------------------------------
         logger.info("Loading model {} from HuggingFace Hub...", hf_source)
 
-        tokenizer = AutoTokenizer.from_pretrained(hf_source, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(hf_source, trust_remote_code=trust_remote_code)
 
         model_cls_map: dict[str, type] = {
             "AutoModel": AutoModel,
@@ -269,7 +271,7 @@ def onnx_convert_model(
 
         model = cls.from_pretrained(
             hf_source,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
             torch_dtype=torch.float32,  # FP32 for accurate quantization
             low_cpu_mem_usage=True,
             device_map="cpu",
@@ -467,7 +469,7 @@ def onnx_convert_model(
         logger.info("Saving tokenizer + config -> {}", output_path)
         tokenizer.save_pretrained(str(output_path))
 
-        config = AutoConfig.from_pretrained(hf_source, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(hf_source, trust_remote_code=trust_remote_code)
         config.save_pretrained(str(output_path))
 
         # ------------------------------------------------------------------
@@ -480,6 +482,7 @@ def onnx_convert_model(
                 hf_target=hf_target,
                 model_class=model_class,
                 output_attr=output_attr,
+                trust_remote_code=trust_remote_code,
             ),
             int8_size_mb=int8_size,
             q4f16_size_mb=q4f16_size,

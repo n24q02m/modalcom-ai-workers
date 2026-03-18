@@ -100,6 +100,7 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
                 hf_target=config.hf_target,
                 model_class=config.model_class,
                 output_attr=config.output_attr,
+                trust_remote_code=config.trust_remote_code,
                 force=force,
             )
 
