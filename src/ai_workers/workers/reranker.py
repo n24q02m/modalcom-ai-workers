@@ -165,9 +165,6 @@ class RerankerServer:
 
         app = FastAPI(title="Qwen3 Reranker (8B)")
 
-        class RerankPair(BaseModel):
-            document: str
-
         class RerankRequest(BaseModel):
             model: str = "qwen3-reranker-8b"
             query: str
