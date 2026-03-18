@@ -93,8 +93,10 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
 
-      - name: Deploy all workers
-        run: uv run python -m ai_workers deploy --all
+      - name: Deploy active workers
+        run: |
+          uv run python -m ai_workers deploy qwen3-reranker-8b
+          uv run python -m ai_workers deploy qwen3-vl-reranker-8b
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
@@ -104,4 +106,4 @@ jobs:
         run: |
           echo "## Workers Deployed to Modal.com" >> $GITHUB_STEP_SUMMARY
           echo "- Version: \`${{ needs.release.outputs.version || 'force-deploy' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- All workers deployed via \`ai_workers deploy --all\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Workers: qwen3-reranker-8b, qwen3-vl-reranker-8b" >> $GITHUB_STEP_SUMMARY

@@ -22,19 +22,23 @@ HF_CACHE_DIR = "/root/.cache/huggingface"
 
 hf_cache_vol = modal.Volume.from_name("ai-workers-hf-cache", create_if_missing=True)
 
-# All model HF IDs — single source of truth for pre-download
+# Active model HF IDs — only models that are currently deployed
+ACTIVE_MODEL_HF_IDS = [
+    "Qwen/Qwen3-Reranker-8B",
+    "Qwen/Qwen3-VL-Reranker-8B",
+]
+
+# All model HF IDs — kept for reference, can be used with `--all` flag
 ALL_MODEL_HF_IDS = [
     # Text Embedding (0.6B + 8B)
     "Qwen/Qwen3-Embedding-0.6B",
     "Qwen/Qwen3-Embedding-8B",
-    # Text Reranker (0.6B + 8B)
-    "Qwen/Qwen3-Reranker-0.6B",
+    # Text Reranker (8B)
     "Qwen/Qwen3-Reranker-8B",
     # VL Embedding (2B + 8B)
     "Qwen/Qwen3-VL-Embedding-2B",
     "Qwen/Qwen3-VL-Embedding-8B",
-    # VL Reranker (2B + 8B)
-    "Qwen/Qwen3-VL-Reranker-2B",
+    # VL Reranker (8B)
     "Qwen/Qwen3-VL-Reranker-8B",
     # OCR
     "deepseek-ai/DeepSeek-OCR-2",
@@ -78,7 +82,7 @@ def download_models() -> str:
     from huggingface_hub import snapshot_download
     from loguru import logger
 
-    targets = ALL_MODEL_HF_IDS
+    targets = ACTIVE_MODEL_HF_IDS
     results = []
 
     for hf_id in targets:
