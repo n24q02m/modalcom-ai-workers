@@ -105,19 +105,20 @@ class VLRerankerServer:
                 "Loaded {} successfully (yes_no_weight shape: {})", name, yes_no_weight.shape
             )
 
-    def _score_pair(
+    def _score_batch(
         self,
         model_name: str,
         query: str,
-        document: str,
+        documents: list[str],
         query_image_url: str | None = None,
-        document_image_url: str | None = None,
+        document_image_urls: list[str | None] | None = None,
         instruction: str | None = None,
-    ) -> float:
-        """Score a single query-document pair using optimized yes/no logit scoring.
+    ) -> list[float]:
+        """Score a batch of query-document pairs using optimized chunked inference.
 
-        Uses backbone-only forward pass + pre-extracted yes/no weights from lm_head.
-        Scoring: softmax([no, yes]) then take yes probability.
+        Batched alternative to `_score_pair` to prevent sequential processing bottleneck.
+        Processes in chunks (e.g., batch_size=32) with padding.
+        Uses right padding and extracts the last token hidden state via attention_mask sum.
         Supports text-only and multimodal (image+text) query/document pairs.
         """
         import torch
@@ -129,55 +130,92 @@ class VLRerankerServer:
 
         instruction = instruction or DEFAULT_INSTRUCTION
 
-        # Build user content with optional images
-        content_parts = []
-        images = []
+        # Ensure right padding for correct last-token extraction
+        processor.tokenizer.padding_side = "right"
+        if processor.tokenizer.pad_token is None:
+            processor.tokenizer.pad_token = processor.tokenizer.eos_token
 
-        # Query part
+        # Load query image once if provided
+        query_image = None
         if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
-        content_parts.append(
-            {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
-        )
+            query_image = self._load_image(query_image_url)
 
-        # Document part
-        if document_image_url:
-            content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
-        content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
+        if document_image_urls is None:
+            document_image_urls = [None] * len(documents)
 
-        messages = [
-            {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
-            {"role": "user", "content": content_parts},
-        ]
+        all_scores = []
+        batch_size = 32
 
-        text = processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
+        for i in range(0, len(documents), batch_size):
+            chunk_docs = documents[i : i + batch_size]
+            chunk_doc_image_urls = document_image_urls[i : i + batch_size]
 
-        if images:
-            inputs = processor(text=text, images=images, return_tensors="pt", padding=True).to(
-                model.device
-            )
-        else:
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+            messages_chunk = []
+            images_chunk = []
 
-        with torch.no_grad():
-            # Backbone-only forward pass — skip lm_head matmul
-            outputs = model.model(**inputs)
-            hidden = outputs.last_hidden_state[:, -1, :]  # (1, hidden_dim)
+            for doc, doc_image_url in zip(chunk_docs, chunk_doc_image_urls, strict=True):
+                content_parts = []
 
-            # Compute only yes/no logits using pre-extracted weights
-            logits_2 = fn.linear(hidden, yes_no_weight)  # (1, 2) = [no_logit, yes_logit]
+                # Query part
+                if query_image_url:
+                    content_parts.append({"type": "image", "image": query_image_url})
+                    images_chunk.append(query_image)
+                content_parts.append(
+                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
+                )
 
-            # Official scoring: softmax then take yes probability
-            probs = fn.softmax(logits_2.float(), dim=-1)
-            score = probs[0, 1].item()  # Index 1 = yes
+                # Document part
+                if doc_image_url:
+                    content_parts.append({"type": "image", "image": doc_image_url})
+                    images_chunk.append(self._load_image(doc_image_url))
+                content_parts.append({"type": "text", "text": f"\n<Document>: {doc}"})
 
-        return score
+                messages_chunk.append(
+                    [
+                        {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
+                        {"role": "user", "content": content_parts},
+                    ]
+                )
+
+            texts = [
+                processor.apply_chat_template(
+                    m,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+                for m in messages_chunk
+            ]
+
+            if images_chunk:
+                inputs = processor(
+                    text=texts, images=images_chunk, return_tensors="pt", padding=True
+                ).to(model.device)
+            else:
+                inputs = processor(text=texts, return_tensors="pt", padding=True).to(model.device)
+
+            with torch.no_grad():
+                outputs = model.model(**inputs)
+
+                # Find the last non-padding token indices
+                last_token_indices = inputs["attention_mask"].sum(1) - 1
+                curr_batch_size = len(chunk_docs)
+
+                # Extract hidden states for the last tokens: (batch_size, hidden_dim)
+                hidden = outputs.last_hidden_state[
+                    torch.arange(curr_batch_size, device=model.device), last_token_indices, :
+                ]
+
+                # Compute only yes/no logits using pre-extracted weights
+                logits_2 = fn.linear(
+                    hidden, yes_no_weight
+                )  # (batch_size, 2) = [no_logit, yes_logit]
+
+                # Official scoring: softmax then take yes probability
+                probs = fn.softmax(logits_2.float(), dim=-1)
+                scores = probs[:, 1].tolist()  # Index 1 = yes
+                all_scores.extend(scores)
+
+        return all_scores
 
     @staticmethod
     def _load_image(url: str):
@@ -252,23 +290,28 @@ class VLRerankerServer:
                     },
                 )
 
-            # Score each document against the query
-            results = []
-            for i, doc in enumerate(body.documents):
+            # Extract text and optional image URLs for batch scoring
+            doc_texts = []
+            doc_images = []
+            for doc in body.documents:
                 if isinstance(doc, str):
-                    doc_text = doc
-                    doc_image = None
+                    doc_texts.append(doc)
+                    doc_images.append(None)
                 else:
-                    doc_text = doc.text
-                    doc_image = doc.image_url
+                    doc_texts.append(doc.text)
+                    doc_images.append(doc.image_url)
 
-                score = self._score_pair(
-                    body.model,
-                    body.query,
-                    doc_text,
-                    query_image_url=body.query_image_url,
-                    document_image_url=doc_image,
-                )
+            # Score all documents against the query in batches
+            scores = self._score_batch(
+                model_name=body.model,
+                query=body.query,
+                documents=doc_texts,
+                query_image_url=body.query_image_url,
+                document_image_urls=doc_images,
+            )
+
+            results = []
+            for i, (doc_text, score) in enumerate(zip(doc_texts, scores, strict=True)):
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
             # Sort by relevance score descending

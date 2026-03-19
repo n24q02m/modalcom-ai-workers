@@ -72,7 +72,7 @@ def test_rerank_unknown_model(server):
 
 
 def test_rerank_text_only_docs(server):
-    server._score_pair = MagicMock(return_value=0.8)
+    server._score_batch = MagicMock(return_value=[0.8, 0.2])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -92,7 +92,7 @@ def test_rerank_text_only_docs(server):
     assert data["model"] == "qwen3-vl-reranker-8b"
     assert len(data["results"]) == 2
     # Verify _score_pair called with text-only (no image URLs)
-    for call_args in server._score_pair.call_args_list:
+    for call_args in server._score_batch.call_args_list:
         assert call_args.kwargs.get("query_image_url") is None
         assert call_args.kwargs.get("document_image_url") is None
 
@@ -103,7 +103,7 @@ def test_rerank_text_only_docs(server):
 
 
 def test_rerank_multimodal_docs(server):
-    server._score_pair = MagicMock(side_effect=[0.9, 0.4])
+    server._score_batch = MagicMock(return_value=[0.9, 0.4])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -125,11 +125,10 @@ def test_rerank_multimodal_docs(server):
     data = resp.json()
     assert len(data["results"]) == 2
     # First call should have document_image_url set
-    first_call = server._score_pair.call_args_list[0]
-    assert first_call.kwargs.get("document_image_url") == "http://example.com/img.jpg"
-    # Second call should have no document_image_url
-    second_call = server._score_pair.call_args_list[1]
-    assert second_call.kwargs.get("document_image_url") is None
+    first_call = server._score_batch.call_args_list[0]
+    assert first_call.kwargs.get("document_image_urls")[0] == "http://example.com/img.jpg"
+    assert first_call.kwargs.get("document_image_urls")[1] is None
+
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +137,7 @@ def test_rerank_multimodal_docs(server):
 
 
 def test_rerank_sorted_descending(server):
-    server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
+    server._score_batch = MagicMock(return_value=[0.3, 0.9, 0.5])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -164,7 +163,7 @@ def test_rerank_sorted_descending(server):
 
 
 def test_rerank_top_n(server):
-    server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
+    server._score_batch = MagicMock(return_value=[0.3, 0.9, 0.5])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -189,7 +188,7 @@ def test_rerank_top_n(server):
 
 
 def test_rerank_with_query_image_url(server):
-    server._score_pair = MagicMock(return_value=0.7)
+    server._score_batch = MagicMock(return_value=[0.7])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -206,7 +205,7 @@ def test_rerank_with_query_image_url(server):
         )
 
     assert resp.status_code == 200
-    call_args = server._score_pair.call_args
+    call_args = server._score_batch.call_args
     assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
 
 
@@ -216,7 +215,7 @@ def test_rerank_with_query_image_url(server):
 
 
 def test_rerank_heavy_model(server):
-    server._score_pair = MagicMock(return_value=0.6)
+    server._score_batch = MagicMock(return_value=[0.6])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
