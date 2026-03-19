@@ -130,7 +130,6 @@ def test_rerank_multimodal_docs(server):
     assert first_call.kwargs.get("document_image_urls")[1] is None
 
 
-
 # ---------------------------------------------------------------------------
 # /v1/rerank — sorted descending
 # ---------------------------------------------------------------------------
