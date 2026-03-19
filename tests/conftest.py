@@ -107,7 +107,7 @@ def _ensure_torch_stub() -> None:
 
     # softmax → probabilities, [0, 1].item() → 0.8
     _probs = MagicMock()
-    _probs.__getitem__ = MagicMock(return_value=MagicMock(item=MagicMock(return_value=0.8), tolist=MagicMock(return_value=[0.8])))
+    _probs.__getitem__ = MagicMock(return_value=MagicMock(item=MagicMock(return_value=0.8)))
     functional_stub.softmax = MagicMock(return_value=_probs)
 
     nn_stub.functional = functional_stub
@@ -126,7 +126,6 @@ def _ensure_torch_stub() -> None:
     torch_stub.randn = MagicMock(return_value=MagicMock())
     torch_stub.stack = MagicMock(return_value=MagicMock())
     torch_stub.zeros = MagicMock(return_value=MagicMock())
-    torch_stub.arange = MagicMock(return_value=MagicMock())
 
     onnx_stub = types.ModuleType("torch.onnx")
     onnx_stub.export = MagicMock()

@@ -270,8 +270,8 @@ def test_vl_reranker_load_models_populates_dicts():
 # ---------------------------------------------------------------------------
 
 
-def test_vl_reranker_score_batch_text_only():
-    """_score_batch without images should return a list of floats."""
+def test_vl_reranker_score_pair_text_only():
+    """_score_pair without images should return a float."""
     import torch
 
     server = VLRerankerServer()
@@ -301,15 +301,13 @@ def test_vl_reranker_score_batch_text_only():
     server.processors = {"qwen3-vl-reranker-8b": mock_processor}
     server.yes_no_weights = {"qwen3-vl-reranker-8b": yes_no_weight}
 
-    mock_inputs.attention_mask = torch.ones(1, 4)
-    scores = server._score_batch("qwen3-vl-reranker-8b", "query", ["document"])
-    assert isinstance(scores, list)
-    assert len(scores) == 1
-    assert 0.0 <= scores[0] <= 1.0
+    score = server._score_pair("qwen3-vl-reranker-8b", "query", "document")
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
-def test_vl_reranker_score_batch_with_images():
-    """_score_batch with image URLs should load images and return a list of floats."""
+def test_vl_reranker_score_pair_with_images():
+    """_score_pair with image URLs should load images and return a float."""
     import torch
 
     server = VLRerankerServer()
@@ -340,18 +338,16 @@ def test_vl_reranker_score_batch_with_images():
 
     mock_image = MagicMock()
 
-    mock_inputs.attention_mask = torch.ones(1, 4)
     with patch("ai_workers.common.utils.load_image_from_url", return_value=mock_image):
-        scores = server._score_batch(
+        score = server._score_pair(
             "qwen3-vl-reranker-8b",
             "query",
-            ["document"],
+            "document",
             query_image_url="https://q.com/q.png",
-            document_image_urls=["https://d.com/d.png"],
+            document_image_url="https://d.com/d.png",
         )
-    assert isinstance(scores, list)
-    assert len(scores) == 1
-    assert 0.0 <= scores[0] <= 1.0
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
 # ---------------------------------------------------------------------------
