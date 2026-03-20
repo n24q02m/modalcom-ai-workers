@@ -44,6 +44,7 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
         "fastapi>=0.115",
         "loguru>=0.7",
         "pydantic>=2.0",
+        "pillow>=10.0",  # Required by Qwen2VLImageProcessor (VL workers)
     ]
     if flash_attn:
         # DeepSeek-OCR-2 custom modeling code dependencies
