@@ -740,19 +740,19 @@ class TestTTSSynthesizeEdgeCases:
 
     def test_synthesize_non_list_wavs(self):
         """Line 126: wavs is not a list (e.g., single numpy array)."""
-        import numpy as np
-
         from ai_workers.workers.tts import TTSServer
 
         server = TTSServer()
         mock_model = MagicMock()
-        single_wav = np.zeros(100, dtype=np.float32)
+        # Simulate non-list return (single array instead of list of arrays)
+        single_wav = MagicMock()
         mock_model.generate_custom_voice.return_value = (single_wav, 24000)
         server.models = {"qwen3-tts-0.6b": mock_model}
 
         wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello")
         assert sr == 24000
-        assert isinstance(wavs, np.ndarray)
+        # wavs is the single_wav directly (not indexed from list)
+        assert wavs is single_wav
 
 
 # ===========================================================================
@@ -765,37 +765,38 @@ class TestDownloadModels:
 
     def test_download_models_success(self):
         """Lines 82-97: successful download of models."""
-        from ai_workers.common.volumes import download_models
+        mock_hf_hub = MagicMock()
+        mock_hf_hub.snapshot_download.return_value = "/cache/model"
 
-        mock_vol = MagicMock()
+        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
+            from importlib import reload
 
-        with (
-            patch("ai_workers.common.volumes.hf_cache_vol", mock_vol),
-            patch(
-                "huggingface_hub.snapshot_download",
-                return_value="/cache/model",
-            ),
-        ):
-            # Modal mock makes this a plain function (no .local())
-            result = download_models()
+            from ai_workers.common import volumes
+
+            reload(volumes)
+
+            mock_vol = MagicMock()
+            with patch.object(volumes, "hf_cache_vol", mock_vol):
+                result = volumes.download_models()
 
         assert "OK:" in result
         mock_vol.commit.assert_called_once()
 
     def test_download_models_failure(self):
         """Lines 98-100: one model fails to download."""
-        from ai_workers.common.volumes import download_models
+        mock_hf_hub = MagicMock()
+        mock_hf_hub.snapshot_download.side_effect = RuntimeError("network error")
 
-        mock_vol = MagicMock()
+        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
+            from importlib import reload
 
-        with (
-            patch("ai_workers.common.volumes.hf_cache_vol", mock_vol),
-            patch(
-                "huggingface_hub.snapshot_download",
-                side_effect=RuntimeError("network error"),
-            ),
-        ):
-            result = download_models()
+            from ai_workers.common import volumes
+
+            reload(volumes)
+
+            mock_vol = MagicMock()
+            with patch.object(volumes, "hf_cache_vol", mock_vol):
+                result = volumes.download_models()
 
         assert "FAIL:" in result
         assert "network error" in result
