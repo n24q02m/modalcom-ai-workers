@@ -16,6 +16,7 @@ for fast cold start (~5-10s instead of >10 minutes).
 
 import modal
 
+from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
@@ -77,17 +78,18 @@ class VLRerankerServer:
 
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
+            registry_cfg = get_model(name)
             logger.info("Loading {} ...", hf_id)
             processor = AutoProcessor.from_pretrained(
                 hf_id,
-                trust_remote_code=True,
+                trust_remote_code=registry_cfg.trust_remote_code,
                 padding_side="left",
                 cache_dir=HF_CACHE_DIR,
             )
             model = AutoModelForImageTextToText.from_pretrained(
                 hf_id,
                 torch_dtype=torch.float16,
-                trust_remote_code=True,
+                trust_remote_code=registry_cfg.trust_remote_code,
                 device_map="auto",
                 cache_dir=HF_CACHE_DIR,
             )

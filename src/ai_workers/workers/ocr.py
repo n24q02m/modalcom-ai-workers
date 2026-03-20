@@ -19,6 +19,7 @@ LiteLLM integration:
 
 import modal
 
+from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
@@ -58,16 +59,17 @@ class OCRServer:
         from loguru import logger
         from transformers import AutoModel, AutoProcessor
 
+        registry_cfg = get_model(MODEL_NAME)
         logger.info("Loading {} ...", HF_ID)
         self.processor = AutoProcessor.from_pretrained(
             HF_ID,
-            trust_remote_code=True,
+            trust_remote_code=registry_cfg.trust_remote_code,
             cache_dir=HF_CACHE_DIR,
         )
         self.model = AutoModel.from_pretrained(
             HF_ID,
             torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
+            trust_remote_code=registry_cfg.trust_remote_code,
             device_map="auto",
             use_safetensors=True,
             cache_dir=HF_CACHE_DIR,
