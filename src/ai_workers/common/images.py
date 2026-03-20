@@ -37,6 +37,7 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     tf_version = "transformers>=4.43,<4.46" if flash_attn else "transformers>=4.47"
     packages = [
         "torch>=2.4",
+        "torchvision>=0.19",  # Required by Qwen3VLVideoProcessor (VL workers)
         tf_version,
         "safetensors>=0.4",
         "accelerate>=1.0",
