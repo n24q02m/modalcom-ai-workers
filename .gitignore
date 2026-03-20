@@ -47,3 +47,6 @@ temp_test.json
 # AI Agent
 .jules/
 JULES.md
+
+# Code review knowledge graph
+.code-review-graph/
