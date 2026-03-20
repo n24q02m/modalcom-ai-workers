@@ -1,6 +1,6 @@
 [project]
 name = "ai-workers"
-version = "1.0.1"
+version = "1.0.2"
 description = "Self-hosted AI model workers on Modal.com with LiteLLM-compatible endpoints"
 readme = "README.md"
 license = { text = "MIT" }
