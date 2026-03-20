@@ -77,7 +77,7 @@ class ModelConfig:
     model_class: ModelClassType = ModelClassType.AUTO_MODEL
 
     # Transformers options
-    trust_remote_code: bool = True
+    trust_remote_code: bool = False
 
     # Modal app name (auto-derived from name if not set)
     modal_app_name: str = ""
