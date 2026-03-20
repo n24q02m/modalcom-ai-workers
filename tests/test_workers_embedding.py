@@ -67,7 +67,7 @@ def test_embeddings_with_valid_key(server):
         app = server.serve()
         # Mock _embed so we don't need real torch
         fake_emb = [[0.1] * 10]
-        server._embed = MagicMock(return_value=fake_emb)
+        server._embed = MagicMock(return_value=(fake_emb, 3))
         # Mock tokenizer encode
         mock_tok = MagicMock()
         mock_tok.encode.return_value = [1, 2, 3]
@@ -107,7 +107,7 @@ def test_embeddings_unknown_model(server):
 
 def test_embeddings_string_input(server):
     fake_emb = [[0.1, 0.2, 0.3]]
-    server._embed = MagicMock(return_value=fake_emb)
+    server._embed = MagicMock(return_value=(fake_emb, 2))
     mock_tok = MagicMock()
     mock_tok.encode.return_value = [1, 2]
     server.tokenizers = {"qwen3-embedding-0.6b": mock_tok}
@@ -133,7 +133,7 @@ def test_embeddings_string_input(server):
 
 def test_embeddings_list_input(server):
     fake_emb = [[0.1, 0.2], [0.3, 0.4]]
-    server._embed = MagicMock(return_value=fake_emb)
+    server._embed = MagicMock(return_value=(fake_emb, 2))
     mock_tok = MagicMock()
     mock_tok.encode.return_value = [1]
     server.tokenizers = {"qwen3-embedding-0.6b": mock_tok}
@@ -155,7 +155,7 @@ def test_embeddings_list_input(server):
 
 def test_embeddings_usage_tokens(server):
     """Usage field should reflect sum of tokenizer encode lengths."""
-    server._embed = MagicMock(return_value=[[0.0, 0.0]])
+    server._embed = MagicMock(return_value=([[0.0, 0.0]], 5))
     mock_tok = MagicMock()
     mock_tok.encode.return_value = [1, 2, 3, 4, 5]  # 5 tokens
     server.tokenizers = {"qwen3-embedding-0.6b": mock_tok}
@@ -176,7 +176,7 @@ def test_embeddings_usage_tokens(server):
 
 def test_embeddings_heavy_model(server):
     fake_emb = [[0.5] * 5]
-    server._embed = MagicMock(return_value=fake_emb)
+    server._embed = MagicMock(return_value=(fake_emb, 1))
     mock_tok = MagicMock()
     mock_tok.encode.return_value = [1]
     server.tokenizers = {"qwen3-embedding-8b": mock_tok}
