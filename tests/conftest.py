@@ -126,6 +126,7 @@ def _ensure_torch_stub() -> None:
     torch_stub.randn = MagicMock(return_value=MagicMock())
     torch_stub.stack = MagicMock(return_value=MagicMock())
     torch_stub.zeros = MagicMock(return_value=MagicMock())
+    torch_stub.arange = MagicMock(return_value=MagicMock())
 
     onnx_stub = types.ModuleType("torch.onnx")
     onnx_stub.export = MagicMock()
