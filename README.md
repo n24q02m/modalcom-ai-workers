@@ -214,7 +214,9 @@ src/ai_workers/
 │   ├── config.py       # Model registry (single source of truth)
 │   ├── auth.py         # Bearer token middleware
 │   ├── images.py       # Modal container images
-│   └── logging.py      # Structured logging
+│   ├── logging.py      # Structured logging
+│   ├── utils.py        # SSRF-safe image loading for vision workers
+│   └── volumes.py      # Modal Volume for pre-downloaded model weights
 ├── cli/
 │   ├── __main__.py     # CLI entry point (deploy, onnx-convert, gguf-convert)
 │   ├── deploy.py       # Deploy workers to Modal
@@ -335,7 +337,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/). 
 <type>(<optional scope>): <description>
 ```
 
-Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+Allowed types: `feat`, `fix` (plus `chore(release):` for semantic-release). Other conventional commit types are blocked by the pre-commit hook to keep the changelog focused.
 
 ## Related Projects
 
