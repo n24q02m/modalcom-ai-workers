@@ -274,6 +274,7 @@ class VLRerankerServer:
             # Fetch unique images concurrently
             image_cache = {}
             if unique_image_urls:
+
                 async def fetch_image(url: str):
                     img = await asyncio.to_thread(self._load_image, url)
                     return url, img
