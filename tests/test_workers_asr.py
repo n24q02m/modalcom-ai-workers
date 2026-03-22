@@ -212,6 +212,33 @@ def test_transcribe_unknown_model(server):
     assert "Unknown model" in resp.json()["error"]
 
 
+def test_transcribe_file_too_large(server):
+    """Ensure the server rejects files larger than 25MB with 413, reading in chunks."""
+    server._load_audio = MagicMock(return_value=b"audio_data")
+    server._transcribe = MagicMock(return_value="hello")
+
+    tc, key = _client(server)
+
+    # We can simulate the file object in TestClient.
+    # To test the chunking logic safely without allocating 25MB+,
+    # we can use a mock that acts like an asynchronous file or just send actual bytes.
+    # The simplest is sending a 25MB + 1 byte payload if memory allows, but since it's tests
+    # it's usually better to just pass a sufficiently large string/bytes.
+    # Wait, FastAPI TestClient converts file data to standard multipart request.
+    # Let's generate 25MB + 1MB of null bytes
+    large_audio = b"\x00" * ((25 * 1024 * 1024) + (1 * 1024 * 1024))
+
+    resp = tc.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("large_audio.wav", large_audio, "audio/wav")},
+        data={"model": DEFAULT_MODEL},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 413
+    assert "Audio file too large" in resp.json()["error"]
+
+
 # ---------------------------------------------------------------------------
 # _transcribe method
 # ---------------------------------------------------------------------------
