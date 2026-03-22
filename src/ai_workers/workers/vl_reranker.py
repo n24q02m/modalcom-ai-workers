@@ -114,6 +114,8 @@ class VLRerankerServer:
         document: str,
         query_image_url: str | None = None,
         document_image_url: str | None = None,
+        query_image: object | None = None,
+        document_image: object | None = None,
         instruction: str | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
@@ -138,7 +140,9 @@ class VLRerankerServer:
         # Query part
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            images.append(
+                query_image if query_image is not None else self._load_image(query_image_url)
+            )
         content_parts.append(
             {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
         )
@@ -146,7 +150,11 @@ class VLRerankerServer:
         # Document part
         if document_image_url:
             content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
+            images.append(
+                document_image
+                if document_image is not None
+                else self._load_image(document_image_url)
+            )
         content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
 
         messages = [
@@ -254,6 +262,32 @@ class VLRerankerServer:
                     },
                 )
 
+            import asyncio
+
+            # Deduplicate image URLs and fetch them concurrently to prevent sequential I/O bottleneck
+            urls_to_fetch = set()
+            if body.query_image_url:
+                urls_to_fetch.add(body.query_image_url)
+            for doc in body.documents:
+                if not isinstance(doc, str) and doc.image_url:
+                    urls_to_fetch.add(doc.image_url)
+
+            fetched_images = {}
+            if urls_to_fetch:
+
+                async def fetch_url(url):
+                    try:
+                        img = await asyncio.to_thread(self._load_image, url)
+                        return url, img
+                    except Exception as e:
+                        return url, e
+
+                fetch_results = await asyncio.gather(*(fetch_url(url) for url in urls_to_fetch))
+                for url, res in fetch_results:
+                    if isinstance(res, Exception):
+                        raise res
+                    fetched_images[url] = res
+
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
@@ -270,6 +304,10 @@ class VLRerankerServer:
                     doc_text,
                     query_image_url=body.query_image_url,
                     document_image_url=doc_image,
+                    query_image=fetched_images.get(body.query_image_url)
+                    if body.query_image_url
+                    else None,
+                    document_image=fetched_images.get(doc_image) if doc_image else None,
                 )
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
