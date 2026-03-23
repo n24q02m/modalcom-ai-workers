@@ -275,10 +275,7 @@ class VLRerankerServer:
             if unique_image_urls:
                 unique_image_urls_list = list(unique_image_urls)
                 loaded_images = await asyncio.gather(
-                    *(
-                        asyncio.to_thread(self._load_image, url)
-                        for url in unique_image_urls_list
-                    )
+                    *(asyncio.to_thread(self._load_image, url) for url in unique_image_urls_list)
                 )
                 image_cache = dict(zip(unique_image_urls_list, loaded_images, strict=True))
 
