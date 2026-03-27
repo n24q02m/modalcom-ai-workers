@@ -115,6 +115,7 @@ class VLRerankerServer:
         query_image_url: str | None = None,
         document_image_url: str | None = None,
         instruction: str | None = None,
+        cached_images: dict[str, object] | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
 
@@ -138,7 +139,10 @@ class VLRerankerServer:
         # Query part
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            if cached_images and query_image_url in cached_images:
+                images.append(cached_images[query_image_url])
+            else:
+                images.append(self._load_image(query_image_url))
         content_parts.append(
             {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
         )
@@ -146,7 +150,10 @@ class VLRerankerServer:
         # Document part
         if document_image_url:
             content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
+            if cached_images and document_image_url in cached_images:
+                images.append(cached_images[document_image_url])
+            else:
+                images.append(self._load_image(document_image_url))
         content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
 
         messages = [
@@ -254,6 +261,25 @@ class VLRerankerServer:
                     },
                 )
 
+            import asyncio
+
+            # Deduplicate image URLs
+            image_urls = set()
+            if body.query_image_url:
+                image_urls.add(body.query_image_url)
+            for doc in body.documents:
+                if not isinstance(doc, str) and doc.image_url:
+                    image_urls.add(doc.image_url)
+
+            # Concurrently fetch unique images
+            image_cache: dict[str, object] = {}
+            if image_urls:
+                unique_urls = list(image_urls)
+                loaded_images = await asyncio.gather(
+                    *[asyncio.to_thread(self._load_image, url) for url in unique_urls]
+                )
+                image_cache = dict(zip(unique_urls, loaded_images, strict=True))
+
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
@@ -270,6 +296,7 @@ class VLRerankerServer:
                     doc_text,
                     query_image_url=body.query_image_url,
                     document_image_url=doc_image,
+                    cached_images=image_cache,
                 )
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
