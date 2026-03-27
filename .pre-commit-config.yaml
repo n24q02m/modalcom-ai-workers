@@ -3,7 +3,7 @@ repos:
   # Common Checks
   # ============================================================================
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
     hooks:
       - id: trailing-whitespace
         name: trim trailing whitespace
@@ -27,7 +27,7 @@ repos:
   # Python
   # ============================================================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+    rev: fa93bc3224c614a0e9786d3e2d3d48edcca246eb # v0.15.1
     hooks:
       - id: ruff
         name: ruff lint
