@@ -103,6 +103,7 @@ def test_rerank_text_only_docs(server):
 
 
 def test_rerank_multimodal_docs(server):
+    server._load_image = MagicMock(return_value="mock_img")
     server._score_pair = MagicMock(side_effect=[0.9, 0.4])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -189,6 +190,7 @@ def test_rerank_top_n(server):
 
 
 def test_rerank_with_query_image_url(server):
+    server._load_image = MagicMock(return_value="mock_img")
     server._score_pair = MagicMock(return_value=0.7)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
