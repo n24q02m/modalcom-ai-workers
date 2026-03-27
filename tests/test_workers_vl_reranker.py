@@ -93,8 +93,8 @@ def test_rerank_text_only_docs(server):
     assert len(data["results"]) == 2
     # Verify _score_pair called with text-only (no image URLs)
     for call_args in server._score_pair.call_args_list:
-        assert call_args.kwargs.get("query_image_url") is None
-        assert call_args.kwargs.get("document_image_url") is None
+        assert call_args.kwargs.get("query_image") is None
+        assert call_args.kwargs.get("document_image") is None
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +104,7 @@ def test_rerank_text_only_docs(server):
 
 def test_rerank_multimodal_docs(server):
     server._score_pair = MagicMock(side_effect=[0.9, 0.4])
+    server._load_image = MagicMock(return_value="mock_image_object")
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -124,12 +125,12 @@ def test_rerank_multimodal_docs(server):
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["results"]) == 2
-    # First call should have document_image_url set
+    # First call should have document_image set
     first_call = server._score_pair.call_args_list[0]
-    assert first_call.kwargs.get("document_image_url") == "http://example.com/img.jpg"
-    # Second call should have no document_image_url
+    assert first_call.kwargs.get("document_image") is not None
+    # Second call should have no document_image
     second_call = server._score_pair.call_args_list[1]
-    assert second_call.kwargs.get("document_image_url") is None
+    assert second_call.kwargs.get("document_image") is None
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +191,7 @@ def test_rerank_top_n(server):
 
 def test_rerank_with_query_image_url(server):
     server._score_pair = MagicMock(return_value=0.7)
+    server._load_image = MagicMock(return_value="mock_query_image_object")
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -207,7 +209,7 @@ def test_rerank_with_query_image_url(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
+    assert call_args.kwargs.get("query_image") == "mock_query_image_object"
 
 
 # ---------------------------------------------------------------------------

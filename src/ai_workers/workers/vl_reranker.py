@@ -112,8 +112,8 @@ class VLRerankerServer:
         model_name: str,
         query: str,
         document: str,
-        query_image_url: str | None = None,
-        document_image_url: str | None = None,
+        query_image: object | None = None,
+        document_image: object | None = None,
         instruction: str | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
@@ -136,17 +136,20 @@ class VLRerankerServer:
         images = []
 
         # Query part
-        if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+        if query_image:
+            # We must pass the actual PIL Image to the processor,
+            # and Qwen3-VL processor requires the "image" key in content to be the object or a URL/path.
+            # Since we pre-loaded it, we can just pass the image object.
+            content_parts.append({"type": "image", "image": query_image})
+            images.append(query_image)
         content_parts.append(
             {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
         )
 
         # Document part
-        if document_image_url:
-            content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
+        if document_image:
+            content_parts.append({"type": "image", "image": document_image})
+            images.append(document_image)
         content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
 
         messages = [
@@ -190,6 +193,8 @@ class VLRerankerServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, Field
@@ -254,24 +259,64 @@ class VLRerankerServer:
                     },
                 )
 
+            # Deduplicate image URLs to fetch
+            unique_urls = set()
+            if body.query_image_url:
+                unique_urls.add(body.query_image_url)
+            for doc in body.documents:
+                if not isinstance(doc, str) and doc.image_url:
+                    unique_urls.add(doc.image_url)
+
+            # Fetch images concurrently
+            url_to_image = {}
+            if unique_urls:
+
+                async def fetch_image(u):
+                    return u, await asyncio.to_thread(self._load_image, u)
+
+                try:
+                    fetched = await asyncio.gather(*(fetch_image(u) for u in unique_urls))
+                    url_to_image = dict(fetched)
+                except Exception as e:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"error": f"Failed to load images: {e!s}"},
+                    )
+
             # Score each document against the query
             results = []
-            for i, doc in enumerate(body.documents):
-                if isinstance(doc, str):
-                    doc_text = doc
-                    doc_image = None
-                else:
-                    doc_text = doc.text
-                    doc_image = doc.image_url
 
-                score = self._score_pair(
+            # Extract query image if present
+            query_img = url_to_image.get(body.query_image_url) if body.query_image_url else None
+
+            # Since PyTorch model inference is CPU-bound and blocks the event loop,
+            # we run the scoring inside to_thread to prevent FastAPI stall.
+            async def score_doc(i, doc_item):
+                if isinstance(doc_item, str):
+                    doc_text = doc_item
+                    doc_image_url = None
+                else:
+                    doc_text = doc_item.text
+                    doc_image_url = doc_item.image_url
+
+                doc_img = url_to_image.get(doc_image_url) if doc_image_url else None
+
+                score = await asyncio.to_thread(
+                    self._score_pair,
                     body.model,
                     body.query,
                     doc_text,
-                    query_image_url=body.query_image_url,
-                    document_image_url=doc_image,
+                    query_image=query_img,
+                    document_image=doc_img,
                 )
-                results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
+                return RerankResult(index=i, relevance_score=score, document=doc_text)
+
+            # Wait for all scorings sequentially to avoid GPU contention,
+            # but run each in a thread to yield the FastAPI event loop.
+
+            for i, doc in enumerate(body.documents):
+                result = await score_doc(i, doc)
+                results.append(result)
 
             # Sort by relevance score descending
             results.sort(key=lambda x: x.relevance_score, reverse=True)
