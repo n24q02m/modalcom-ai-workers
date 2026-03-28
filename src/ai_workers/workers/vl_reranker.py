@@ -14,6 +14,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.config import get_model
@@ -112,8 +114,8 @@ class VLRerankerServer:
         model_name: str,
         query: str,
         document: str,
-        query_image_url: str | None = None,
-        document_image_url: str | None = None,
+        query_image: Any | None = None,
+        document_image: Any | None = None,
         instruction: str | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
@@ -136,17 +138,18 @@ class VLRerankerServer:
         images = []
 
         # Query part
-        if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+        if query_image:
+            # Add a placeholder type string, Qwen-VL-utils will process the PIL images directly
+            content_parts.append({"type": "image", "image": query_image})
+            images.append(query_image)
         content_parts.append(
             {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
         )
 
         # Document part
-        if document_image_url:
-            content_parts.append({"type": "image", "image": document_image_url})
-            images.append(self._load_image(document_image_url))
+        if document_image:
+            content_parts.append({"type": "image", "image": document_image})
+            images.append(document_image)
         content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
 
         messages = [
@@ -190,6 +193,8 @@ class VLRerankerServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, Field
@@ -254,6 +259,21 @@ class VLRerankerServer:
                     },
                 )
 
+            # Deduplicate image URLs
+            image_urls = set()
+            if body.query_image_url:
+                image_urls.add(body.query_image_url)
+            for doc in body.documents:
+                if not isinstance(doc, str) and doc.image_url:
+                    image_urls.add(doc.image_url)
+
+            # Pre-fetch images concurrently
+            unique_urls = list(image_urls)
+            fetched_images = await asyncio.gather(
+                *(asyncio.to_thread(self._load_image, url) for url in unique_urls)
+            )
+            image_map = dict(zip(unique_urls, fetched_images, strict=True))
+
             # Score each document against the query
             results = []
             for i, doc in enumerate(body.documents):
@@ -268,8 +288,10 @@ class VLRerankerServer:
                     body.model,
                     body.query,
                     doc_text,
-                    query_image_url=body.query_image_url,
-                    document_image_url=doc_image,
+                    query_image=image_map.get(body.query_image_url)
+                    if body.query_image_url
+                    else None,
+                    document_image=image_map.get(doc_image) if doc_image else None,
                 )
                 results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
 
