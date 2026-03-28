@@ -179,15 +179,20 @@ class ASRServer:
                 )
 
             max_audio_size = 25 * 1024 * 1024  # 25 MB
-            file_bytes = await file.read()
-            if len(file_bytes) > max_audio_size:
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "error": f"Audio file too large ({len(file_bytes)} bytes). "
-                        f"Maximum allowed: {max_audio_size} bytes (25 MB)."
-                    },
-                )
+
+            # Read in chunks to prevent memory exhaustion
+            buf = bytearray()
+            while chunk := await file.read(1024 * 1024):  # 1MB chunks
+                buf.extend(chunk)
+                if len(buf) > max_audio_size:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": f"Audio file too large (> {len(buf)} bytes). "
+                            f"Maximum allowed: {max_audio_size} bytes (25 MB)."
+                        },
+                    )
+            file_bytes = bytes(buf)
             audio_data = self._load_audio(file_bytes)
             text = self._transcribe(model, audio_data, language=language)
 
