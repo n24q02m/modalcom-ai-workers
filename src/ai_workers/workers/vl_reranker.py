@@ -244,7 +244,7 @@ class VLRerankerServer:
             }
 
         @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank(body: VLRerankRequest = Body(...)):
+        def rerank(body: VLRerankRequest = Body(...)):
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
                     status_code=400,

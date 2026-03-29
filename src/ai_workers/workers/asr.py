@@ -158,7 +158,7 @@ class ASRServer:
             }
 
         @app.post("/v1/audio/transcriptions")
-        async def transcribe(
+        def transcribe(
             file: UploadFile = File(...),
             model: str = Form(DEFAULT_MODEL),
             language: str | None = Form(None),
@@ -179,7 +179,7 @@ class ASRServer:
                 )
 
             max_audio_size = 25 * 1024 * 1024  # 25 MB
-            file_bytes = await file.read()
+            file_bytes = file.file.read()
             if len(file_bytes) > max_audio_size:
                 return JSONResponse(
                     status_code=413,
