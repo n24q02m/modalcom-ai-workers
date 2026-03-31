@@ -42,7 +42,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "latest"
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push'
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6
         with:
           files: coverage.xml
 
@@ -109,17 +109,17 @@ jobs:
           fi
 
       - name: Authenticate to GCP (Vertex AI)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.VERTEX_WIF_PROVIDER }}
           service_account: ${{ vars.VERTEX_SERVICE_ACCOUNT }}
 
       - name: PR Agent action step
-        uses: qodo-ai/pr-agent@main
+        uses: qodo-ai/pr-agent@42d55d4182a4839820b11b6c4d06fce855970301
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERTEXAI_PROJECT: ${{ vars.VERTEX_PROJECT }}
-          VERTEXAI_LOCATION: us-central1
+          VERTEXAI_LOCATION: global
           PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
           PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
           PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
@@ -144,13 +144,21 @@ jobs:
         with:
           egress-policy: audit
 
+
+      - name: Parse SMTP credential
+        run: |
+          echo "SMTP_USER=${SMTP_CREDENTIAL%%:*}" >> $GITHUB_ENV
+          echo "SMTP_PASS=${SMTP_CREDENTIAL#*:}" >> $GITHUB_ENV
+        env:
+          SMTP_CREDENTIAL: ${{ secrets.SMTP_CREDENTIAL }}
+
       - name: Send email notification
-        uses: dawidd6/action-send-mail@4758fd2f0eab31f80897dc291e43c3867cce37bf # v15
+        uses: dawidd6/action-send-mail@d38f3f7cd391cdebfe0d38efc3998b935e951c4f # v16
         with:
           server_address: smtp.gmail.com
           server_port: 587
           username: ${{ env.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          password: ${{ env.SMTP_PASS }}
           subject: >-
             [${{ github.event.repository.name }}]
             ${{ github.event_name == 'issues' && 'Issue' || 'PR' }}
