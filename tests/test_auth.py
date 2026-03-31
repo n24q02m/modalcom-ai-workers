@@ -35,23 +35,29 @@ def _make_request(*, auth_header: str | None = None) -> MagicMock:
 
 
 class TestVerifyApiKeyDevMode:
-    """Test authentication is skipped when WORKER_API_KEY is not set."""
+    """Test authentication fails when WORKER_API_KEY is not set."""
 
     @pytest.mark.asyncio
     async def test_skip_auth_when_no_key(self) -> None:
-        """When WORKER_API_KEY is empty, auth should be skipped."""
+        """When WORKER_API_KEY is empty, it should raise 401 Unauthorized."""
         with patch.dict(os.environ, {"WORKER_API_KEY": ""}, clear=False):
             request = _make_request()
-            await verify_api_key(request)  # Should not raise
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_api_key(request)
+            assert exc_info.value.status_code == 401
+            assert "No API keys configured" in exc_info.value.detail
 
     @pytest.mark.asyncio
     async def test_skip_auth_when_key_unset(self) -> None:
-        """When WORKER_API_KEY is not in env at all, auth should be skipped."""
+        """When WORKER_API_KEY is not in env at all, it should raise 401 Unauthorized."""
         env = dict(os.environ)
         env.pop("WORKER_API_KEY", None)
         with patch.dict(os.environ, env, clear=True):
             request = _make_request()
-            await verify_api_key(request)  # Should not raise
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_api_key(request)
+            assert exc_info.value.status_code == 401
+            assert "No API keys configured" in exc_info.value.detail
 
 
 class TestVerifyApiKeyValidation:

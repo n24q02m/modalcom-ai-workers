@@ -61,14 +61,16 @@ async def verify_api_key(request: Request) -> None:
     if _valid_keys is None:
         _valid_keys = _resolve_keys()
 
-    # Dev mode: no keys configured → skip auth entirely
+    # Fail-closed: if no keys configured, block all requests
     if not _valid_keys:
         logger.warning(
-            "AUTH DISABLED: No API keys configured (WORKER_API_KEY / WORKER_API_KEYS / "
-            "*_WORKER_API_KEY). All requests are unauthenticated. "
-            "Set at least one key env var for production use."
+            "AUTH FAILED: No API keys configured (WORKER_API_KEY / WORKER_API_KEYS / "
+            "*_WORKER_API_KEY). Rejecting all requests."
         )
-        return
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No API keys configured",
+        )
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
