@@ -440,8 +440,8 @@ def onnx_convert_model(
         for node in q4f16_model.graph.node:
             if node.op_type == "Cast":
                 for attr in node.attribute:
-                    if attr.name == "to" and attr.i == 1:
-                        attr.i = 10
+                    if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
+                        attr.i = onnx.TensorProto.FLOAT16
 
         # Clear stale type annotations — OnnxRuntime infers types from ops at load.
         q4f16_model.graph.ClearField("value_info")
