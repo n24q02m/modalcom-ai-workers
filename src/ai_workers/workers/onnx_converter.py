@@ -177,13 +177,14 @@ def _generate_model_card(
     )
 
 
-
 try:
     import torch
+
     _MODULE_BASE = torch.nn.Module
 except ImportError:
     _MODULE_BASE = object
     torch = typing.cast("Any", None)
+
 
 class _OnnxWrapper(_MODULE_BASE):
     """Wrapper that retains exactly 1 output tensor for ONNX export."""
@@ -201,6 +202,7 @@ class _OnnxWrapper(_MODULE_BASE):
         out = self.inner(input_ids=input_ids, attention_mask=attention_mask)
         return getattr(out, self.attr)
 
+
 class _YesNoWrapper(_MODULE_BASE):
     """Wrapper that outputs only [no, yes] logits at the last token.
 
@@ -216,9 +218,7 @@ class _YesNoWrapper(_MODULE_BASE):
         self.model = inner.model  # Transformer backbone
         lm_head_weight = inner.lm_head.weight.data  # (vocab, hidden)
         self.yes_no_head = torch.nn.Linear(lm_head_weight.shape[1], 2, bias=False)
-        self.yes_no_head.weight.data = lm_head_weight[
-            [self.TOKEN_NO_ID, self.TOKEN_YES_ID], :
-        ]
+        self.yes_no_head.weight.data = lm_head_weight[[self.TOKEN_NO_ID, self.TOKEN_YES_ID], :]
 
     def forward(
         self,
@@ -320,6 +320,7 @@ def _quantize_model_variants(
         fp32_data_path.unlink()
 
     return int8_size, q4f16_size
+
 
 @onnx_convert_app.function(
     image=onnx_converter_image(),
