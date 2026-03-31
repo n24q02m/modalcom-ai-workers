@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from ai_workers.common.volumes import download_models
-
 
 def test_download_models_success():
     """Test successful download of all models."""
@@ -16,13 +14,13 @@ def test_download_models_success():
         patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
-        # We also need to patch loguru locally since we aren't pulling it from sys.modules
-        from ai_workers.common.volumes import download_models as dl_func
-        # Let's import huggingface_hub here so it pulls the mocked version
         import huggingface_hub
+
+        from ai_workers.common.volumes import download_models
+
         huggingface_hub.snapshot_download.return_value = "/mock/path"
 
-        result = dl_func()
+        result = download_models()
 
         assert huggingface_hub.snapshot_download.call_count == 2
         mock_commit.assert_called_once()
@@ -44,11 +42,13 @@ def test_download_models_partial_failure():
         patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
-        from ai_workers.common.volumes import download_models as dl_func
         import huggingface_hub
+
+        from ai_workers.common.volumes import download_models
+
         huggingface_hub.snapshot_download.side_effect = mock_download_side_effect
 
-        result = dl_func()
+        result = download_models()
 
         assert huggingface_hub.snapshot_download.call_count == 2
         mock_commit.assert_called_once()
@@ -65,11 +65,13 @@ def test_download_models_all_failure():
         patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
-        from ai_workers.common.volumes import download_models as dl_func
         import huggingface_hub
+
+        from ai_workers.common.volumes import download_models
+
         huggingface_hub.snapshot_download.side_effect = RuntimeError("Network Error")
 
-        result = dl_func()
+        result = download_models()
 
         assert huggingface_hub.snapshot_download.call_count == 2
         mock_commit.assert_called_once()
