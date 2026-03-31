@@ -541,7 +541,7 @@ class TestRerankerUncoveredBranches:
         )
 
         assert resp.status_code == 400
-        assert "Unknown model" in resp.json()["error"]
+        assert "Invalid rerank request for model:" in resp.json()["error"]
 
 
 # ===========================================================================

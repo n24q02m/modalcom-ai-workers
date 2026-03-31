@@ -61,7 +61,7 @@ def test_rerank_unknown_model(server):
             headers={"Authorization": "Bearer k"},
         )
     assert resp.status_code == 400
-    assert "Unknown model" in resp.json()["error"]
+    assert "Invalid rerank request for model:" in resp.json()["error"]
 
 
 # ---------------------------------------------------------------------------
