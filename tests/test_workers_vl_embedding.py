@@ -129,7 +129,7 @@ def test_embeddings_list_of_strings(server):
 
 
 def test_embeddings_vlinput_with_image_url(server):
-    server._embed_multimodal_batch = MagicMock(return_value=[[0.5, 0.6, 0.7]])
+    server._embed_multimodal = MagicMock(return_value=[0.5, 0.6, 0.7])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -147,9 +147,8 @@ def test_embeddings_vlinput_with_image_url(server):
     data = resp.json()
     assert len(data["data"]) == 1
     assert data["data"][0]["embedding"] == [0.5, 0.6, 0.7]
-    server._embed_multimodal_batch.assert_called_once_with(
-        "qwen3-vl-embedding-2b",
-        [{"text": "describe this image", "image_url": "http://example.com/img.jpg"}],
+    server._embed_multimodal.assert_called_once_with(
+        "qwen3-vl-embedding-2b", "describe this image", "http://example.com/img.jpg"
     )
 
 
@@ -183,7 +182,7 @@ def test_embeddings_vlinput_without_image_url(server):
 
 
 def test_embeddings_list_of_vlinputs(server):
-    server._embed_multimodal_batch = MagicMock(return_value=[[0.9, 0.8]])
+    server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -244,7 +243,7 @@ def test_embeddings_vlinput_image_fetch_failure(server):
         # Ensure raise_server_exceptions is False so it returns a 500 status code
         tc = TestClient(app, raise_server_exceptions=False)
 
-        # _embed_multimodal_batch needs actual server structure for this test to reach process_vision_info
+        # _embed_multimodal needs actual server structure for this test to reach process_vision_info
         server.models = {"qwen3-vl-embedding-2b": MagicMock()}
 
         mock_processor = MagicMock()
