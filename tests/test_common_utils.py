@@ -155,6 +155,36 @@ class TestLoadImageFromUrl:
         with pytest.raises(RuntimeError, match="Failed to decode base64 image data URI"):
             load_image_from_url("data:image/png;base64,!!!invalid!!!")
 
+    def test_base64_invalid_image_data_raises(self):
+        # Valid base64, but decodes to non-image data
+        not_image = base64.b64encode(b"hello world! this is not an image").decode("utf-8")
+        with pytest.raises(RuntimeError, match="Failed to decode base64 image data URI"):
+            load_image_from_url(f"data:image/png;base64,{not_image}")
+
+    def test_base64_data_uri_exceeds_size_limit(self):
+        from ai_workers.common.utils import MAX_BASE64_SIZE
+
+        # Create a string larger than MAX_BASE64_SIZE
+        large_b64 = "A" * (MAX_BASE64_SIZE + 1)
+        with pytest.raises(ValueError, match="Base64 image data exceeds size limit"):
+            load_image_from_url(f"data:image/png;base64,{large_b64}")
+
+    def test_http_url_exceeds_size_limit(self):
+        from ai_workers.common.utils import MAX_IMAGE_SIZE
+
+        mock_resp = MagicMock()
+        # Mock iter_content to yield a single chunk larger than MAX_IMAGE_SIZE
+        large_chunk = b"A" * (MAX_IMAGE_SIZE + 1)
+        mock_resp.iter_content = MagicMock(return_value=iter([large_chunk]))
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("requests.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Image from URL exceeds size limit"),
+        ):
+            load_image_from_url("http://example.com/large.jpg")
+        mock_resp.close.assert_called_once()
+
     def test_http_url_success(self):
         img_bytes = _make_test_image_bytes()
         mock_resp = MagicMock()
