@@ -163,7 +163,7 @@ class TestLoadImageFromUrl:
 
         with (
             patch("ai_workers.common.utils.is_safe_url", return_value=True),
-            patch("requests.get", return_value=mock_resp) as mock_get,
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
         ):
             result = load_image_from_url("https://example.com/image.png")
 
@@ -187,7 +187,7 @@ class TestLoadImageFromUrl:
         with (
             patch("ai_workers.common.utils.is_safe_url", return_value=True),
             patch(
-                "requests.get",
+                "ai_workers.common.utils._session.get",
                 side_effect=Exception("Connection refused"),
             ),
             pytest.raises(RuntimeError, match="Failed to load image from URL"),
@@ -203,7 +203,7 @@ class TestLoadImageFromUrl:
 
         with (
             patch("ai_workers.common.utils.is_safe_url", return_value=True),
-            patch("requests.get", return_value=mock_resp) as mock_get,
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
         ):
             load_image_from_url("https://example.com/image.png")
 
