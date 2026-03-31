@@ -626,8 +626,9 @@ class TestVLEmbeddingComputeMethods:
             patch("ai_workers.common.utils.is_safe_url", return_value=False),
             pytest.raises(ValueError, match="SSRF"),
         ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "text", "http://internal.local/img.png"
+            server._embed_multimodal_batch(
+                "qwen3-vl-embedding-2b",
+                [{"text": "text", "image_url": "http://internal.local/img.png"}],
             )
 
     def test_embed_multimodal_base64_skips_ssrf(self):
@@ -669,8 +670,9 @@ class TestVLEmbeddingComputeMethods:
             ),
             patch("ai_workers.common.utils.is_safe_url") as mock_ssrf,
         ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
+            server._embed_multimodal_batch(
+                "qwen3-vl-embedding-2b",
+                [{"text": "describe", "image_url": "data:image/png;base64,iVBOR..."}],
             )
             # is_safe_url should NOT be called for data: URIs
             mock_ssrf.assert_not_called()
@@ -680,7 +682,7 @@ class TestVLEmbeddingComputeMethods:
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.5, 0.6])
+        server._embed_multimodal_batch = MagicMock(return_value=[[0.5, 0.6]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):
             app = server.serve()
@@ -698,14 +700,14 @@ class TestVLEmbeddingComputeMethods:
         )
 
         assert resp.status_code == 200
-        server._embed_multimodal.assert_called_once()
+        server._embed_multimodal_batch.assert_called_once()
 
     def test_list_of_vlinputs_mixed_via_endpoint(self):
         """Lines 287-295: list of VLEmbeddingInput with mixed image/text."""
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
+        server._embed_multimodal_batch = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):
