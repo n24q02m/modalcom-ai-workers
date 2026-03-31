@@ -343,8 +343,8 @@ def test_vl_reranker_score_pair_with_images():
             "qwen3-vl-reranker-8b",
             "query",
             "document",
-            query_image_url="https://q.com/q.png",
-            document_image_url="https://d.com/d.png",
+            query_image=mock_image,
+            document_image=mock_image,
         )
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
