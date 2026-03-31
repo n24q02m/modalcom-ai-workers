@@ -64,7 +64,7 @@ class TestUtilsUncoveredBranches:
 
         with (
             patch("ai_workers.common.utils.is_safe_url", return_value=True),
-            patch("requests.get", return_value=mock_resp),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp),
             patch("ai_workers.common.utils.MAX_IMAGE_SIZE", 10),
             pytest.raises(ValueError, match="exceeds size limit"),
         ):
@@ -81,7 +81,7 @@ class TestUtilsUncoveredBranches:
 
         with (
             patch("ai_workers.common.utils.is_safe_url", return_value=True),
-            patch("requests.get", return_value=mock_resp),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp),
             patch("ai_workers.common.utils.MAX_IMAGE_SIZE", 10),
             pytest.raises(ValueError),
         ):

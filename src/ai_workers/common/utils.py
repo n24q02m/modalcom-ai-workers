@@ -11,7 +11,11 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
+import requests
 from loguru import logger
+
+# Global session for connection pooling to reduce latency
+_session = requests.Session()
 
 # Maximum image size: 20 MB
 MAX_IMAGE_SIZE = 20 * 1024 * 1024
@@ -116,9 +120,7 @@ def load_image_from_url(url: str):
 
     # Fetch image with safety controls and size limit
     try:
-        import requests
-
-        response = requests.get(
+        response = _session.get(
             url,
             allow_redirects=False,
             timeout=30,
