@@ -11,10 +11,31 @@ import subprocess
 import typer
 from rich.console import Console
 
-from ai_workers.common.config import MODEL_REGISTRY, get_model, list_models
+from ai_workers.common.config import MODEL_REGISTRY, ModelConfig, get_model, list_models
 
 app = typer.Typer(no_args_is_help=True)
 console = Console()
+
+
+def _group_deploy_targets(models: list[ModelConfig]) -> list[tuple[str, str, list[str]]]:
+    """Group models by (worker_module, modal_app_var)."""
+    seen: set[tuple[str, str]] = set()
+    deploy_targets: list[tuple[str, str, list[str]]] = []  # (module, app_var, model_names)
+
+    for m in models:
+        if not m.worker_module or not m.modal_app_var:
+            continue
+        key = (m.worker_module, m.modal_app_var)
+        if key not in seen:
+            seen.add(key)
+            deploy_targets.append((m.worker_module, m.modal_app_var, [m.name]))
+        else:
+            # Append model name to existing target
+            for target in deploy_targets:
+                if (target[0], target[1]) == key:
+                    target[2].append(m.name)
+                    break
+    return deploy_targets
 
 
 @app.callback(invoke_without_command=True)
@@ -38,22 +59,7 @@ def deploy(
     if all_workers:
         # Group by (worker_module, modal_app_var) to deploy each unique app once
         models = list_models()
-        seen: set[tuple[str, str]] = set()
-        deploy_targets: list[tuple[str, str, list[str]]] = []  # (module, app_var, model_names)
-
-        for m in models:
-            if not m.worker_module or not m.modal_app_var:
-                continue
-            key = (m.worker_module, m.modal_app_var)
-            if key not in seen:
-                seen.add(key)
-                deploy_targets.append((m.worker_module, m.modal_app_var, [m.name]))
-            else:
-                # Append model name to existing target
-                for target in deploy_targets:
-                    if (target[0], target[1]) == key:
-                        target[2].append(m.name)
-                        break
+        deploy_targets = _group_deploy_targets(models)
 
         console.print(
             f"[bold]Deploying {len(deploy_targets)} apps ({len(models)} models)...[/bold]"
