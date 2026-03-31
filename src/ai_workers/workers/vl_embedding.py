@@ -191,6 +191,36 @@ class VLEmbeddingServer:
 
         return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
 
+
+    def _process_inputs(self, model_name: str, inputs: object) -> list[list[float]]:
+        """Process different combinations of text and multimodal inputs into embeddings."""
+        embeddings: list[list[float]] = []
+
+        if isinstance(inputs, str):
+            # Single text input
+            embeddings = self._embed_text(model_name, [inputs])
+        elif isinstance(inputs, list) and inputs and isinstance(inputs[0], str):
+            # List of text inputs
+            embeddings = self._embed_text(model_name, inputs)
+        elif isinstance(inputs, list):
+            # List of multimodal inputs
+            for item in inputs:
+                if hasattr(item, "image_url") and item.image_url:
+                    emb = self._embed_multimodal(model_name, item.text, item.image_url)
+                    embeddings.append(emb)
+                elif hasattr(item, "text"):
+                    embs = self._embed_text(model_name, [item.text])
+                    embeddings.extend(embs)
+        elif hasattr(inputs, "text"):
+            # Single multimodal input
+            if hasattr(inputs, "image_url") and inputs.image_url:
+                emb = self._embed_multimodal(model_name, inputs.text, inputs.image_url)
+                embeddings = [emb]
+            else:
+                embeddings = self._embed_text(model_name, [inputs.text])
+
+        return embeddings
+
     @modal.asgi_app()
     def serve(self):
         from fastapi import Body, FastAPI, Request
@@ -269,30 +299,7 @@ class VLEmbeddingServer:
                     },
                 )
 
-            embeddings: list[list[float]] = []
-
-            if isinstance(body.input, str):
-                # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
-            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
-                # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
-            elif isinstance(body.input, VLEmbeddingInput):
-                # Single multimodal input
-                if body.input.image_url:
-                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
-                    embeddings = [emb]
-                else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
-            elif isinstance(body.input, list):
-                # List of multimodal inputs
-                for item in body.input:
-                    if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        emb = self._embed_multimodal(body.model, item.text, item.image_url)
-                        embeddings.append(emb)
-                    elif isinstance(item, VLEmbeddingInput):
-                        embs = self._embed_text(body.model, [item.text])
-                        embeddings.extend(embs)
+            embeddings = self._process_inputs(body.model, body.input)
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
             return EmbeddingResponse(data=data, model=body.model)
