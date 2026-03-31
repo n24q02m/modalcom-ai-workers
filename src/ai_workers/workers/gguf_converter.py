@@ -162,10 +162,7 @@ def _generate_gguf_model_card(
     )
 
 
-
-def _check_if_gguf_exists(
-    hf_target: str, gguf_repo_path: str, hf_token: str, force: bool
-) -> bool:
+def _check_if_gguf_exists(hf_target: str, gguf_repo_path: str, hf_token: str, force: bool) -> bool:
     """Check if the GGUF file already exists on the HuggingFace Hub."""
     from huggingface_hub import list_repo_tree
     from loguru import logger
@@ -174,9 +171,7 @@ def _check_if_gguf_exists(
         return False
 
     try:
-        existing_files = [
-            f.path for f in list_repo_tree(hf_target, token=hf_token, recursive=True)
-        ]
+        existing_files = [f.path for f in list_repo_tree(hf_target, token=hf_token, recursive=True)]
         if gguf_repo_path in existing_files:
             logger.info(
                 "File {} already exists in {}. Skipping. Use force=True to overwrite.",
@@ -188,6 +183,7 @@ def _check_if_gguf_exists(
         pass  # Repo does not exist yet, will be created
 
     return False
+
 
 def _convert_hf_to_f16(model_dir: Path, f16_path: Path) -> float:
     """Run convert_hf_to_gguf.py to create intermediate F16 GGUF file."""
@@ -220,6 +216,7 @@ def _convert_hf_to_f16(model_dir: Path, f16_path: Path) -> float:
     f16_size = f16_path.stat().st_size / (1024**2)
     logger.info("GGUF F16 exported: {:.2f} MB", f16_size)
     return f16_size
+
 
 def _quantize_f16_to_q4(f16_path: Path, q4_path: Path, quant_type: str, f16_size: float) -> float:
     """Run llama-quantize to create the final Q4_K_M GGUF file."""
@@ -254,6 +251,7 @@ def _quantize_f16_to_q4(f16_path: Path, q4_path: Path, quant_type: str, f16_size
         f16_size / q4_size if q4_size > 0 else 0,
     )
     return q4_size
+
 
 def _upload_gguf_to_hf(
     api: HfApi,
@@ -310,8 +308,6 @@ def _upload_gguf_to_hf(
             pass  # Some config files may not exist
 
     logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
-
-
 
 
 @gguf_convert_app.function(
