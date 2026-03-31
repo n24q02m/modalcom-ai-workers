@@ -18,6 +18,8 @@ Endpoint:
   Output: audio/wav response
 """
 
+from dataclasses import dataclass
+
 import modal
 
 from ai_workers.common.images import transformers_tts_image
@@ -50,6 +52,14 @@ SUPPORTED_SPEAKERS = [
     "uncle_fu",
     "vivian",
 ]
+
+
+@dataclass
+class TTSOptions:
+    voice: str = DEFAULT_VOICE
+    language: str = "Auto"
+    instruct: str | None = None
+
 
 tts_app = modal.App(
     "ai-workers-tts",
@@ -100,9 +110,7 @@ class TTSServer:
         self,
         model_name: str,
         text: str,
-        voice: str = DEFAULT_VOICE,
-        language: str = "Auto",
-        instruct: str | None = None,
+        options: TTSOptions,
     ) -> tuple:
         """Synthesize speech from text using a preset speaker.
 
@@ -114,12 +122,12 @@ class TTSServer:
 
         kwargs: dict = {
             "text": text,
-            "language": language,
-            "speaker": voice,
+            "language": options.language,
+            "speaker": options.voice,
         }
 
-        if instruct:
-            kwargs["instruct"] = instruct
+        if options.instruct:
+            kwargs["instruct"] = options.instruct
 
         wavs, sr = model.generate_custom_voice(**kwargs)
         # wavs is a list of arrays (one per input text)
@@ -194,12 +202,15 @@ class TTSServer:
             import numpy as np
             import soundfile as sf
 
-            wavs, sr = self._synthesize(
-                body.model,
-                body.input,
+            options = TTSOptions(
                 voice=body.voice,
                 language=body.language,
                 instruct=body.instruct,
+            )
+            wavs, sr = self._synthesize(
+                body.model,
+                body.input,
+                options,
             )
 
             # Convert to WAV bytes
