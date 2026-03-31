@@ -221,3 +221,27 @@ class TestLoadImageFromUrl:
 
         result = load_image_from_url(data_uri)
         assert result.mode == "RGB"
+
+    def test_http_url_exceeds_size_limit(self):
+        """Ensure HTTP URL image sizes are properly capped."""
+        mock_resp = MagicMock()
+        # Yield three 10MB chunks to exceed the 20MB limit
+        chunk_10mb = b"a" * (10 * 1024 * 1024)
+        mock_resp.iter_content = MagicMock(return_value=iter([chunk_10mb, chunk_10mb, chunk_10mb]))
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("requests.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Image from URL exceeds size limit"),
+        ):
+            load_image_from_url("https://example.com/large_image.png")
+
+    def test_base64_exceeds_size_limit(self):
+        """Ensure Base64 data URI image sizes are properly capped."""
+        # MAX_BASE64_SIZE is 28 * 1024 * 1024
+        oversized_data = "a" * (28 * 1024 * 1024 + 1)
+        data_uri = f"data:image/png;base64,{oversized_data}"
+
+        with pytest.raises(ValueError, match="Base64 image data exceeds size limit"):
+            load_image_from_url(data_uri)
