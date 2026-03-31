@@ -12,7 +12,6 @@ Models are loaded directly from HuggingFace Hub at container startup
 via HF Xet protocol (~1GB/s). No R2 storage needed.
 """
 
-from __future__ import annotations
 
 import modal
 
