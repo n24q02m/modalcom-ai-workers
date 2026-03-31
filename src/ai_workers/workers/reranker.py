@@ -318,14 +318,20 @@ class RerankerServer:
         async def rerank_v1(body: RerankRequest = Body(...)):
             try:
                 return await _do_rerank(body)
-            except ValueError as e:
-                return JSONResponse(status_code=400, content={"error": str(e)})
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Invalid rerank request for model: {body.model}"},
+                )
 
         @app.post("/v2/rerank", response_model=RerankResponse)
         async def rerank_v2(body: RerankRequest = Body(...)):
             try:
                 return await _do_rerank(body)
-            except ValueError as e:
-                return JSONResponse(status_code=400, content={"error": str(e)})
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Invalid rerank request for model: {body.model}"},
+                )
 
         return app
