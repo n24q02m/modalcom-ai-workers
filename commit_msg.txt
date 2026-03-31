@@ -1,0 +1,16 @@
+🧹 [code health] Refactor gguf_convert_model
+
+🎯 What:
+Extracted four clearly scoped helper functions from the monolithic `gguf_convert_model` function in `src/ai_workers/workers/gguf_converter.py`.
+
+💡 Why:
+The original function was over 150 lines long and handled multiple distinct responsibilities: environment checking, API calls, file system manipulation, subprocess execution, and artifact uploading. By breaking these down into discrete helpers, the main pipeline is now highly readable and each step is isolated, making it easier to maintain, test, and debug.
+
+✅ Verification:
+- Ran `uv run pytest tests/test_gguf_converter.py` explicitly; all passed.
+- Ran the full test suite (`uv run pytest`); 332 tests passed with no regressions.
+- Verified that Modal-specific logic (e.g., local imports for `subprocess` and `HfApi`) remained appropriately scoped to avoid cold-start issues or module import errors on local developer machines.
+- Addressed all typing and syntax constraints enforced by `uv run ruff check`.
+
+✨ Result:
+A much cleaner, more maintainable conversion pipeline with isolated steps and explicit boundaries.
