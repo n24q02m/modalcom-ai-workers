@@ -8,11 +8,12 @@ import os
 from fastapi import HTTPException, Request, status
 from loguru import logger
 
-# Cache resolved keys at module level (env vars don't change at runtime)
-_valid_keys: list[str] | None = None
+# Cache resolved keys at module level (env vars don't change at runtime).
+# We store them as pre-encoded bytes to save CPU cycles during the per-request auth loop.
+_valid_keys: list[bytes] | None = None
 
 
-def _resolve_keys() -> list[str]:
+def _resolve_keys() -> list[bytes]:
     """Resolve valid API keys from environment variables.
 
     Supports per-app keys via multiple sources (checked in order):
@@ -46,7 +47,7 @@ def _resolve_keys() -> list[str]:
             if val and val not in keys:
                 keys.append(val)
 
-    return keys
+    return [k.encode() for k in keys]
 
 
 async def verify_api_key(request: Request) -> None:
@@ -83,7 +84,8 @@ async def verify_api_key(request: Request) -> None:
     token = auth_header.removeprefix("Bearer ").strip()
     token_bytes = token.encode()
 
-    if not any(hmac.compare_digest(token_bytes, k.encode()) for k in _valid_keys):
+    # Performance optimization: `_valid_keys` are already cached as `bytes`
+    if not any(hmac.compare_digest(token_bytes, k) for k in _valid_keys):
         logger.warning("Invalid API key from {}", request.client)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
