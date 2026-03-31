@@ -289,7 +289,7 @@ class RerankerServer:
                 "models": list(MODEL_CONFIGS.keys()),
             }
 
-        async def _do_rerank(body: RerankRequest) -> RerankResponse:
+        def _do_rerank(body: RerankRequest) -> RerankResponse:
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
                     f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
@@ -315,16 +315,16 @@ class RerankerServer:
             return RerankResponse(model=body.model, results=results)
 
         @app.post("/v1/rerank", response_model=RerankResponse)
-        async def rerank_v1(body: RerankRequest = Body(...)):
+        def rerank_v1(body: RerankRequest = Body(...)):
             try:
-                return await _do_rerank(body)
+                return _do_rerank(body)
             except ValueError as e:
                 return JSONResponse(status_code=400, content={"error": str(e)})
 
         @app.post("/v2/rerank", response_model=RerankResponse)
-        async def rerank_v2(body: RerankRequest = Body(...)):
+        def rerank_v2(body: RerankRequest = Body(...)):
             try:
-                return await _do_rerank(body)
+                return _do_rerank(body)
             except ValueError as e:
                 return JSONResponse(status_code=400, content={"error": str(e)})
 
