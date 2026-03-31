@@ -27,7 +27,9 @@ Flow:
 
 from __future__ import annotations
 
+import typing
 from dataclasses import dataclass
+from typing import Any
 
 import modal
 
@@ -175,6 +177,150 @@ def _generate_model_card(
     )
 
 
+
+try:
+    import torch
+    _MODULE_BASE = torch.nn.Module
+except ImportError:
+    _MODULE_BASE = object
+    torch = typing.cast("Any", None)
+
+class _OnnxWrapper(_MODULE_BASE):
+    """Wrapper that retains exactly 1 output tensor for ONNX export."""
+
+    def __init__(self, inner: torch.nn.Module, attr: str) -> None:
+        super().__init__()
+        self.inner = inner
+        self.attr = attr
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        out = self.inner(input_ids=input_ids, attention_mask=attention_mask)
+        return getattr(out, self.attr)
+
+class _YesNoWrapper(_MODULE_BASE):
+    """Wrapper that outputs only [no, yes] logits at the last token.
+
+    Reduces output from (batch, seq_len, vocab_size) to (batch, 2),
+    cutting runtime memory by ~150x for Qwen3 reranker models.
+    """
+
+    TOKEN_YES_ID = 9693
+    TOKEN_NO_ID = 2152
+
+    def __init__(self, inner: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = inner.model  # Transformer backbone
+        lm_head_weight = inner.lm_head.weight.data  # (vocab, hidden)
+        self.yes_no_head = torch.nn.Linear(lm_head_weight.shape[1], 2, bias=False)
+        self.yes_no_head.weight.data = lm_head_weight[
+            [self.TOKEN_NO_ID, self.TOKEN_YES_ID], :
+        ]
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        out = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        last_hidden = out.last_hidden_state[:, -1, :]  # (batch, hidden)
+        return self.yes_no_head(last_hidden)  # (batch, 2)
+
+
+def _quantize_model_variants(
+    fp32_path: typing.Any,
+    fp32_data_path: typing.Any,
+    int8_path: typing.Any,
+    q4f16_path: typing.Any,
+    fp32_total_size: float,
+) -> tuple[float, float]:
+    """Quantize FP32 ONNX model to INT8 and Q4F16 variants.
+
+    Returns:
+        Tuple of (int8_size_mb, q4f16_size_mb).
+    """
+    import gc
+
+    import onnx
+    from loguru import logger
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+    from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+
+    # ------------------------------------------------------------------
+    # Variant 1: INT8 dynamic quantization -> model_quantized.onnx
+    # ------------------------------------------------------------------
+    logger.info("Quantizing ONNX FP32 -> INT8: {}", int8_path)
+    quantize_dynamic(
+        model_input=str(fp32_path),
+        model_output=str(int8_path),
+        weight_type=QuantType.QInt8,
+    )
+
+    int8_size = int8_path.stat().st_size / (1024**2)
+    logger.info(
+        "INT8 quantized: {:.2f} MB (compression ratio: {:.1f}x)",
+        int8_size,
+        fp32_total_size / int8_size if int8_size > 0 else 0,
+    )
+
+    # ------------------------------------------------------------------
+    # Variant 2: Q4F16 (INT4 weights + FP16 activations) -> model_q4f16.onnx
+    # ------------------------------------------------------------------
+    logger.info("Quantizing ONNX FP32 -> Q4F16: {}", q4f16_path)
+
+    # Step 2a: INT4 weight quantization via MatMulNBitsQuantizer
+    quantizer = MatMulNBitsQuantizer(
+        model=str(fp32_path),
+        bits=4,
+        block_size=128,
+        is_symmetric=True,
+        accuracy_level=4,
+    )
+    quantizer.process()
+
+    # Step 2b: Cast remaining FP32 tensors to FP16
+    from onnxconverter_common import float16
+
+    q4f16_model = float16.convert_float_to_float16(
+        quantizer.model.model,
+        keep_io_types=False,  # Full float16 (including I/O)
+    )
+
+    # Fix: convert_float_to_float16 doesn't update Cast op's 'to' attribute.
+    # Internal Cast(to=float32) nodes create type mismatches with float16 tensors.
+    # Force all Cast(to=float32) -> Cast(to=float16) for type consistency.
+    # TensorProto.FLOAT = 1, TensorProto.FLOAT16 = 10
+    for node in q4f16_model.graph.node:
+        if node.op_type == "Cast":
+            for attr in node.attribute:
+                if attr.name == "to" and attr.i == 1:
+                    attr.i = 10
+
+    # Clear stale type annotations — OnnxRuntime infers types from ops at load.
+    q4f16_model.graph.ClearField("value_info")
+
+    onnx.save(q4f16_model, str(q4f16_path))
+
+    del quantizer, q4f16_model
+    gc.collect()
+
+    q4f16_size = q4f16_path.stat().st_size / (1024**2)
+    logger.info(
+        "Q4F16 quantized: {:.2f} MB (compression ratio: {:.1f}x)",
+        q4f16_size,
+        fp32_total_size / q4f16_size if q4f16_size > 0 else 0,
+    )
+
+    # Delete FP32 model + external data (not uploaded)
+    fp32_path.unlink()
+    if fp32_data_path.exists():
+        fp32_data_path.unlink()
+
+    return int8_size, q4f16_size
+
 @onnx_convert_app.function(
     image=onnx_converter_image(),
     memory=32768,  # 32GB RAM
@@ -215,12 +361,9 @@ def onnx_convert_model(
     import tempfile
     from pathlib import Path
 
-    import onnx
     import torch
     from huggingface_hub import HfApi, repo_exists
     from loguru import logger
-    from onnxruntime.quantization import QuantType, quantize_dynamic
-    from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
     from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer
 
     hf_token = os.environ.get("HF_TOKEN")
@@ -283,49 +426,6 @@ def onnx_convert_model(
         # ------------------------------------------------------------------
         # Wrap model — only output the necessary tensor
         # ------------------------------------------------------------------
-        class _OnnxWrapper(torch.nn.Module):
-            """Wrapper that retains exactly 1 output tensor for ONNX export."""
-
-            def __init__(self, inner: torch.nn.Module, attr: str) -> None:
-                super().__init__()
-                self.inner = inner
-                self.attr = attr
-
-            def forward(
-                self,
-                input_ids: torch.Tensor,
-                attention_mask: torch.Tensor,
-            ) -> torch.Tensor:
-                out = self.inner(input_ids=input_ids, attention_mask=attention_mask)
-                return getattr(out, self.attr)
-
-        class _YesNoWrapper(torch.nn.Module):
-            """Wrapper that outputs only [no, yes] logits at the last token.
-
-            Reduces output from (batch, seq_len, vocab_size) to (batch, 2),
-            cutting runtime memory by ~150x for Qwen3 reranker models.
-            """
-
-            TOKEN_YES_ID = 9693
-            TOKEN_NO_ID = 2152
-
-            def __init__(self, inner: torch.nn.Module) -> None:
-                super().__init__()
-                self.model = inner.model  # Transformer backbone
-                lm_head_weight = inner.lm_head.weight.data  # (vocab, hidden)
-                self.yes_no_head = torch.nn.Linear(lm_head_weight.shape[1], 2, bias=False)
-                self.yes_no_head.weight.data = lm_head_weight[
-                    [self.TOKEN_NO_ID, self.TOKEN_YES_ID], :
-                ]
-
-            def forward(
-                self,
-                input_ids: torch.Tensor,
-                attention_mask: torch.Tensor,
-            ) -> torch.Tensor:
-                out = self.model(input_ids=input_ids, attention_mask=attention_mask)
-                last_hidden = out.last_hidden_state[:, -1, :]  # (batch, hidden)
-                return self.yes_no_head(last_hidden)  # (batch, 2)
 
         if output_attr == "yesno_logits":
             wrapper = _YesNoWrapper(model)
@@ -393,75 +493,13 @@ def onnx_convert_model(
         del model, wrapper
         gc.collect()
 
-        # ------------------------------------------------------------------
-        # Variant 1: INT8 dynamic quantization -> model_quantized.onnx
-        # ------------------------------------------------------------------
-        logger.info("Quantizing ONNX FP32 -> INT8: {}", int8_path)
-        quantize_dynamic(
-            model_input=str(fp32_path),
-            model_output=str(int8_path),
-            weight_type=QuantType.QInt8,
+        int8_size, q4f16_size = _quantize_model_variants(
+            fp32_path=fp32_path,
+            fp32_data_path=fp32_data_path,
+            int8_path=int8_path,
+            q4f16_path=q4f16_path,
+            fp32_total_size=fp32_total_size,
         )
-
-        int8_size = int8_path.stat().st_size / (1024**2)
-        logger.info(
-            "INT8 quantized: {:.2f} MB (compression ratio: {:.1f}x)",
-            int8_size,
-            fp32_total_size / int8_size if int8_size > 0 else 0,
-        )
-
-        # ------------------------------------------------------------------
-        # Variant 2: Q4F16 (INT4 weights + FP16 activations) -> model_q4f16.onnx
-        # ------------------------------------------------------------------
-        logger.info("Quantizing ONNX FP32 -> Q4F16: {}", q4f16_path)
-
-        # Step 2a: INT4 weight quantization via MatMulNBitsQuantizer
-        quantizer = MatMulNBitsQuantizer(
-            model=str(fp32_path),
-            bits=4,
-            block_size=128,
-            is_symmetric=True,
-            accuracy_level=4,
-        )
-        quantizer.process()
-
-        # Step 2b: Cast remaining FP32 tensors to FP16
-        from onnxconverter_common import float16
-
-        q4f16_model = float16.convert_float_to_float16(
-            quantizer.model.model,
-            keep_io_types=False,  # Full float16 (including I/O)
-        )
-
-        # Fix: convert_float_to_float16 doesn't update Cast op's 'to' attribute.
-        # Internal Cast(to=float32) nodes create type mismatches with float16 tensors.
-        # Force all Cast(to=float32) -> Cast(to=float16) for type consistency.
-        # TensorProto.FLOAT = 1, TensorProto.FLOAT16 = 10
-        for node in q4f16_model.graph.node:
-            if node.op_type == "Cast":
-                for attr in node.attribute:
-                    if attr.name == "to" and attr.i == 1:
-                        attr.i = 10
-
-        # Clear stale type annotations — OnnxRuntime infers types from ops at load.
-        q4f16_model.graph.ClearField("value_info")
-
-        onnx.save(q4f16_model, str(q4f16_path))
-
-        del quantizer, q4f16_model
-        gc.collect()
-
-        q4f16_size = q4f16_path.stat().st_size / (1024**2)
-        logger.info(
-            "Q4F16 quantized: {:.2f} MB (compression ratio: {:.1f}x)",
-            q4f16_size,
-            fp32_total_size / q4f16_size if q4f16_size > 0 else 0,
-        )
-
-        # Delete FP32 model + external data (not uploaded)
-        fp32_path.unlink()
-        if fp32_data_path.exists():
-            fp32_data_path.unlink()
 
         # ------------------------------------------------------------------
         # Save tokenizer + config
