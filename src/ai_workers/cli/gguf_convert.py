@@ -11,7 +11,6 @@ Usage:
   python -m ai_workers gguf-convert all --force
 """
 
-from __future__ import annotations
 
 import modal
 import typer
