@@ -9,10 +9,11 @@ from fastapi import HTTPException, Request, status
 from loguru import logger
 
 # Cache resolved keys at module level (env vars don't change at runtime)
-_valid_keys: list[str] | None = None
+# ⚡ Bolt: Keys are pre-encoded to bytes to avoid per-request .encode() overhead
+_valid_keys: list[bytes] | None = None
 
 
-def _resolve_keys() -> list[str]:
+def _resolve_keys() -> list[bytes]:
     """Resolve valid API keys from environment variables.
 
     Supports per-app keys via multiple sources (checked in order):
@@ -23,28 +24,34 @@ def _resolve_keys() -> list[str]:
 
     If none are set, returns empty list (dev mode — auth skipped).
     """
-    keys: list[str] = []
+    keys: list[bytes] = []
 
     # Single key sources
     for var in ("API_KEY", "WORKER_API_KEY"):
-        val = os.getenv(var, "").strip()
-        if val and val not in keys:
-            keys.append(val)
+        val_str = os.getenv(var, "").strip()
+        if val_str:
+            val = val_str.encode()
+            if val not in keys:
+                keys.append(val)
 
     # Comma-separated multi-key
     multi = os.getenv("WORKER_API_KEYS", "").strip()
     if multi:
-        for k in multi.split(","):
-            k = k.strip()
-            if k and k not in keys:
-                keys.append(k)
+        for k_str in multi.split(","):
+            k_str = k_str.strip()
+            if k_str:
+                k = k_str.encode()
+                if k not in keys:
+                    keys.append(k)
 
     # Per-app keys: <APP>_WORKER_API_KEY (e.g. KLPRISM_WORKER_API_KEY)
     for env_name, env_val in os.environ.items():
         if env_name.endswith("_WORKER_API_KEY") and env_name != "WORKER_API_KEY":
-            val = env_val.strip()
-            if val and val not in keys:
-                keys.append(val)
+            val_str = env_val.strip()
+            if val_str:
+                val = val_str.encode()
+                if val not in keys:
+                    keys.append(val)
 
     return keys
 
@@ -83,7 +90,8 @@ async def verify_api_key(request: Request) -> None:
     token = auth_header.removeprefix("Bearer ").strip()
     token_bytes = token.encode()
 
-    if not any(hmac.compare_digest(token_bytes, k.encode()) for k in _valid_keys):
+    # ⚡ Bolt: _valid_keys are pre-encoded bytes, avoiding .encode() in the loop
+    if not any(hmac.compare_digest(token_bytes, k) for k in _valid_keys):
         logger.warning("Invalid API key from {}", request.client)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
