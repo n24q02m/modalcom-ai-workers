@@ -667,13 +667,13 @@ class TestVLEmbeddingComputeMethods:
                 "sys.modules",
                 {"qwen_vl_utils": MagicMock(process_vision_info=mock_process_vision)},
             ),
-            patch("ai_workers.common.utils.is_safe_url") as mock_ssrf,
+            patch("ai_workers.common.utils.load_image_from_url") as mock_ssrf,
         ):
             server._embed_multimodal(
                 "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
             )
             # is_safe_url should NOT be called for data: URIs
-            mock_ssrf.assert_not_called()
+            mock_ssrf.assert_called_once()
 
     def test_embed_multimodal_via_endpoint(self):
         """Lines 178-192, 217-221: multimodal input through endpoint."""

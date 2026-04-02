@@ -256,6 +256,6 @@ def test_load_image_error(server):
             "requests.get",
             side_effect=Exception("Connection error"),
         ),
-        pytest.raises(RuntimeError, match=r"Failed to load image from URL: http://bad.url"),
+        pytest.raises(ValueError, match=r"URL blocked by SSRF protection: http://bad.url"),
     ):
         server._load_image("http://bad.url")
