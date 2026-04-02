@@ -344,6 +344,21 @@ def _quantize_int8(fp32_path: Path, int8_path: Path, fp32_total_size: float) -> 
     return int8_size
 
 
+def _fix_cast_nodes(graph) -> None:
+    """Recursively update Cast(to=FLOAT) -> Cast(to=FLOAT16) in graph and subgraphs."""
+    import onnx
+
+    for node in graph.node:
+        if node.op_type == "Cast":
+            for attr in node.attribute:
+                if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
+                    attr.i = onnx.TensorProto.FLOAT16
+        # Recursively handle subgraphs in If/Loop nodes
+        for attr in node.attribute:
+            if attr.g and isinstance(attr.g, onnx.GraphProto):
+                _fix_cast_nodes(attr.g)
+
+
 def _quantize_q4f16(fp32_path: Path, q4f16_path: Path, fp32_total_size: float) -> float:
     """Quantize ONNX FP32 -> Q4F16 (INT4 weights + FP16 activations)."""
     import onnx
@@ -365,11 +380,7 @@ def _quantize_q4f16(fp32_path: Path, q4f16_path: Path, fp32_total_size: float) -
         keep_io_types=False,
     )
 
-    for node in q4f16_model.graph.node:
-        if node.op_type == "Cast":
-            for attr in node.attribute:
-                if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
-                    attr.i = onnx.TensorProto.FLOAT16
+    _fix_cast_nodes(q4f16_model.graph)
 
     q4f16_model.graph.ClearField("value_info")
     onnx.save(q4f16_model, str(q4f16_path))
@@ -446,6 +457,7 @@ def onnx_convert_model(
     if not hf_token:
         msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
         raise ValueError(msg)
+
 
     # ------------------------------------------------------------------
     # Check if repo already exists
