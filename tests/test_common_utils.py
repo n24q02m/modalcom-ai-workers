@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from ai_workers.common.utils import is_safe_url, load_image_from_url
+from ai_workers.common.utils import (
+    MAX_BASE64_SIZE,
+    MAX_IMAGE_SIZE,
+    is_safe_url,
+    load_image_from_url,
+)
 
 # ---------------------------------------------------------------------------
 # is_safe_url
@@ -221,3 +226,30 @@ class TestLoadImageFromUrl:
 
         result = load_image_from_url(data_uri)
         assert result.mode == "RGB"
+
+    def test_http_url_size_limit_exceeded(self):
+        """Verify load_image_from_url raises ValueError if image exceeds size limit."""
+        mock_resp = MagicMock()
+        # Yield a chunk larger than MAX_IMAGE_SIZE
+        mock_resp.iter_content = MagicMock(return_value=iter([b"a" * (MAX_IMAGE_SIZE + 1)]))
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.close = MagicMock()
+
+        url = "https://example.com/large.png"
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Image from URL exceeds size limit"),
+        ):
+            load_image_from_url(url)
+
+        mock_resp.close.assert_called_once()
+
+    def test_base64_data_uri_size_limit_exceeded(self):
+        """Verify load_image_from_url raises ValueError if base64 data exceeds limit."""
+        # Payload larger than MAX_BASE64_SIZE
+        large_b64 = "a" * (MAX_BASE64_SIZE + 1)
+        data_uri = f"data:image/png;base64,{large_b64}"
+
+        with pytest.raises(ValueError, match="Base64 image data exceeds size limit"):
+            load_image_from_url(data_uri)
