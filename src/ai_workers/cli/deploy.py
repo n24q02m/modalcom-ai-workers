@@ -11,7 +11,7 @@ import subprocess
 import typer
 from rich.console import Console
 
-from ai_workers.common.config import MODEL_REGISTRY, get_model, list_models
+from ai_workers.common.config import MODEL_REGISTRY, ModelConfig, get_model, list_models
 
 app = typer.Typer(no_args_is_help=True)
 console = Console()
@@ -36,24 +36,8 @@ def deploy(
 ) -> None:
     """Deploy a worker to Modal.com."""
     if all_workers:
-        # Group by (worker_module, modal_app_var) to deploy each unique app once
         models = list_models()
-        seen: set[tuple[str, str]] = set()
-        deploy_targets: list[tuple[str, str, list[str]]] = []  # (module, app_var, model_names)
-
-        for m in models:
-            if not m.worker_module or not m.modal_app_var:
-                continue
-            key = (m.worker_module, m.modal_app_var)
-            if key not in seen:
-                seen.add(key)
-                deploy_targets.append((m.worker_module, m.modal_app_var, [m.name]))
-            else:
-                # Append model name to existing target
-                for target in deploy_targets:
-                    if (target[0], target[1]) == key:
-                        target[2].append(m.name)
-                        break
+        deploy_targets = _group_deploy_targets(models)
 
         console.print(
             f"[bold]Deploying {len(deploy_targets)} apps ({len(models)} models)...[/bold]"
@@ -78,6 +62,20 @@ def deploy(
         raise typer.Exit(code=1) from None
 
     _deploy_single(worker, dry_run=dry_run)
+
+
+def _group_deploy_targets(models: list[ModelConfig]) -> list[tuple[str, str, list[str]]]:
+    """Group models by (worker_module, modal_app_var) for efficient deployment."""
+    targets: dict[tuple[str, str], list[str]] = {}
+    for m in models:
+        if not m.worker_module or not m.modal_app_var:
+            continue
+        key = (m.worker_module, m.modal_app_var)
+        if key not in targets:
+            targets[key] = []
+        targets[key].append(m.name)
+
+    return [(module, app_var, names) for (module, app_var), names in targets.items()]
 
 
 def _module_to_file_path(module: str) -> str:

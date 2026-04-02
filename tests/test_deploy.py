@@ -198,3 +198,75 @@ class TestWorkerModuleFilesExist:
         file_path = Path("src") / module.replace(".", "/")
         file_path = file_path.with_suffix(".py")
         assert file_path.exists(), f"Worker file not found: {file_path}"
+
+
+class TestGroupDeployTargets:
+    """Test grouping logic for deployment."""
+
+    def test_group_deploy_targets_basic(self) -> None:
+        """Should group models by (module, app_var)."""
+        from ai_workers.cli.deploy import _group_deploy_targets
+        from ai_workers.common.config import ModelConfig, Task, Tier
+
+        models = [
+            ModelConfig(
+                name="m1",
+                hf_id="h1",
+                task=Task.EMBEDDING,
+                tier=Tier.LIGHT,
+                worker_module="mod1",
+                modal_app_var="app1",
+            ),
+            ModelConfig(
+                name="m2",
+                hf_id="h2",
+                task=Task.EMBEDDING,
+                tier=Tier.HEAVY,
+                worker_module="mod1",
+                modal_app_var="app1",
+            ),
+            ModelConfig(
+                name="m3",
+                hf_id="h3",
+                task=Task.RERANKER_LLM,
+                tier=Tier.HEAVY,
+                worker_module="mod2",
+                modal_app_var="app2",
+            ),
+        ]
+
+        targets = _group_deploy_targets(models)
+        assert len(targets) == 2
+
+        # mod1, app1 -> [m1, m2]
+        # mod2, app2 -> [m3]
+        target_map = {(t[0], t[1]): t[2] for t in targets}
+        assert target_map[("mod1", "app1")] == ["m1", "m2"]
+        assert target_map[("mod2", "app2")] == ["m3"]
+
+    def test_group_deploy_targets_skips_missing_configs(self) -> None:
+        """Should skip models without worker_module or modal_app_var."""
+        from ai_workers.cli.deploy import _group_deploy_targets
+        from ai_workers.common.config import ModelConfig, Task, Tier
+
+        models = [
+            ModelConfig(
+                name="m1",
+                hf_id="h1",
+                task=Task.EMBEDDING,
+                tier=Tier.LIGHT,
+                worker_module="",
+                modal_app_var="app1",
+            ),
+            ModelConfig(
+                name="m2",
+                hf_id="h2",
+                task=Task.EMBEDDING,
+                tier=Tier.HEAVY,
+                worker_module="mod1",
+                modal_app_var="",
+            ),
+        ]
+
+        targets = _group_deploy_targets(models)
+        assert len(targets) == 0
