@@ -6,6 +6,7 @@ Provides SSRF-safe image loading for all vision workers (OCR, VL embedding, VL r
 from __future__ import annotations
 
 import base64
+import binascii
 import contextlib
 import io
 import ipaddress
@@ -161,7 +162,7 @@ def load_image_from_url(url: str):
         ValueError: If the URL is blocked by SSRF protection or has an unsupported scheme.
         RuntimeError: If the image fetch or decode fails.
     """
-    from PIL import Image
+    from PIL import Image, UnidentifiedImageError
 
     # Handle base64 data URIs (no network call needed)
     if url.startswith("data:"):
@@ -174,7 +175,7 @@ def load_image_from_url(url: str):
         try:
             image_bytes = base64.b64decode(b64_data)
             return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        except Exception as e:
+        except (binascii.Error, UnidentifiedImageError, OSError) as e:
             raise RuntimeError("Failed to decode base64 image data URI") from e
 
     # SSRF check for HTTP URLs and IP pinning
