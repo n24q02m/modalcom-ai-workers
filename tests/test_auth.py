@@ -240,3 +240,20 @@ class TestMultiKeySupport:
             # Per-app key works
             request = _make_request(auth_header="Bearer app-key")
             await verify_api_key(request)
+
+
+class TestKeyEncoding:
+    """Test that API keys are correctly pre-encoded to bytes."""
+
+    @pytest.mark.asyncio
+    async def test_keys_are_bytes(self) -> None:
+        """Verify that _valid_keys contains bytes after initialization."""
+        with patch.dict(os.environ, {"WORKER_API_KEY": "test-key"}, clear=False):
+            request = _make_request(auth_header="Bearer test-key")
+            await verify_api_key(request)
+
+            assert auth_module._valid_keys is not None
+            assert len(auth_module._valid_keys) > 0
+            for k in auth_module._valid_keys:
+                assert isinstance(k, bytes)
+                assert k == b"test-key"
