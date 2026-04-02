@@ -115,8 +115,15 @@ class TestIsSafeUrl:
         with patch("socket.getaddrinfo", return_value=addrinfo):
             assert is_safe_url("http://172.16.0.1/image.png") is False
 
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
+    def test_rejects_invalid_ip_resolution(self):
+        """Test that if DNS returns an invalid IP string, it is rejected."""
+        invalid_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
+        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
+            assert is_safe_url("http://example.com/image.png") is False
+
+
 # load_image_from_url
 # ---------------------------------------------------------------------------
 
