@@ -200,7 +200,7 @@ class OCRServer:
             return {"status": "ok", "model": MODEL_NAME}
 
         @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-        async def chat_completions(body: ChatCompletionRequest = Body(...)):
+        def chat_completions(body: ChatCompletionRequest = Body(...)):
             import uuid
 
             # Extract the last user message with image
