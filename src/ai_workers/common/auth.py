@@ -21,7 +21,7 @@ def _resolve_keys() -> list[str]:
     3. ``WORKER_API_KEYS`` — comma-separated multi-key
     4. ``<APP>_WORKER_API_KEY`` — per-app keys (e.g. KLPRISM_WORKER_API_KEY)
 
-    If none are set, returns empty list (dev mode — auth skipped).
+    If none are set, returns empty list (fail-closed — all requests rejected).
     """
     keys: list[str] = []
 
@@ -53,7 +53,7 @@ async def verify_api_key(request: Request) -> None:
     """Verify Bearer token from Authorization header.
 
     Supports multiple valid keys for per-app isolation.
-    If no keys are configured, auth is skipped entirely (dev mode).
+    If no keys are configured, all requests are rejected (fail-closed).
 
     Uses ``hmac.compare_digest`` to prevent timing attacks.
     """

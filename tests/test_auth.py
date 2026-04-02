@@ -1,6 +1,6 @@
 """Tests for Bearer token authentication middleware.
 
-Validates token verification, timing-safe comparison, dev mode bypass,
+Validates token verification, timing-safe comparison, fail-closed behavior,
 and multi-key support for per-app isolation.
 """
 
@@ -34,11 +34,11 @@ def _make_request(*, auth_header: str | None = None) -> MagicMock:
     return request
 
 
-class TestVerifyApiKeyDevMode:
+class TestVerifyApiKeyFailClosed:
     """Test authentication fails when WORKER_API_KEY is not set."""
 
     @pytest.mark.asyncio
-    async def test_skip_auth_when_no_key(self) -> None:
+    async def test_fail_closed_when_no_key(self) -> None:
         """When WORKER_API_KEY is empty, it should raise 401 Unauthorized."""
         with patch.dict(os.environ, {"WORKER_API_KEY": ""}, clear=False):
             request = _make_request()
@@ -48,7 +48,7 @@ class TestVerifyApiKeyDevMode:
             assert "No API keys configured" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_skip_auth_when_key_unset(self) -> None:
+    async def test_fail_closed_when_key_unset(self) -> None:
         """When WORKER_API_KEY is not in env at all, it should raise 401 Unauthorized."""
         env = dict(os.environ)
         env.pop("WORKER_API_KEY", None)
