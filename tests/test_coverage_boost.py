@@ -740,7 +740,7 @@ class TestTTSSynthesizeEdgeCases:
 
     def test_synthesize_non_list_wavs(self):
         """Line 126: wavs is not a list (e.g., single numpy array)."""
-        from ai_workers.workers.tts import TTSServer, TTSOptions
+        from ai_workers.workers.tts import TTSOptions, TTSServer
 
         server = TTSServer()
         mock_model = MagicMock()
