@@ -182,3 +182,31 @@ def test_gguf_convert_all_success():
         result = runner.invoke(app, ["all"])
 
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# gguf-convert all error handling
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_all_error_handling():
+    # Use a small dict to avoid iterating over all real models
+    mock_models = {"model1": MagicMock(), "model2": MagicMock()}
+
+    with (
+        patch("ai_workers.cli.gguf_convert.GGUF_MODELS", mock_models),
+        patch("ai_workers.cli.gguf_convert._gguf_convert_remote") as mock_remote,
+    ):
+
+        def side_effect(name, **kwargs):
+            if name == "model1":
+                raise SystemExit(1)
+            raise Exception("Failure")
+
+        mock_remote.side_effect = side_effect
+        result = runner.invoke(app, ["all"])
+
+    assert result.exit_code == 1
+    assert "2 model(s) failed" in result.output
+    assert "model1" in result.output
+    assert "model2" in result.output
