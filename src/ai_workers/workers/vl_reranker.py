@@ -20,6 +20,7 @@ import modal
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
+from ai_workers.common.utils import load_image_from_url
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
@@ -184,13 +185,6 @@ class VLRerankerServer:
 
         return score
 
-    @staticmethod
-    def _load_image(url: str):
-        """Load a PIL Image from URL with SSRF protection."""
-        from ai_workers.common.utils import load_image_from_url
-
-        return load_image_from_url(url)
-
     @modal.asgi_app()
     def serve(self):
         import asyncio
@@ -270,7 +264,7 @@ class VLRerankerServer:
             # Pre-fetch images concurrently
             unique_urls = list(image_urls)
             fetched_images = await asyncio.gather(
-                *(asyncio.to_thread(self._load_image, url) for url in unique_urls)
+                *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
             )
             image_map = dict(zip(unique_urls, fetched_images, strict=True))
 
