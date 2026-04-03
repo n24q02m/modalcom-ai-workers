@@ -820,3 +820,13 @@ class TestPackageInit:
 
             importlib.reload(ai_workers)
             assert ai_workers.__version__ == "0.0.0-dev"
+
+    def test_modal_initialization_error(self):
+        """Lines 8-9: when modal initialization fails (simulated), pass silently."""
+        with patch("modal.is_local", side_effect=RuntimeError("Modal init error")):
+            import importlib
+
+            import ai_workers
+
+            importlib.reload(ai_workers)
+            # Should not raise anything
