@@ -110,6 +110,91 @@ class VLRerankerServer:
                 "Loaded {} successfully (yes_no_weight shape: {})", name, yes_no_weight.shape
             )
 
+    def _score_batch(
+        self,
+        model_name: str,
+        query: str,
+        documents: list[str],
+        document_images: list[Any | None],
+        query_image: Any | None = None,
+        instruction: str | None = None,
+    ) -> list[float]:
+        """Score a batch of query-document pairs using optimized chunked inference.
+
+        Batched alternative to `_score_pair` to prevent sequential processing bottleneck.
+        Processes in chunks (e.g., batch_size=4) with padding.
+        Uses left padding (default for Qwen3-VL processor) and extracts the last token hidden state.
+        """
+        import torch
+        from torch.nn import functional as fn
+
+        model = self.models[model_name]
+        processor = self.processors[model_name]
+        yes_no_weight = self.yes_no_weights[model_name]
+
+        instruction = instruction or DEFAULT_INSTRUCTION
+        all_scores = []
+        batch_size = 4  # Small batch size for A10G memory safety with VL models
+
+        for i in range(0, len(documents), batch_size):
+            chunk_docs = documents[i : i + batch_size]
+            chunk_doc_images = document_images[i : i + batch_size]
+
+            chunk_messages = []
+            chunk_images = []
+
+            for doc_text, doc_image in zip(chunk_docs, chunk_doc_images, strict=True):
+                content_parts = []
+                images = []
+                if query_image:
+                    content_parts.append({"type": "image", "image": query_image})
+                    images.append(query_image)
+                content_parts.append(
+                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
+                )
+                if doc_image:
+                    content_parts.append({"type": "image", "image": doc_image})
+                    images.append(doc_image)
+                content_parts.append({"type": "text", "text": f"\n<Document>: {doc_text}"})
+
+                messages = [
+                    {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
+                    {"role": "user", "content": content_parts},
+                ]
+                chunk_messages.append(messages)
+                chunk_images.append(images)
+
+            texts = [
+                processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True)
+                for m in chunk_messages
+            ]
+
+            # processor() handles batching if text is a list and images is a flat list
+            if any(chunk_images):
+                # Flatten the list of lists for processor
+                flat_images = [img for sublist in chunk_images for img in sublist]
+                inputs = processor(
+                    text=texts, images=flat_images, return_tensors="pt", padding=True
+                ).to(model.device)
+            else:
+                inputs = processor(text=texts, return_tensors="pt", padding=True).to(model.device)
+
+            with torch.no_grad():
+                # Backbone-only forward pass — skip lm_head matmul
+                outputs = model.model(**inputs)
+                # Left padding is default for processor, so last token is always at index -1
+                hidden = outputs.last_hidden_state[:, -1, :]  # (batch_size, hidden_dim)
+
+                # Compute only yes/no logits using pre-extracted weights
+                logits_2 = fn.linear(hidden, yes_no_weight)  # (batch_size, 2)
+
+                # Official scoring: softmax then take yes probability
+                probs = fn.softmax(logits_2.float(), dim=-1)
+                scores = probs[:, 1].tolist()  # Index 1 = yes
+                all_scores.extend(scores)
+
+        return all_scores
+
     def _score_pair(
         self,
         model_name: str,
@@ -121,69 +206,17 @@ class VLRerankerServer:
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
 
-        Uses backbone-only forward pass + pre-extracted yes/no weights from lm_head.
-        Scoring: softmax([no, yes]) then take yes probability.
-        Supports text-only and multimodal (image+text) query/document pairs.
+        Now a thin wrapper around `_score_batch` for consistency and to reduce duplication.
         """
-        import torch
-        from torch.nn import functional as fn
-
-        model = self.models[model_name]
-        processor = self.processors[model_name]
-        yes_no_weight = self.yes_no_weights[model_name]
-
-        instruction = instruction or DEFAULT_INSTRUCTION
-
-        # Build user content with optional images
-        content_parts = []
-        images = []
-
-        # Query part
-        if query_image:
-            # Add a placeholder type string, Qwen-VL-utils will process the PIL images directly
-            content_parts.append({"type": "image", "image": query_image})
-            images.append(query_image)
-        content_parts.append(
-            {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
+        scores = self._score_batch(
+            model_name,
+            query,
+            [document],
+            [document_image],
+            query_image=query_image,
+            instruction=instruction,
         )
-
-        # Document part
-        if document_image:
-            content_parts.append({"type": "image", "image": document_image})
-            images.append(document_image)
-        content_parts.append({"type": "text", "text": f"\n<Document>: {document}"})
-
-        messages = [
-            {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
-            {"role": "user", "content": content_parts},
-        ]
-
-        text = processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-        if images:
-            inputs = processor(text=text, images=images, return_tensors="pt", padding=True).to(
-                model.device
-            )
-        else:
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
-
-        with torch.no_grad():
-            # Backbone-only forward pass — skip lm_head matmul
-            outputs = model.model(**inputs)
-            hidden = outputs.last_hidden_state[:, -1, :]  # (1, hidden_dim)
-
-            # Compute only yes/no logits using pre-extracted weights
-            logits_2 = fn.linear(hidden, yes_no_weight)  # (1, 2) = [no_logit, yes_logit]
-
-            # Official scoring: softmax then take yes probability
-            probs = fn.softmax(logits_2.float(), dim=-1)
-            score = probs[0, 1].item()  # Index 1 = yes
-
-        return score
+        return scores[0]
 
     @modal.asgi_app()
     def serve(self):
@@ -268,26 +301,31 @@ class VLRerankerServer:
             )
             image_map = dict(zip(unique_urls, fetched_images, strict=True))
 
-            # Score each document against the query
-            results = []
-            for i, doc in enumerate(body.documents):
+            # Prepare inputs for batched scoring
+            doc_texts = []
+            doc_images = []
+            for doc in body.documents:
                 if isinstance(doc, str):
-                    doc_text = doc
-                    doc_image = None
+                    doc_texts.append(doc)
+                    doc_images.append(None)
                 else:
-                    doc_text = doc.text
-                    doc_image = doc.image_url
+                    doc_texts.append(doc.text)
+                    doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
 
-                score = self._score_pair(
-                    body.model,
-                    body.query,
-                    doc_text,
-                    query_image=image_map.get(body.query_image_url)
-                    if body.query_image_url
-                    else None,
-                    document_image=image_map.get(doc_image) if doc_image else None,
-                )
-                results.append(RerankResult(index=i, relevance_score=score, document=doc_text))
+            # Score all documents in a single batched call
+            scores = self._score_batch(
+                body.model,
+                body.query,
+                doc_texts,
+                doc_images,
+                query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
+            )
+
+            # Build results
+            results = [
+                RerankResult(index=i, relevance_score=score, document=text)
+                for i, (score, text) in enumerate(zip(scores, doc_texts, strict=True))
+            ]
 
             # Sort by relevance score descending
             results.sort(key=lambda x: x.relevance_score, reverse=True)
