@@ -198,3 +198,24 @@ class TestWorkerModuleFilesExist:
         file_path = Path("src") / module.replace(".", "/")
         file_path = file_path.with_suffix(".py")
         assert file_path.exists(), f"Worker file not found: {file_path}"
+
+
+class TestDeployModuleErrors:
+    """Test deploy module error handling."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_not_found(self, mock_subprocess: MagicMock) -> None:
+        """Missing modal CLI during module deploy should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_failure(self, mock_subprocess: MagicMock) -> None:
+        """Failed module deploy should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
