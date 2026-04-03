@@ -115,6 +115,12 @@ class TestIsSafeUrl:
         with patch("socket.getaddrinfo", return_value=addrinfo):
             assert is_safe_url("http://172.16.0.1/image.png") is False
 
+    def test_rejects_malformed_ip(self):
+        """Check that a malformed IP string from DNS triggers ValueError handling."""
+        malformed = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
+        with patch("socket.getaddrinfo", return_value=malformed):
+            assert is_safe_url("http://example.com/image.png") is False
+
 
 # ---------------------------------------------------------------------------
 # load_image_from_url
