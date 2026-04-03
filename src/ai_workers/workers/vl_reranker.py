@@ -182,16 +182,31 @@ class VLRerankerServer:
             with torch.no_grad():
                 # Backbone-only forward pass — skip lm_head matmul
                 outputs = model.model(**inputs)
-                # Left padding is default for processor, so last token is always at index -1
-                hidden = outputs.last_hidden_state[:, -1, :]  # (batch_size, hidden_dim)
+
+                # Hidden state extraction logic
+                if outputs.last_hidden_state.dim() == 2:
+                    hidden = outputs.last_hidden_state
+                else:
+                    # Left padding is default for processor, so last token is always at index -1
+                    hidden = outputs.last_hidden_state[:, -1, :]  # (batch_size, hidden_dim)
 
                 # Compute only yes/no logits using pre-extracted weights
                 logits_2 = fn.linear(hidden, yes_no_weight)  # (batch_size, 2)
 
                 # Official scoring: softmax then take yes probability
                 probs = fn.softmax(logits_2.float(), dim=-1)
-                scores = probs[:, 1].tolist()  # Index 1 = yes
-                all_scores.extend(scores)
+
+                # Extract yes probability
+                if probs.dim() == 1:
+                    curr_scores = [probs[1].item()]
+                elif len(probs.shape) > 0 and probs.shape[0] > 0:
+                    curr_scores = (
+                        probs[:, 1].tolist() if probs.dim() == 2 else [probs[1].item()]
+                    )
+                else:
+                    curr_scores = []
+
+                all_scores.extend(curr_scores)
 
         return all_scores
 
@@ -216,6 +231,8 @@ class VLRerankerServer:
             query_image=query_image,
             instruction=instruction,
         )
+        if not scores:
+            return 0.0
         return scores[0]
 
     @modal.asgi_app()
@@ -318,7 +335,9 @@ class VLRerankerServer:
                 body.query,
                 doc_texts,
                 doc_images,
-                query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
+                query_image=image_map.get(body.query_image_url)
+                if body.query_image_url
+                else None,
             )
 
             # Build results
