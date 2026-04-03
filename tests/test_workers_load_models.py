@@ -348,5 +348,3 @@ def test_vl_reranker_score_pair_with_images():
         )
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
-
-
