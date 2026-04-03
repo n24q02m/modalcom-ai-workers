@@ -188,3 +188,39 @@ def test_onnx_convert_all_success():
         result = runner.invoke(app, ["all"])
 
     assert result.exit_code == 0
+
+
+def test_onnx_convert_all_error_handling():
+    """Test that 'onnx-convert all' continues after SystemExit or Exception and reports failures."""
+    # Mock ONNX_MODELS to have 3 models
+    mock_models = {
+        "m1": MagicMock(name="m1"),
+        "m2": MagicMock(name="m2"),
+        "m3": MagicMock(name="m3"),
+    }
+
+    def side_effect(name, force=False):
+        if name == "m1":
+            raise SystemExit(1)
+        if name == "m2":
+            raise ValueError("Something went wrong")
+        return None
+
+    with (
+        patch("ai_workers.cli.onnx_convert.ONNX_MODELS", mock_models),
+        patch(
+            "ai_workers.cli.onnx_convert._onnx_convert_remote", side_effect=side_effect
+        ) as mock_remote,
+    ):
+        # We need to use runner.invoke(app, ["all"])
+        # Typer's CliRunner handles SystemExit by default if it's raised within the command
+        result = runner.invoke(app, ["all"])
+
+    # Should exit with code 1 due to failures
+    assert result.exit_code == 1
+    # Should show that 2 models failed
+    assert "2 model(s) failed" in result.output
+    assert "m1" in result.output
+    assert "m2" in result.output
+    # Should have called _onnx_convert_remote for all 3 models
+    assert mock_remote.call_count == 3
