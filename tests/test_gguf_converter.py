@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from ai_workers.workers.gguf_converter import (
@@ -9,6 +11,7 @@ from ai_workers.workers.gguf_converter import (
     GgufModelConfig,
     _generate_gguf_model_card,
     _register,
+    gguf_convert_model,
 )
 
 # ---------------------------------------------------------------------------
@@ -142,3 +145,48 @@ def test_generate_gguf_model_card_onnx_link():
     )
     card = _generate_gguf_model_card(cfg, gguf_filename="my-model-q4-k-m.gguf", size_mb=100.0)
     assert "org/MyModel-ONNX" in card
+
+
+# ---------------------------------------------------------------------------
+# gguf_convert_model — repo checking error path
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_model_repo_not_found_swallows_exception():
+    """Verify that gguf_convert_model continues if list_repo_tree fails (repo missing)."""
+    # Mock huggingface_hub
+    mock_hf_hub = MagicMock()
+    mock_hf_hub.list_repo_tree.side_effect = Exception("Repo not found")
+
+    # Mock subprocess.run to avoid executing llama.cpp
+    mock_run = MagicMock()
+    mock_run.returncode = 0
+
+    # Mock HfApi
+    mock_api_instance = MagicMock()
+    mock_hf_hub.HfApi.return_value = mock_api_instance
+
+    with (
+        patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}),
+        patch("subprocess.run", return_value=mock_run),
+        patch("os.environ", {"HF_TOKEN": "fake-token"}),
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.unlink"),
+        patch("ai_workers.workers.gguf_converter._generate_gguf_model_card", return_value="card"),
+    ):
+        # stat().st_size for f16_path and q4_path
+        mock_stat.return_value.st_size = 100 * 1024 * 1024
+
+        result = gguf_convert_model(
+            model_name="qwen3-embedding-0.6b-gguf",
+            hf_source="Qwen/Qwen3-Embedding-0.6B",
+            hf_target="n24q02m/Qwen3-Embedding-0.6B-GGUF",
+            gguf_name="qwen3-embedding-0.6b",
+        )
+
+    assert result["status"] == "success"
+    # Verify list_repo_tree was called and exception was swallowed
+    mock_hf_hub.list_repo_tree.assert_called_once()
+    # Verify it continued to create_repo and upload_file
+    mock_api_instance.create_repo.assert_called_once()
+    mock_api_instance.upload_file.assert_called()
