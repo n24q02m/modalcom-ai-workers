@@ -1,0 +1,1481 @@
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/cli/gguf_convert.py:16:8
+   |
+14 | from __future__ import annotations
+15 |
+16 | import modal
+   |        ^^^^^
+17 | import typer
+18 | from rich.console import Console
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/cli/onnx_convert.py:17:8
+   |
+15 | from __future__ import annotations
+16 |
+17 | import modal
+   |        ^^^^^
+18 | import typer
+19 | from rich.console import Console
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/common/config.py:323:12
+    |
+321 | def get_torch_dtype(precision: Precision):
+322 |     """Convert Precision enum to torch dtype. Import torch lazily."""
+323 |     import torch
+    |            ^^^^^
+324 |
+325 |     return torch.float16 if precision == Precision.FP16 else torch.bfloat16
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+   --> src/ai_workers/common/config.py:330:10
+    |
+328 | def get_model_class(model_class_type: ModelClassType):
+329 |     """Get the transformers model class. Import lazily."""
+330 |     from transformers import (
+    |          ^^^^^^^^^^^^
+331 |         AutoModel,
+332 |         AutoModelForCausalLM,
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/common/images.py:17:8
+   |
+15 | from __future__ import annotations
+16 |
+17 | import modal
+   |        ^^^^^
+18 |
+19 | # ---------------------------------------------------------------------------
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+error[invalid-assignment]: Object of type `def _patched_create_connection(address, *args, **kwargs) -> Unknown` is not assignable to attribute `create_connection` of type `def create_connection(address: tuple[str, int], timeout: int | float | _TYPE_DEFAULT | None = ..., source_address: tuple[str, int] | None = None, socket_options: list[tuple[int, int, int | bytes]] | None = None) -> socket`
+  --> src/ai_workers/common/utils.py:44:1
+   |
+43 | # Apply monkeypatch globally
+44 | urllib3.util.connection.create_connection = _patched_create_connection
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+info: Implicit shadowing of function `create_connection`, add an annotation to make it explicit if this is intentional
+info: rule `invalid-assignment` is enabled by default
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/common/volumes.py:15:8
+   |
+13 | from __future__ import annotations
+14 |
+15 | import modal
+   |        ^^^^^
+16 |
+17 | # ---------------------------------------------------------------------------
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `huggingface_hub`
+  --> src/ai_workers/common/volumes.py:82:10
+   |
+80 |         modal run src/ai_workers/common/volumes.py
+81 |     """
+82 |     from huggingface_hub import snapshot_download
+   |          ^^^^^^^^^^^^^^^
+83 |     from loguru import logger
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/asr.py:17:8
+   |
+15 | """
+16 |
+17 | import modal
+   |        ^^^^^
+18 |
+19 | from ai_workers.common.images import transformers_asr_image
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/asr.py:65:16
+   |
+63 |     def load_models(self) -> None:
+64 |         """Load both ASR models at container startup (snapshotted by GPU Memory Snapshot)."""
+65 |         import torch
+   |                ^^^^^
+66 |         from loguru import logger
+67 |         from qwen_asr import Qwen3ASRModel
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `qwen_asr`
+  --> src/ai_workers/workers/asr.py:67:14
+   |
+65 |         import torch
+66 |         from loguru import logger
+67 |         from qwen_asr import Qwen3ASRModel
+   |              ^^^^^^^^
+68 |
+69 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `soundfile`
+  --> src/ai_workers/workers/asr.py:91:16
+   |
+89 |         import io
+90 |
+91 |         import soundfile as sf
+   |                ^^^^^^^^^^^^^^^
+92 |
+93 |         audio_array, sample_rate = sf.read(io.BytesIO(file_bytes), dtype="float32")
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `transcribe`
+   --> src/ai_workers/workers/asr.py:103:18
+    |
+101 |         """
+102 |         model = self.models[model_name]
+103 |         result = model.transcribe(audio=audio_data, language=language)
+    |                  ^^^^^^^^^^^^^^^^
+104 |         if isinstance(result, str):
+105 |             return result.strip()
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/embedding.py:17:8
+   |
+15 | """
+16 |
+17 | import modal
+   |        ^^^^^
+18 |
+19 | from ai_workers.common.config import get_model
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/embedding.py:65:16
+   |
+63 |     def load_models(self) -> None:
+64 |         """Load both embedding models at container startup (snapshotted by GPU Memory Snapshot)."""
+65 |         import torch
+   |                ^^^^^
+66 |         from loguru import logger
+67 |         from transformers import AutoModel, AutoTokenizer
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+  --> src/ai_workers/workers/embedding.py:67:14
+   |
+65 |         import torch
+66 |         from loguru import logger
+67 |         from transformers import AutoModel, AutoTokenizer
+   |              ^^^^^^^^^^^^
+68 |
+69 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/embedding.py:97:16
+   |
+95 |     def _last_token_pool(last_hidden_states, attention_mask):
+96 |         """Official Qwen3-Embedding pooling: extract last non-padding token hidden state."""
+97 |         import torch
+   |                ^^^^^
+98 |
+99 |         left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/embedding.py:110:16
+    |
+108 |     def _embed(self, model_name: str, texts: list[str]) -> tuple[list[list[float]], int]:
+109 |         """Embed texts using the specified model with last token (EOS) pooling."""
+110 |         import torch
+    |                ^^^^^
+111 |
+112 |         model = self.models[model_name]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/embedding.py:115:18
+    |
+113 |           tokenizer = self.tokenizers[model_name]
+114 |
+115 |           inputs = tokenizer(
+    |  __________________^
+116 | |             texts,
+117 | |             return_tensors="pt",
+118 | |             padding=True,
+119 | |             truncation=True,
+120 | |             max_length=8192,
+121 | |         ).to(model.device)
+    | |_________^
+122 |
+123 |           with torch.no_grad():
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/embedding.py:121:14
+    |
+119 |             truncation=True,
+120 |             max_length=8192,
+121 |         ).to(model.device)
+    |              ^^^^^^^^^^^^
+122 |
+123 |         with torch.no_grad():
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/embedding.py:124:23
+    |
+123 |         with torch.no_grad():
+124 |             outputs = model(**inputs)
+    |                       ^^^^^^^^^^^^^^^
+125 |             # Official Qwen3-Embedding: last token (EOS) pooling
+126 |             embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/gguf_converter.py:23:8
+   |
+21 | from dataclasses import dataclass
+22 |
+23 | import modal
+   |        ^^^^^
+24 |
+25 | from ai_workers.common.images import gguf_converter_image
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `huggingface_hub`
+   --> src/ai_workers/workers/gguf_converter.py:199:10
+    |
+197 |     from pathlib import Path
+198 |
+199 |     from huggingface_hub import HfApi, list_repo_tree
+    |          ^^^^^^^^^^^^^^^
+200 |     from loguru import logger
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `huggingface_hub`
+   --> src/ai_workers/workers/gguf_converter.py:251:14
+    |
+250 |         # Download all required files
+251 |         from huggingface_hub import snapshot_download
+    |              ^^^^^^^^^^^^^^^
+252 |
+253 |         snapshot_download(
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `huggingface_hub`
+   --> src/ai_workers/workers/gguf_converter.py:365:14
+    |
+364 |         # Upload tokenizer + config from source for model loading
+365 |         from huggingface_hub import hf_hub_download as _hf_download
+    |              ^^^^^^^^^^^^^^^
+366 |
+367 |         for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/ocr.py:20:8
+   |
+18 | """
+19 |
+20 | import modal
+   |        ^^^^^
+21 |
+22 | from ai_workers.common.config import get_model
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/ocr.py:58:16
+   |
+56 |     @modal.enter(snap=True)
+57 |     def load_model(self) -> None:
+58 |         import torch
+   |                ^^^^^
+59 |         from loguru import logger
+60 |         from transformers import AutoModel, AutoProcessor
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+  --> src/ai_workers/workers/ocr.py:60:14
+   |
+58 |         import torch
+59 |         from loguru import logger
+60 |         from transformers import AutoModel, AutoProcessor
+   |              ^^^^^^^^^^^^
+61 |
+62 |         registry_cfg = get_model(MODEL_NAME)
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/ocr.py:104:16
+    |
+102 |         DeepSeek-OCR-2 uses model-specific infer() method for OCR tasks.
+103 |         """
+104 |         import torch
+    |                ^^^^^
+105 |
+106 |         # Build inputs using the processor
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/onnx_converter.py:32:8
+   |
+30 | from dataclasses import dataclass
+31 |
+32 | import modal
+   |        ^^^^^
+33 |
+34 | from ai_workers.common.images import onnx_converter_image
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `onnx`
+   --> src/ai_workers/workers/onnx_converter.py:218:12
+    |
+216 |     from pathlib import Path
+217 |
+218 |     import onnx
+    |            ^^^^
+219 |     import torch
+220 |     from huggingface_hub import HfApi, repo_exists
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/onnx_converter.py:219:12
+    |
+218 |     import onnx
+219 |     import torch
+    |            ^^^^^
+220 |     from huggingface_hub import HfApi, repo_exists
+221 |     from loguru import logger
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `huggingface_hub`
+   --> src/ai_workers/workers/onnx_converter.py:220:10
+    |
+218 |     import onnx
+219 |     import torch
+220 |     from huggingface_hub import HfApi, repo_exists
+    |          ^^^^^^^^^^^^^^^
+221 |     from loguru import logger
+222 |     from onnxruntime.quantization import QuantType, quantize_dynamic
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `onnxruntime.quantization`
+   --> src/ai_workers/workers/onnx_converter.py:222:10
+    |
+220 |     from huggingface_hub import HfApi, repo_exists
+221 |     from loguru import logger
+222 |     from onnxruntime.quantization import QuantType, quantize_dynamic
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^
+223 |     from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+224 |     from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `onnxruntime.quantization.matmul_nbits_quantizer`
+   --> src/ai_workers/workers/onnx_converter.py:223:10
+    |
+221 |     from loguru import logger
+222 |     from onnxruntime.quantization import QuantType, quantize_dynamic
+223 |     from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+224 |     from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+   --> src/ai_workers/workers/onnx_converter.py:224:10
+    |
+222 |     from onnxruntime.quantization import QuantType, quantize_dynamic
+223 |     from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+224 |     from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer
+    |          ^^^^^^^^^^^^
+225 |
+226 |     hf_token = os.environ.get("HF_TOKEN")
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `type` has no attribute `from_pretrained`
+   --> src/ai_workers/workers/onnx_converter.py:272:17
+    |
+270 |             raise ValueError(msg)
+271 |
+272 |         model = cls.from_pretrained(
+    |                 ^^^^^^^^^^^^^^^^^^^
+273 |             hf_source,
+274 |             trust_remote_code=trust_remote_code,
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `onnxconverter_common`
+   --> src/ai_workers/workers/onnx_converter.py:429:14
+    |
+428 |         # Step 2b: Cast remaining FP32 tensors to FP16
+429 |         from onnxconverter_common import float16
+    |              ^^^^^^^^^^^^^^^^^^^^
+430 |
+431 |         q4f16_model = float16.convert_float_to_float16(
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/reranker.py:19:8
+   |
+17 | """
+18 |
+19 | import modal
+   |        ^^^^^
+20 |
+21 | from ai_workers.common.config import get_model
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/reranker.py:72:16
+   |
+70 |     def load_models(self) -> None:
+71 |         """Load reranker model at container startup (snapshotted by GPU Memory Snapshot)."""
+72 |         import torch
+   |                ^^^^^
+73 |         from loguru import logger
+74 |         from transformers import AutoModelForCausalLM, AutoTokenizer
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+  --> src/ai_workers/workers/reranker.py:74:14
+   |
+72 |         import torch
+73 |         from loguru import logger
+74 |         from transformers import AutoModelForCausalLM, AutoTokenizer
+   |              ^^^^^^^^^^^^
+75 |
+76 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/reranker.py:121:16
+    |
+119 |         Scoring: log_softmax([no, yes]) then take yes probability.
+120 |         """
+121 |         import torch
+    |                ^^^^^
+122 |         from torch.nn import functional as fn
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch.nn`
+   --> src/ai_workers/workers/reranker.py:122:14
+    |
+120 |         """
+121 |         import torch
+122 |         from torch.nn import functional as fn
+    |              ^^^^^^^^
+123 |
+124 |         model = self.models[model_name]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `apply_chat_template`
+   --> src/ai_workers/workers/reranker.py:139:16
+    |
+137 |         ]
+138 |
+139 |         text = tokenizer.apply_chat_template(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+140 |             messages,
+141 |             tokenize=False,
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/reranker.py:146:18
+    |
+144 |         )
+145 |
+146 |         inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+147 |
+148 |         with torch.no_grad():
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/reranker.py:146:58
+    |
+144 |         )
+145 |
+146 |         inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    |                                                          ^^^^^^^^^^^^
+147 |
+148 |         with torch.no_grad():
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `model`
+   --> src/ai_workers/workers/reranker.py:150:23
+    |
+148 |         with torch.no_grad():
+149 |             # Backbone-only forward pass — skip lm_head matmul
+150 |             outputs = model.model(**inputs)
+    |                       ^^^^^^^^^^^
+151 |             hidden = outputs.last_hidden_state[:, -1, :]  # (1, hidden_dim)
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/reranker.py:171:16
+    |
+169 |         Uses right padding and extracts the last token hidden state via attention_mask sum.
+170 |         """
+171 |         import torch
+    |                ^^^^^
+172 |         from torch.nn import functional as fn
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch.nn`
+   --> src/ai_workers/workers/reranker.py:172:14
+    |
+170 |         """
+171 |         import torch
+172 |         from torch.nn import functional as fn
+    |              ^^^^^^^^
+173 |
+174 |         model = self.models[model_name]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Unresolved attribute `padding_side` on type `object`
+   --> src/ai_workers/workers/reranker.py:181:9
+    |
+180 |         # Ensure right padding for correct last-token extraction
+181 |         tokenizer.padding_side = "right"
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+182 |         if tokenizer.pad_token is None:
+183 |             tokenizer.pad_token = tokenizer.eos_token
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `pad_token`
+   --> src/ai_workers/workers/reranker.py:182:12
+    |
+180 |         # Ensure right padding for correct last-token extraction
+181 |         tokenizer.padding_side = "right"
+182 |         if tokenizer.pad_token is None:
+    |            ^^^^^^^^^^^^^^^^^^^
+183 |             tokenizer.pad_token = tokenizer.eos_token
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Unresolved attribute `pad_token` on type `object`
+   --> src/ai_workers/workers/reranker.py:183:13
+    |
+181 |         tokenizer.padding_side = "right"
+182 |         if tokenizer.pad_token is None:
+183 |             tokenizer.pad_token = tokenizer.eos_token
+    |             ^^^^^^^^^^^^^^^^^^^
+184 |
+185 |         all_scores = []
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `eos_token`
+   --> src/ai_workers/workers/reranker.py:183:35
+    |
+181 |         tokenizer.padding_side = "right"
+182 |         if tokenizer.pad_token is None:
+183 |             tokenizer.pad_token = tokenizer.eos_token
+    |                                   ^^^^^^^^^^^^^^^^^^^
+184 |
+185 |         all_scores = []
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `apply_chat_template`
+   --> src/ai_workers/workers/reranker.py:202:17
+    |
+201 |             texts = [
+202 |                 tokenizer.apply_chat_template(
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+203 |                     m,
+204 |                     tokenize=False,
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/reranker.py:211:22
+    |
+209 |             ]
+210 |
+211 |             inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+212 |                 model.device
+213 |             )
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/reranker.py:212:17
+    |
+211 |             inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(
+212 |                 model.device
+    |                 ^^^^^^^^^^^^
+213 |             )
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `model`
+   --> src/ai_workers/workers/reranker.py:216:27
+    |
+215 |             with torch.no_grad():
+216 |                 outputs = model.model(**inputs)
+    |                           ^^^^^^^^^^^
+217 |
+218 |                 # Find the last non-padding token indices
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/reranker.py:224:58
+    |
+222 |                 # Extract hidden states for the last tokens: (batch_size, hidden_dim)
+223 |                 hidden = outputs.last_hidden_state[
+224 |                     torch.arange(curr_batch_size, device=model.device), last_token_indices, :
+    |                                                          ^^^^^^^^^^^^
+225 |                 ]
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/tts.py:21:8
+   |
+19 | """
+20 |
+21 | import modal
+   |        ^^^^^
+22 |
+23 | from ai_workers.common.images import transformers_tts_image
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/tts.py:82:16
+   |
+80 |     def load_models(self) -> None:
+81 |         """Load both TTS models at container startup (snapshotted by GPU Memory Snapshot)."""
+82 |         import torch
+   |                ^^^^^
+83 |         from loguru import logger
+84 |         from qwen_tts import Qwen3TTSModel
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `qwen_tts`
+  --> src/ai_workers/workers/tts.py:84:14
+   |
+82 |         import torch
+83 |         from loguru import logger
+84 |         from qwen_tts import Qwen3TTSModel
+   |              ^^^^^^^^
+85 |
+86 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `generate_custom_voice`
+   --> src/ai_workers/workers/tts.py:124:20
+    |
+122 |             kwargs["instruct"] = instruct
+123 |
+124 |         wavs, sr = model.generate_custom_voice(**kwargs)
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+125 |         # wavs is a list of arrays (one per input text)
+126 |         return wavs[0] if isinstance(wavs, list) else wavs, sr
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `numpy`
+   --> src/ai_workers/workers/tts.py:194:20
+    |
+192 |             import io
+193 |
+194 |             import numpy as np
+    |                    ^^^^^^^^^^^
+195 |             import soundfile as sf
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `soundfile`
+   --> src/ai_workers/workers/tts.py:195:20
+    |
+194 |             import numpy as np
+195 |             import soundfile as sf
+    |                    ^^^^^^^^^^^^^^^
+196 |
+197 |             wavs, sr = self._synthesize(
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+ --> src/ai_workers/workers/vl_embedding.py:5:8
+  |
+3 | from __future__ import annotations
+4 |
+5 | import modal
+  |        ^^^^^
+6 | from pydantic import BaseModel, field_validator
+  |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/vl_embedding.py:75:16
+   |
+73 |     def load_models(self) -> None:
+74 |         """Load both VL embedding models at container startup (snapshotted by GPU Memory Snapshot)."""
+75 |         import torch
+   |                ^^^^^
+76 |         from loguru import logger
+77 |         from transformers import AutoModel, AutoProcessor
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+  --> src/ai_workers/workers/vl_embedding.py:77:14
+   |
+75 |         import torch
+76 |         from loguru import logger
+77 |         from transformers import AutoModel, AutoProcessor
+   |              ^^^^^^^^^^^^
+78 |
+79 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/vl_embedding.py:107:16
+    |
+105 |     def _last_token_pool(last_hidden_states, attention_mask):
+106 |         """Official Qwen3-VL-Embedding pooling: extract EOS token hidden state."""
+107 |         import torch
+    |                ^^^^^
+108 |
+109 |         left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/vl_embedding.py:120:16
+    |
+118 |     def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
+119 |         """Embed text-only inputs using EOS token pooling."""
+120 |         import torch
+    |                ^^^^^
+121 |
+122 |         model = self.models[model_name]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `apply_chat_template`
+   --> src/ai_workers/workers/vl_embedding.py:137:20
+    |
+135 |         all_embeddings = []
+136 |         for messages in messages_batch:
+137 |             text = processor.apply_chat_template(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+138 |                 messages, tokenize=False, add_generation_prompt=True
+139 |             )
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_embedding.py:140:22
+    |
+138 |                 messages, tokenize=False, add_generation_prompt=True
+139 |             )
+140 |             inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 |
+142 |             with torch.no_grad():
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/vl_embedding.py:140:81
+    |
+138 |                 messages, tokenize=False, add_generation_prompt=True
+139 |             )
+140 |             inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+    |                                                                                 ^^^^^^^^^^^^
+141 |
+142 |             with torch.no_grad():
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_embedding.py:143:27
+    |
+142 |             with torch.no_grad():
+143 |                 outputs = model(**inputs)
+    |                           ^^^^^^^^^^^^^^^
+144 |                 # Official Qwen3-VL-Embedding: EOS token pooling
+145 |                 embedding = self._last_token_pool(
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/vl_embedding.py:157:16
+    |
+155 |     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
+156 |         """Embed a single image+text pair with EOS token pooling."""
+157 |         import torch
+    |                ^^^^^
+158 |         from qwen_vl_utils import process_vision_info
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `qwen_vl_utils`
+   --> src/ai_workers/workers/vl_embedding.py:158:14
+    |
+156 |         """Embed a single image+text pair with EOS token pooling."""
+157 |         import torch
+158 |         from qwen_vl_utils import process_vision_info
+    |              ^^^^^^^^^^^^^
+159 |
+160 |         from ai_workers.common.utils import is_safe_url
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `apply_chat_template`
+   --> src/ai_workers/workers/vl_embedding.py:182:22
+    |
+180 |         ]
+181 |
+182 |         text_input = processor.apply_chat_template(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+183 |             messages, tokenize=False, add_generation_prompt=True
+184 |         )
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_embedding.py:187:18
+    |
+185 |           image_inputs, video_inputs = process_vision_info(messages)
+186 |
+187 |           inputs = processor(
+    |  __________________^
+188 | |             text=[text_input],
+189 | |             images=image_inputs,
+190 | |             videos=video_inputs,
+191 | |             padding=True,
+192 | |             return_tensors="pt",
+193 | |         ).to(model.device)
+    | |_________^
+194 |
+195 |           with torch.no_grad():
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/vl_embedding.py:193:14
+    |
+191 |             padding=True,
+192 |             return_tensors="pt",
+193 |         ).to(model.device)
+    |              ^^^^^^^^^^^^
+194 |
+195 |         with torch.no_grad():
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_embedding.py:196:23
+    |
+195 |         with torch.no_grad():
+196 |             outputs = model(**inputs)
+    |                       ^^^^^^^^^^^^^^^
+197 |             # Official Qwen3-VL-Embedding: EOS token pooling
+198 |             embedding = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[invalid-argument-type]: Argument to bound method `_embed_text` is incorrect
+   --> src/ai_workers/workers/vl_embedding.py:262:59
+    |
+260 |             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
+261 |                 # List of text inputs
+262 |                 embeddings = self._embed_text(body.model, body.input)
+    |                                                           ^^^^^^^^^^ Expected `list[str]`, found `(list[str] & ~AlwaysFalsy) | (list[VLEmbeddingInput] & ~AlwaysFalsy)`
+263 |             elif isinstance(body.input, VLEmbeddingInput):
+264 |                 # Single multimodal input
+    |
+info: Element `list[VLEmbeddingInput] & ~AlwaysFalsy` of this union is not assignable to `list[str]`
+info: Method defined here
+   --> src/ai_workers/workers/vl_embedding.py:118:9
+    |
+116 |         ]
+117 |
+118 |     def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
+    |         ^^^^^^^^^^^                        ---------------- Parameter declared here
+119 |         """Embed text-only inputs using EOS token pooling."""
+120 |         import torch
+    |
+info: rule `invalid-argument-type` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `modal`
+  --> src/ai_workers/workers/vl_reranker.py:19:8
+   |
+17 | from typing import Any
+18 |
+19 | import modal
+   |        ^^^^^
+20 |
+21 | from ai_workers.common.config import get_model
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+  --> src/ai_workers/workers/vl_reranker.py:73:16
+   |
+71 |     def load_models(self) -> None:
+72 |         """Load VL reranker model at container startup (snapshotted by GPU Memory Snapshot)."""
+73 |         import torch
+   |                ^^^^^
+74 |         from loguru import logger
+75 |         from transformers import AutoModelForImageTextToText, AutoProcessor
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `transformers`
+  --> src/ai_workers/workers/vl_reranker.py:75:14
+   |
+73 |         import torch
+74 |         from loguru import logger
+75 |         from transformers import AutoModelForImageTextToText, AutoProcessor
+   |              ^^^^^^^^^^^^
+76 |
+77 |         self.models: dict[str, object] = {}
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch`
+   --> src/ai_workers/workers/vl_reranker.py:127:16
+    |
+125 |         Supports text-only and multimodal (image+text) query/document pairs.
+126 |         """
+127 |         import torch
+    |                ^^^^^
+128 |         from torch.nn import functional as fn
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-import]: Cannot resolve imported module `torch.nn`
+   --> src/ai_workers/workers/vl_reranker.py:128:14
+    |
+126 |         """
+127 |         import torch
+128 |         from torch.nn import functional as fn
+    |              ^^^^^^^^
+129 |
+130 |         model = self.models[model_name]
+    |
+info: Searched in the following paths during module resolution:
+info:   1. /app/src (first-party code)
+info:   2. /app (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /app/.venv/lib/python3.14/site-packages (site-packages)
+info:   5. /app/.venv/lib64/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `apply_chat_template`
+   --> src/ai_workers/workers/vl_reranker.py:160:16
+    |
+158 |         ]
+159 |
+160 |         text = processor.apply_chat_template(
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+161 |             messages,
+162 |             tokenize=False,
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_reranker.py:167:22
+    |
+166 |         if images:
+167 |             inputs = processor(text=text, images=images, return_tensors="pt", padding=True).to(
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+168 |                 model.device
+169 |             )
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/vl_reranker.py:168:17
+    |
+166 |         if images:
+167 |             inputs = processor(text=text, images=images, return_tensors="pt", padding=True).to(
+168 |                 model.device
+    |                 ^^^^^^^^^^^^
+169 |             )
+170 |         else:
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[call-non-callable]: Object of type `object` is not callable
+   --> src/ai_workers/workers/vl_reranker.py:171:22
+    |
+169 |             )
+170 |         else:
+171 |             inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+172 |
+173 |         with torch.no_grad():
+    |
+info: rule `call-non-callable` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `device`
+   --> src/ai_workers/workers/vl_reranker.py:171:81
+    |
+169 |             )
+170 |         else:
+171 |             inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+    |                                                                                 ^^^^^^^^^^^^
+172 |
+173 |         with torch.no_grad():
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+warning[unresolved-attribute]: Object of type `object` has no attribute `model`
+   --> src/ai_workers/workers/vl_reranker.py:175:23
+    |
+173 |         with torch.no_grad():
+174 |             # Backbone-only forward pass — skip lm_head matmul
+175 |             outputs = model.model(**inputs)
+    |                       ^^^^^^^^^^^
+176 |             hidden = outputs.last_hidden_state[:, -1, :]  # (1, hidden_dim)
+    |
+info: rule `unresolved-attribute` was selected in the configuration file
+
+Found 91 diagnostics

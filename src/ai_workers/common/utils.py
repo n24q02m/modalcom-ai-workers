@@ -11,6 +11,7 @@ import io
 import ipaddress
 import socket
 import threading
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -31,7 +32,7 @@ _thread_local = threading.local()
 _original_create_connection = urllib3.util.connection.create_connection
 
 
-def _patched_create_connection(address, *args, **kwargs):
+def _patched_create_connection(address: tuple[str, int], *args: Any, **kwargs: Any) -> Any:
     """Substituting hostname with pinned IP if available in current thread."""
     host, port = address
     pinned_ips = getattr(_thread_local, "pinned_ips", {})
@@ -41,7 +42,7 @@ def _patched_create_connection(address, *args, **kwargs):
 
 
 # Apply monkeypatch globally
-urllib3.util.connection.create_connection = _patched_create_connection
+urllib3.util.connection.create_connection = _patched_create_connection  # type: ignore
 
 
 @contextlib.contextmanager
