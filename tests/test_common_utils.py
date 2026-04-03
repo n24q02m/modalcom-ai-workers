@@ -91,6 +91,11 @@ class TestIsSafeUrl:
         with patch("socket.getaddrinfo", return_value=[]):
             assert is_safe_url("http://example.com/image.png") is False
 
+    def test_rejects_invalid_ip_format(self):
+        invalid_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
+        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
+            assert is_safe_url("http://example.com/image.png") is False
+
     def test_mixed_addresses_one_private(self):
         """If any resolved address is private, reject the URL."""
         mixed = _PUBLIC_ADDRINFO + _PRIVATE_ADDRINFO
