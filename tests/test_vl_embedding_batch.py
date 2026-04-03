@@ -1,38 +1,44 @@
-import sys
+# ruff: noqa: E402
 import os
+import sys
 from unittest.mock import MagicMock
 
 # Add src to path
-sys.path.append(os.path.join(os.getcwd(), 'src'))
+sys.path.append(os.path.join(os.getcwd(), "src"))
 
 # Mock torch
 mock_torch = MagicMock()
-sys.modules['torch'] = mock_torch
-sys.modules['torch.nn'] = MagicMock()
-sys.modules['torch.nn.functional'] = mock_torch.nn.functional
+sys.modules["torch"] = mock_torch
+sys.modules["torch.nn"] = MagicMock()
+sys.modules["torch.nn.functional"] = mock_torch.nn.functional
 
 # Mock modal before importing VLEmbeddingServer
 mock_modal = MagicMock()
-sys.modules['modal'] = mock_modal
-sys.modules['ai_workers.common.images'] = MagicMock()
-sys.modules['ai_workers.common.volumes'] = MagicMock()
-sys.modules['ai_workers.common.config'] = MagicMock()
+sys.modules["modal"] = mock_modal
+sys.modules["ai_workers.common.images"] = MagicMock()
+sys.modules["ai_workers.common.volumes"] = MagicMock()
+sys.modules["ai_workers.common.config"] = MagicMock()
+
 
 # Mock the class decorator to return the class itself
 def mock_decorator(*args, **kwargs):
     def wrapper(cls):
         return cls
+
     return wrapper
+
 
 mock_modal.App.return_value.cls = mock_decorator
 mock_modal.concurrent = mock_decorator
 
 # Import vl_embedding first to set constants
 import ai_workers.workers.vl_embedding
+
 ai_workers.workers.vl_embedding.EMBEDDING_DIM = 1024
 ai_workers.workers.vl_embedding.DEFAULT_INSTRUCTION = "Represent the user's input."
 
 from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
 
 def test_embed_text_is_batched():
     # Setup server with mocks
@@ -74,7 +80,7 @@ def test_embed_text_is_batched():
     mock_batched_embeddings = MagicMock()
     # Mock the slicing
     mock_batched_embeddings.__getitem__.return_value = mock_batched_embeddings
-    mock_batched_embeddings.cpu.return_value.tolist.return_value = [[0.1]*1024] * batch_size
+    mock_batched_embeddings.cpu.return_value.tolist.return_value = [[0.1] * 1024] * batch_size
 
     server._last_token_pool = MagicMock(return_value=mock_batched_embeddings)
     mock_torch.nn.functional.normalize.return_value = mock_batched_embeddings
@@ -93,8 +99,9 @@ def test_embed_text_is_batched():
     mock_model.assert_called_once()
 
     # Verify arguments to processor
-    args, kwargs = mock_processor.call_args
+    _, kwargs = mock_processor.call_args
     assert kwargs["text"] == ["formatted1", "formatted2", "formatted3"]
+
 
 if __name__ == "__main__":
     test_embed_text_is_batched()
