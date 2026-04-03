@@ -123,6 +123,10 @@ class TestIsSafeUrl:
         with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             assert is_safe_url("http://example.com/image.png") is False
 
+    def test_rejects_parse_failure(self):
+        with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
+            assert is_safe_url("http://example.com") is False
+
 
 # load_image_from_url
 # ---------------------------------------------------------------------------
