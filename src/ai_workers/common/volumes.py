@@ -79,6 +79,8 @@ def download_models() -> str:
     Usage:
         modal run src/ai_workers/common/volumes.py
     """
+    import os
+
     from huggingface_hub import snapshot_download
     from loguru import logger
 
@@ -88,16 +90,17 @@ def download_models() -> str:
     for hf_id in targets:
         logger.info("Downloading {} ...", hf_id)
         try:
-            path = snapshot_download(
-                hf_id,
+            snapshot_download(
+                repo_id=hf_id,
                 cache_dir=HF_CACHE_DIR,
+                token=os.environ.get("HF_TOKEN"),
                 ignore_patterns=["*.gguf", "*.ot", "*.msgpack"],
             )
-            logger.info("Downloaded {} to {}", hf_id, path)
+            logger.info("Successfully cached {}.", hf_id)
             results.append(f"OK: {hf_id}")
         except Exception as e:
             logger.error("Failed to download {}: {}", hf_id, e)
-            results.append(f"FAIL: {hf_id} ({e})")
+            raise
 
     hf_cache_vol.commit()
     summary = "\n".join(results)

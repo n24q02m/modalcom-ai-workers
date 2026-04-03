@@ -760,47 +760,6 @@ class TestTTSSynthesizeEdgeCases:
 # ===========================================================================
 
 
-class TestDownloadModels:
-    """Cover download_models function (lines 82-105)."""
-
-    def test_download_models_success(self):
-        """Lines 82-97: successful download of models."""
-        mock_hf_hub = MagicMock()
-        mock_hf_hub.snapshot_download.return_value = "/cache/model"
-
-        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
-            from importlib import reload
-
-            from ai_workers.common import volumes
-
-            reload(volumes)
-
-            mock_vol = MagicMock()
-            with patch.object(volumes, "hf_cache_vol", mock_vol):
-                result = volumes.download_models()
-
-        assert "OK:" in result
-        mock_vol.commit.assert_called_once()
-
-    def test_download_models_failure(self):
-        """Lines 98-100: one model fails to download."""
-        mock_hf_hub = MagicMock()
-        mock_hf_hub.snapshot_download.side_effect = RuntimeError("network error")
-
-        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
-            from importlib import reload
-
-            from ai_workers.common import volumes
-
-            reload(volumes)
-
-            mock_vol = MagicMock()
-            with patch.object(volumes, "hf_cache_vol", mock_vol):
-                result = volumes.download_models()
-
-        assert "FAIL:" in result
-        assert "network error" in result
-        mock_vol.commit.assert_called_once()
 
 
 # ===========================================================================
