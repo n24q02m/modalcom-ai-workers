@@ -260,3 +260,63 @@ def test_embeddings_vlinput_image_fetch_failure(server):
         )
 
     assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Batched inference verification
+# ---------------------------------------------------------------------------
+
+
+def test_embed_text_is_batched(server):
+    mock_model = MagicMock()
+    mock_processor = MagicMock()
+
+    server.models = {"qwen3-vl-embedding-2b": mock_model}
+    server.processors = {"qwen3-vl-embedding-2b": mock_processor}
+
+    mock_model.device = "cpu"
+    # Mock apply_chat_template to return a list of formatted strings
+    mock_processor.apply_chat_template.return_value = ["formatted1", "formatted2"]
+
+    # Mock processor return value to support .to(device) and behaving like a dict
+    mock_inputs = {"attention_mask": MagicMock()}
+    mock_processor.return_value.to.return_value = mock_inputs
+
+    # Mock model output
+    mock_outputs = MagicMock()
+    mock_model.return_value = mock_outputs
+
+    # Mock _last_token_pool and torch.nn.functional.normalize
+    # Use patch context managers since these are called inside _embed_text
+    with (
+        patch.object(server, "_last_token_pool") as mock_pool,
+        patch("torch.nn.functional.normalize") as mock_norm,
+    ):
+        mock_batched_embeddings = MagicMock()
+        mock_pool.return_value = mock_batched_embeddings
+        mock_norm.return_value = mock_batched_embeddings
+
+        # Mock the slicing and conversion to list
+        # embeddings[:, :EMBEDDING_DIM].cpu().tolist()
+        mock_batched_embeddings.__getitem__.return_value = mock_batched_embeddings
+        mock_batched_embeddings.cpu.return_value.tolist.return_value = [
+            [0.1] * 1024,
+            [0.1] * 1024,
+        ]
+
+        embeddings = server._embed_text("qwen3-vl-embedding-2b", ["text1", "text2"])
+
+        # Assertions
+        assert len(embeddings) == 2
+        assert len(embeddings[0]) == 1024
+
+        # Verify batched calls
+        mock_model.assert_called_once()
+        mock_processor.apply_chat_template.assert_called_once()
+        # Verify it was called with the whole list
+        called_args = mock_processor.apply_chat_template.call_args[0][0]
+        assert len(called_args) == 2
+
+        # Verify processor was called with the strings from apply_chat_template
+        mock_processor.assert_called_once()
+        assert mock_processor.call_args[1]["text"] == ["formatted1", "formatted2"]
