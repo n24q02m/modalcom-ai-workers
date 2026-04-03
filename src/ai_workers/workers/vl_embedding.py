@@ -123,26 +123,21 @@ class VLEmbeddingServer:
             for t in texts
         ]
 
-        # Process each message separately (VL processor handles one at a time)
-        all_embeddings = []
-        for messages in messages_batch:
-            text = processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+        # Process all messages in a single batch for better GPU utilization
+        texts_input = processor.apply_chat_template(
+            messages_batch, tokenize=False, add_generation_prompt=True
+        )
+        inputs = processor(text=texts_input, return_tensors="pt", padding=True).to(model.device)
 
-            with torch.no_grad():
-                outputs = model(**inputs)
-                # Official Qwen3-VL-Embedding: EOS token pooling
-                embedding = self._last_token_pool(
-                    outputs.last_hidden_state, inputs["attention_mask"]
-                )
-                # L2 normalize
-                embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            # Official Qwen3-VL-Embedding: EOS token pooling on the entire batch
+            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            # L2 normalize
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
-            all_embeddings.append(embedding[:, :EMBEDDING_DIM].cpu().tolist()[0])
-
-        return all_embeddings
+        # Slice to correct dimension and convert to list of lists
+        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
     def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
         """Embed a single image+text pair with EOS token pooling."""
