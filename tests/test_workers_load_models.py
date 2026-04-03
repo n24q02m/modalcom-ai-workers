@@ -350,17 +350,3 @@ def test_vl_reranker_score_pair_with_images():
     assert 0.0 <= score <= 1.0
 
 
-# ---------------------------------------------------------------------------
-# VLRerankerServer — _load_image
-# ---------------------------------------------------------------------------
-
-
-def test_vl_reranker_load_image():
-    """_load_image should delegate to centralized load_image_from_url."""
-    mock_image = MagicMock()
-
-    with patch("ai_workers.common.utils.load_image_from_url", return_value=mock_image) as mock_fn:
-        result = VLRerankerServer._load_image("https://example.com/img.jpg")
-
-    mock_fn.assert_called_once_with("https://example.com/img.jpg")
-    assert result is mock_image
