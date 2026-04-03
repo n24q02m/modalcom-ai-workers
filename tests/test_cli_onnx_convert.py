@@ -310,3 +310,19 @@ def test_onnx_convert_all_failure():
 
     assert result.exit_code == 1
     assert "1 model(s) failed: test" in result.output
+
+
+
+
+# ---------------------------------------------------------------------------
+# dry-run skips remote call
+# ---------------------------------------------------------------------------
+
+
+def test_onnx_convert_dry_run():
+    with patch("ai_workers.cli.onnx_convert.onnx_convert_model") as mock_model:
+        result = runner.invoke(app, ["--dry-run", "qwen3-embedding-0.6b-onnx"])
+        assert result.exit_code == 0
+        assert "dry run -- skipped" in result.output
+        mock_model.remote.assert_not_called()
+
