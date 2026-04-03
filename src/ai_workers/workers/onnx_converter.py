@@ -437,11 +437,19 @@ def onnx_convert_model(
         # Internal Cast(to=float32) nodes create type mismatches with float16 tensors.
         # Force all Cast(to=float32) -> Cast(to=float16) for type consistency.
         # TensorProto.FLOAT = 1, TensorProto.FLOAT16 = 10
-        for node in q4f16_model.graph.node:
-            if node.op_type == "Cast":
+        def _update_cast_ops(graph: onnx.GraphProto) -> None:
+            for node in graph.node:
+                if node.op_type == "Cast":
+                    for attr in node.attribute:
+                        if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
+                            attr.i = onnx.TensorProto.FLOAT16
+
+                # Recursively handle subgraphs (If, Loop, Scan)
                 for attr in node.attribute:
-                    if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
-                        attr.i = onnx.TensorProto.FLOAT16
+                    if attr.type == onnx.AttributeProto.GRAPH:
+                        _update_cast_ops(attr.g)
+
+        _update_cast_ops(q4f16_model.graph)
 
         # Clear stale type annotations — OnnxRuntime infers types from ops at load.
         q4f16_model.graph.ClearField("value_info")
