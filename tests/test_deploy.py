@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.exceptions import Exit as ClickExit
 
-from ai_workers.cli.deploy import _deploy_module, _deploy_single, _module_to_file_path
+from ai_workers.cli.deploy import _deploy_app, _deploy_module, _deploy_single, _module_to_file_path
 from ai_workers.common.config import MODEL_REGISTRY
 
 
@@ -198,3 +198,39 @@ class TestWorkerModuleFilesExist:
         file_path = Path("src") / module.replace(".", "/")
         file_path = file_path.with_suffix(".py")
         assert file_path.exists(), f"Worker file not found: {file_path}"
+
+
+class TestDeployInternalErrors:
+    """Test internal deploy functions error handling."""
+
+    @patch("ai_workers.cli.deploy.subprocess.run")
+    def test_deploy_app_modal_not_found(self, mock_run: MagicMock) -> None:
+        """_deploy_app should raise Exit if modal is missing."""
+        mock_run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+    @patch("ai_workers.cli.deploy.subprocess.run")
+    def test_deploy_app_failure(self, mock_run: MagicMock) -> None:
+        """_deploy_app should raise Exit on CalledProcessError."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
+        with pytest.raises(ClickExit):
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+    @patch("ai_workers.cli.deploy.subprocess.run")
+    def test_deploy_module_modal_not_found(self, mock_run: MagicMock) -> None:
+        """_deploy_module should raise Exit if modal is missing."""
+        mock_run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+    @patch("ai_workers.cli.deploy.subprocess.run")
+    def test_deploy_module_failure(self, mock_run: MagicMock) -> None:
+        """_deploy_module should raise Exit on CalledProcessError."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
