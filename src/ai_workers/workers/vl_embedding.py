@@ -1,36 +1,23 @@
-"""Vision-Language Embedding worker using Custom FastAPI (merged light + heavy).
+"""Vision-Language embedding worker using Qwen3-VL-Embedding models."""
 
-Serves both Qwen3-VL-Embedding-2B (light) and Qwen3-VL-Embedding-8B (heavy)
-from a single A10G container. Routes by ``model`` field in request.
-
-Both models loaded at startup (~20GB total on A10G 24GB VRAM).
-Uses official Qwen3-VL-Embedding approach: EOS token pooling + L2 normalize.
-System instruction: "Represent the user's input."
-
-Supports text-only and image+text multimodal inputs.
-
-Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
-for fast cold start (~5-10s instead of >10 minutes).
-"""
+from __future__ import annotations
 
 import modal
+from pydantic import BaseModel, field_validator
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+# Constants
+EMBEDDING_DIM = 1024  # Default for 2B, 8B uses same dim for alignment
+DEFAULT_INSTRUCTION = "Retrieval relevant image or text with user's query"
 
+# Application configuration
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
-EMBEDDING_DIM = 1024
 
-# Official system instruction for Qwen3-VL-Embedding
-DEFAULT_INSTRUCTION = "Represent the user's input."
-
-# Models served by this single app — loaded from HuggingFace Hub
+# Model served by this app — loaded from HuggingFace Hub
 MODEL_CONFIGS = {
     "qwen3-vl-embedding-2b": {"hf_id": "Qwen/Qwen3-VL-Embedding-2B"},
     "qwen3-vl-embedding-8b": {"hf_id": "Qwen/Qwen3-VL-Embedding-8B"},
@@ -40,6 +27,27 @@ vl_embedding_app = modal.App(
     "ai-workers-vl-embedding",
     secrets=[modal.Secret.from_name("worker-api-key")],
 )
+
+
+# Move Pydantic models to module level to avoid "class not fully defined" errors
+# during Pydantic 2.x TypeAdapter validation in Modal/FastAPI environments.
+class VLEmbeddingInput(BaseModel):
+    text: str
+    image_url: str | None = None
+
+
+class VLEmbeddingRequest(BaseModel):
+    model: str = "qwen3-vl-embedding-2b"
+    input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
+    encoding_format: str = "float"
+
+    @field_validator("input")
+    @classmethod
+    def validate_input_length(cls, v):
+        if isinstance(v, list) and len(v) > 64:
+            msg = f"Input list too long ({len(v)} items). Maximum allowed: 64."
+            raise ValueError(msg)
+        return v
 
 
 @vl_embedding_app.cls(
@@ -153,6 +161,7 @@ class VLEmbeddingServer:
 
         # Validate URL before passing to process_vision_info (SSRF protection)
         # Skip validation for base64 data URIs (no network call)
+        # is_safe_url now returns a string (IP) or None
         if not image_url.startswith("data:") and not is_safe_url(image_url):
             raise ValueError(f"URL blocked by SSRF protection: {image_url}")
 
@@ -195,31 +204,8 @@ class VLEmbeddingServer:
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel, field_validator
 
         app = FastAPI(title="Qwen3 VL Embedding (Light + Heavy)")
-
-        max_input_length = 64
-
-        class VLEmbeddingInput(BaseModel):
-            text: str
-            image_url: str | None = None
-
-        class VLEmbeddingRequest(BaseModel):
-            model: str = "qwen3-vl-embedding-2b"
-            input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
-            encoding_format: str = "float"
-
-            @field_validator("input")
-            @classmethod
-            def validate_input_length(cls, v):
-                if isinstance(v, list) and len(v) > max_input_length:
-                    msg = (
-                        f"Input list too long ({len(v)} items). "
-                        f"Maximum allowed: {max_input_length}."
-                    )
-                    raise ValueError(msg)
-                return v
 
         class EmbeddingData(BaseModel):
             object: str = "embedding"
@@ -230,9 +216,6 @@ class VLEmbeddingServer:
             object: str = "list"
             data: list[EmbeddingData]
             model: str
-
-        # Rebuild to resolve forward references (VLEmbeddingInput used in VLEmbeddingRequest)
-        VLEmbeddingRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):

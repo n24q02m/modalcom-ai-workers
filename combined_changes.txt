@@ -1,0 +1,1059 @@
+"""Shared utilities for AI workers.
+
+Provides SSRF-safe image loading for all vision workers (OCR, VL embedding, VL reranker).
+"""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import io
+import ipaddress
+import socket
+import threading
+from urllib.parse import urlparse
+
+import requests
+import urllib3.util.connection
+from loguru import logger
+
+# Global session for connection pooling to reduce latency
+_session = requests.Session()
+
+# Maximum image size: 20 MB
+MAX_IMAGE_SIZE = 20 * 1024 * 1024
+# Base64 encoding inflates size by ~4/3, so 20 MB decoded ~ 28 MB encoded
+MAX_BASE64_SIZE = 28 * 1024 * 1024
+
+# SSRF Protection: DNS Rebinding Mitigation
+# We pin the hostname to the validated IP during the request.
+_thread_local = threading.local()
+_original_create_connection = urllib3.util.connection.create_connection
+
+
+def _patched_create_connection(address, *args, **kwargs):
+    """Substituting hostname with pinned IP if available in current thread."""
+    host, port = address
+    pinned_ips = getattr(_thread_local, "pinned_ips", {})
+    if host in pinned_ips:
+        return _original_create_connection((pinned_ips[host], port), *args, **kwargs)
+    return _original_create_connection(address, *args, **kwargs)
+
+
+# Apply monkeypatch globally
+urllib3.util.connection.create_connection = _patched_create_connection
+
+
+@contextlib.contextmanager
+def _pin_hostname_to_ip(hostname: str, ip: str):
+    """Context manager to pin a hostname to a specific IP for the current thread."""
+    if not hasattr(_thread_local, "pinned_ips"):
+        _thread_local.pinned_ips = {}
+
+    previous_ip = _thread_local.pinned_ips.get(hostname)
+    _thread_local.pinned_ips[hostname] = ip
+    try:
+        yield
+    finally:
+        if previous_ip is None:
+            _thread_local.pinned_ips.pop(hostname, None)
+        else:
+            _thread_local.pinned_ips[hostname] = previous_ip
+
+
+def is_safe_url(url: str) -> str | None:
+    """Validate that a URL is safe to fetch (no SSRF).
+
+    Checks:
+    - Scheme must be http or https
+    - Hostname must resolve to a public IP (not private/loopback/link-local/multicast)
+    - Both IPv4 and IPv6 addresses are validated
+
+    Args:
+        url: The URL to validate.
+
+    Returns:
+        The first resolved safe IP (str) if the URL is safe, None otherwise.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        logger.warning("Failed to parse URL: {}", url)
+        return None
+
+    # Scheme check
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("Rejected URL with disallowed scheme: {}", parsed.scheme)
+        return None
+
+    hostname = parsed.hostname
+    if not hostname:
+        logger.warning("Rejected URL with no hostname: {}", url)
+        return None
+
+    # Resolve hostname to IP addresses (both IPv4 and IPv6)
+    try:
+        addrinfos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        logger.warning("DNS resolution failed for hostname: {}", hostname)
+        return None
+
+    if not addrinfos:
+        logger.warning("No addresses resolved for hostname: {}", hostname)
+        return None
+
+    safe_ips = []
+    for addrinfo in addrinfos:
+        ip_str = addrinfo[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            logger.warning("Invalid IP address from DNS: {}", ip_str)
+            return None
+
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            logger.warning(
+                "Rejected URL {} — hostname {} resolves to non-public IP: {}", url, hostname, ip
+            )
+            return None
+        safe_ips.append(ip_str)
+
+    # Return the first one to use for pinning
+    return safe_ips[0] if safe_ips else None
+
+
+def load_image_from_url(url: str):
+    """Load a PIL Image from a URL or base64 data URI with SSRF protection.
+
+    Supports:
+    - Base64 data URIs (data:image/...;base64,...) — no network call
+    - HTTP/HTTPS URLs — validated against SSRF before fetching
+
+    Args:
+        url: Image URL or base64 data URI.
+
+    Returns:
+        PIL.Image.Image in RGB mode.
+
+    Raises:
+        ValueError: If the URL is blocked by SSRF protection or has an unsupported scheme.
+        RuntimeError: If the image fetch or decode fails.
+    """
+    from PIL import Image
+
+    # Handle base64 data URIs (no network call needed)
+    if url.startswith("data:"):
+        _header, b64_data = url.split(",", 1)
+        if len(b64_data) > MAX_BASE64_SIZE:
+            raise ValueError(
+                f"Base64 image data exceeds size limit "
+                f"({len(b64_data)} bytes encoded > {MAX_BASE64_SIZE} bytes max)"
+            )
+        try:
+            image_bytes = base64.b64decode(b64_data)
+            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as e:
+            raise RuntimeError("Failed to decode base64 image data URI") from e
+
+    # SSRF check for HTTP URLs
+    safe_ip = is_safe_url(url)
+    if not safe_ip:
+        raise ValueError(f"URL blocked by SSRF protection: {url}")
+
+    hostname = urlparse(url).hostname
+    if not hostname:
+        raise ValueError(f"URL with no hostname: {url}")
+
+    # Fetch image with safety controls and size limit
+    # We pin the hostname to the validated IP to prevent DNS rebinding
+    try:
+        with _pin_hostname_to_ip(hostname, safe_ip):
+            response = _session.get(
+                url,
+                allow_redirects=False,
+                timeout=30,
+                stream=True,
+            )
+            response.raise_for_status()
+
+            # Read response in chunks with size limit to prevent memory exhaustion
+            chunks: list[bytes] = []
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                downloaded += len(chunk)
+                if downloaded > MAX_IMAGE_SIZE:
+                    response.close()
+                    raise ValueError(
+                        f"Image from URL exceeds size limit ({MAX_IMAGE_SIZE} bytes max): {url}"
+                    )
+                chunks.append(chunk)
+
+            return Image.open(io.BytesIO(b"".join(chunks))).convert("RGB")
+    except ValueError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to load image from URL: {url}") from e
+"""Vision-Language embedding worker using Qwen3-VL-Embedding models."""
+
+from __future__ import annotations
+
+import modal
+from pydantic import BaseModel, field_validator
+
+from ai_workers.common.config import get_model
+from ai_workers.common.images import transformers_image
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
+
+# Constants
+EMBEDDING_DIM = 1024  # Default for 2B, 8B uses same dim for alignment
+DEFAULT_INSTRUCTION = "Retrieval relevant image or text with user's query"
+
+# Application configuration
+SCALEDOWN_WINDOW = 300  # 5 minutes
+KEEP_WARM = 0  # Scale to zero when idle
+
+# Model served by this app — loaded from HuggingFace Hub
+MODEL_CONFIGS = {
+    "qwen3-vl-embedding-2b": {"hf_id": "Qwen/Qwen3-VL-Embedding-2B"},
+    "qwen3-vl-embedding-8b": {"hf_id": "Qwen/Qwen3-VL-Embedding-8B"},
+}
+
+vl_embedding_app = modal.App(
+    "ai-workers-vl-embedding",
+    secrets=[modal.Secret.from_name("worker-api-key")],
+)
+
+
+# Move Pydantic models to module level to avoid "class not fully defined" errors
+# during Pydantic 2.x TypeAdapter validation in Modal/FastAPI environments.
+class VLEmbeddingInput(BaseModel):
+    text: str
+    image_url: str | None = None
+
+
+class VLEmbeddingRequest(BaseModel):
+    model: str = "qwen3-vl-embedding-2b"
+    input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
+    encoding_format: str = "float"
+
+    @field_validator("input")
+    @classmethod
+    def validate_input_length(cls, v):
+        if isinstance(v, list) and len(v) > 64:
+            msg = f"Input list too long ({len(v)} items). Maximum allowed: 64."
+            raise ValueError(msg)
+        return v
+
+
+@vl_embedding_app.cls(
+    gpu="A10G",
+    image=transformers_image(),
+    volumes={HF_CACHE_DIR: hf_cache_vol},
+    scaledown_window=SCALEDOWN_WINDOW,
+    min_containers=KEEP_WARM,
+    timeout=1800,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
+)
+@modal.concurrent(max_inputs=100)
+class VLEmbeddingServer:
+    """Merged VL embedding server for Qwen3-VL-Embedding-2B + 8B.
+
+    Both models loaded at startup. Routes request to correct model
+    via the ``model`` field. Uses official Qwen3-VL-Embedding approach:
+    EOS token pooling + L2 normalization. Supports text-only and multimodal inputs.
+    """
+
+    @modal.enter(snap=True)
+    def load_models(self) -> None:
+        """Load both VL embedding models at container startup (snapshotted by GPU Memory Snapshot)."""
+        import torch
+        from loguru import logger
+        from transformers import AutoModel, AutoProcessor
+
+        self.models: dict[str, object] = {}
+        self.processors: dict[str, object] = {}
+
+        for name, cfg in MODEL_CONFIGS.items():
+            hf_id = cfg["hf_id"]
+            registry_cfg = get_model(name)
+            logger.info("Loading {} ...", hf_id)
+            processor = AutoProcessor.from_pretrained(
+                hf_id,
+                trust_remote_code=registry_cfg.trust_remote_code,
+                padding_side="left",
+                cache_dir=HF_CACHE_DIR,
+            )
+            model = AutoModel.from_pretrained(
+                hf_id,
+                torch_dtype=torch.float16,
+                trust_remote_code=registry_cfg.trust_remote_code,
+                device_map="auto",
+                cache_dir=HF_CACHE_DIR,
+            )
+            model.eval()
+            self.models[name] = model
+            self.processors[name] = processor
+            logger.info("Loaded {} successfully", name)
+
+    @staticmethod
+    def _last_token_pool(last_hidden_states, attention_mask):
+        """Official Qwen3-VL-Embedding pooling: extract EOS token hidden state."""
+        import torch
+
+        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+        if left_padding:
+            return last_hidden_states[:, -1]
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        return last_hidden_states[
+            torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
+        ]
+
+    def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
+        """Embed text-only inputs using EOS token pooling."""
+        import torch
+
+        model = self.models[model_name]
+        processor = self.processors[model_name]
+
+        # Wrap texts in chat format with system instruction
+        messages_batch = [
+            [
+                {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+                {"role": "user", "content": [{"type": "text", "text": t}]},
+            ]
+            for t in texts
+        ]
+
+        # Process each message separately (VL processor handles one at a time)
+        all_embeddings = []
+        for messages in messages_batch:
+            text = processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+                # Official Qwen3-VL-Embedding: EOS token pooling
+                embedding = self._last_token_pool(
+                    outputs.last_hidden_state, inputs["attention_mask"]
+                )
+                # L2 normalize
+                embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+
+            all_embeddings.append(embedding[:, :EMBEDDING_DIM].cpu().tolist()[0])
+
+        return all_embeddings
+
+    def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
+        """Embed a single image+text pair with EOS token pooling."""
+        import torch
+        from qwen_vl_utils import process_vision_info
+
+        from ai_workers.common.utils import is_safe_url
+
+        # Validate URL before passing to process_vision_info (SSRF protection)
+        # Skip validation for base64 data URIs (no network call)
+        # is_safe_url now returns a string (IP) or None
+        if not image_url.startswith("data:") and not is_safe_url(image_url):
+            raise ValueError(f"URL blocked by SSRF protection: {image_url}")
+
+        model = self.models[model_name]
+        processor = self.processors[model_name]
+
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image_url},
+                    {"type": "text", "text": text},
+                ],
+            },
+        ]
+
+        text_input = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(messages)
+
+        inputs = processor(
+            text=[text_input],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        ).to(model.device)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+            # Official Qwen3-VL-Embedding: EOS token pooling
+            embedding = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+
+        return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
+
+    @modal.asgi_app()
+    def serve(self):
+        from fastapi import Body, FastAPI, Request
+        from fastapi.responses import JSONResponse
+
+        app = FastAPI(title="Qwen3 VL Embedding (Light + Heavy)")
+
+        class EmbeddingData(BaseModel):
+            object: str = "embedding"
+            embedding: list[float]
+            index: int
+
+        class EmbeddingResponse(BaseModel):
+            object: str = "list"
+            data: list[EmbeddingData]
+            model: str
+
+        @app.middleware("http")
+        async def auth_middleware(request: Request, call_next):
+            if request.url.path in ("/health", "/"):
+                return await call_next(request)
+            from fastapi import HTTPException as _HTTPException
+
+            from ai_workers.common.auth import verify_api_key
+
+            try:
+                await verify_api_key(request)
+            except _HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail},
+                )
+            return await call_next(request)
+
+        @app.get("/health")
+        async def health():
+            return {
+                "status": "ok",
+                "models": list(MODEL_CONFIGS.keys()),
+            }
+
+        @app.post("/v1/embeddings", response_model=EmbeddingResponse)
+        async def create_embeddings(body: VLEmbeddingRequest = Body(...)):
+            if body.model not in MODEL_CONFIGS:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Unknown model: {body.model}. "
+                        f"Available: {list(MODEL_CONFIGS.keys())}"
+                    },
+                )
+
+            embeddings: list[list[float]] = []
+
+            if isinstance(body.input, str):
+                # Single text input
+                embeddings = self._embed_text(body.model, [body.input])
+            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
+                # List of text inputs
+                embeddings = self._embed_text(body.model, body.input)
+            elif isinstance(body.input, VLEmbeddingInput):
+                # Single multimodal input
+                if body.input.image_url:
+                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
+                    embeddings = [emb]
+                else:
+                    embeddings = self._embed_text(body.model, [body.input.text])
+            elif isinstance(body.input, list):
+                # List of multimodal inputs
+                for item in body.input:
+                    if isinstance(item, VLEmbeddingInput) and item.image_url:
+                        emb = self._embed_multimodal(body.model, item.text, item.image_url)
+                        embeddings.append(emb)
+                    elif isinstance(item, VLEmbeddingInput):
+                        embs = self._embed_text(body.model, [item.text])
+                        embeddings.extend(embs)
+
+            data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
+            return EmbeddingResponse(data=data, model=body.model)
+
+        return app
+"""Tests for ai_workers.common.utils (SSRF protection + image loading)."""
+
+from __future__ import annotations
+
+import base64
+import io
+import socket
+from unittest.mock import MagicMock, patch
+
+import pytest
+from PIL import Image
+
+from ai_workers.common.utils import is_safe_url, load_image_from_url
+
+# ---------------------------------------------------------------------------
+# is_safe_url
+# ---------------------------------------------------------------------------
+
+# Public IPs that should be allowed
+_PUBLIC_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))]
+
+# Private/loopback/link-local/multicast addresses
+_PRIVATE_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 0))]
+_LOOPBACK_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))]
+_LINK_LOCAL_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.1.1", 0))]
+_MULTICAST_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.1", 0))]
+_IPV6_LOOPBACK_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0))]
+_IPV6_PRIVATE_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fd00::1", 0, 0, 0))]
+_RESERVED_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("0.0.0.0", 0))]
+
+
+class TestIsSafeUrl:
+    """Tests for is_safe_url."""
+
+    def test_public_http_url(self):
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
+            assert is_safe_url("http://example.com/image.png") == "93.184.216.34"
+
+    def test_public_https_url(self):
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
+            assert is_safe_url("https://example.com/image.png") == "93.184.216.34"
+
+    def test_rejects_ftp_scheme(self):
+        assert is_safe_url("ftp://example.com/file") is None
+
+    def test_rejects_file_scheme(self):
+        assert is_safe_url("file:///etc/passwd") is None
+
+    def test_rejects_javascript_scheme(self):
+        assert is_safe_url("javascript:alert(1)") is None
+
+    def test_rejects_empty_scheme(self):
+        assert is_safe_url("://example.com") is None
+
+    def test_rejects_no_hostname(self):
+        assert is_safe_url("http://") is None
+
+    def test_rejects_private_ip(self):
+        with patch("socket.getaddrinfo", return_value=_PRIVATE_ADDRINFO):
+            assert is_safe_url("http://192.168.1.1/image.png") is None
+
+    def test_rejects_loopback(self):
+        with patch("socket.getaddrinfo", return_value=_LOOPBACK_ADDRINFO):
+            assert is_safe_url("http://localhost/image.png") is None
+
+    def test_rejects_link_local(self):
+        with patch("socket.getaddrinfo", return_value=_LINK_LOCAL_ADDRINFO):
+            assert is_safe_url("http://169.254.1.1/image.png") is None
+
+    def test_rejects_multicast(self):
+        with patch("socket.getaddrinfo", return_value=_MULTICAST_ADDRINFO):
+            assert is_safe_url("http://224.0.0.1/image.png") is None
+
+    def test_rejects_reserved(self):
+        with patch("socket.getaddrinfo", return_value=_RESERVED_ADDRINFO):
+            assert is_safe_url("http://0.0.0.0/image.png") is None
+
+    def test_rejects_ipv6_loopback(self):
+        with patch("socket.getaddrinfo", return_value=_IPV6_LOOPBACK_ADDRINFO):
+            assert is_safe_url("http://[::1]/image.png") is None
+
+    def test_rejects_ipv6_private(self):
+        with patch("socket.getaddrinfo", return_value=_IPV6_PRIVATE_ADDRINFO):
+            assert is_safe_url("http://[fd00::1]/image.png") is None
+
+    def test_rejects_dns_failure(self):
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS failed")):
+            assert is_safe_url("http://nonexistent.invalid/image.png") is None
+
+    def test_rejects_empty_resolution(self):
+        with patch("socket.getaddrinfo", return_value=[]):
+            assert is_safe_url("http://example.com/image.png") is None
+
+    def test_mixed_addresses_one_private(self):
+        """If any resolved address is private, reject the URL."""
+        mixed = _PUBLIC_ADDRINFO + _PRIVATE_ADDRINFO
+        with patch("socket.getaddrinfo", return_value=mixed):
+            assert is_safe_url("http://example.com/image.png") is None
+
+    def test_url_with_port(self):
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
+            assert is_safe_url("https://example.com:8080/image.png") == "93.184.216.34"
+
+    def test_url_with_path_and_query(self):
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
+            assert is_safe_url("https://example.com/path?q=1&b=2") == "93.184.216.34"
+
+    def test_rejects_10_x_private(self):
+        addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0))]
+        with patch("socket.getaddrinfo", return_value=addrinfo):
+            assert is_safe_url("http://10.0.0.1/image.png") is None
+
+    def test_rejects_172_16_private(self):
+        addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("172.16.0.1", 0))]
+        with patch("socket.getaddrinfo", return_value=addrinfo):
+            assert is_safe_url("http://172.16.0.1/image.png") is None
+
+
+# ---------------------------------------------------------------------------
+# load_image_from_url
+# ---------------------------------------------------------------------------
+
+
+def _make_test_image_bytes(size=(2, 2), color=(0, 255, 0)) -> bytes:
+    """Create a small PNG image in memory and return its bytes."""
+    img = Image.new("RGB", size, color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class TestLoadImageFromUrl:
+    """Tests for load_image_from_url."""
+
+    def test_base64_data_uri(self):
+        img_bytes = _make_test_image_bytes(size=(1, 1), color=(255, 0, 0))
+        b64 = base64.b64encode(img_bytes).decode()
+        data_uri = f"data:image/png;base64,{b64}"
+
+        result = load_image_from_url(data_uri)
+        assert result.mode == "RGB"
+        assert result.size == (1, 1)
+
+    def test_base64_data_uri_jpeg(self):
+        img = Image.new("RGB", (1, 1), color=(0, 0, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        data_uri = f"data:image/jpeg;base64,{b64}"
+
+        result = load_image_from_url(data_uri)
+        assert result.mode == "RGB"
+
+    def test_base64_invalid_data_raises(self):
+        with pytest.raises(RuntimeError, match="Failed to decode base64 image data URI"):
+            load_image_from_url("data:image/png;base64,!!!invalid!!!")
+
+    def test_http_url_success(self):
+        img_bytes = _make_test_image_bytes()
+        mock_resp = MagicMock()
+        mock_resp.iter_content = MagicMock(return_value=iter([img_bytes]))
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
+        ):
+            result = load_image_from_url("https://example.com/image.png")
+
+        assert result.mode == "RGB"
+        assert result.size == (2, 2)
+        mock_get.assert_called_once_with(
+            "https://example.com/image.png",
+            allow_redirects=False,
+            timeout=30,
+            stream=True,
+        )
+
+    def test_http_url_ssrf_blocked(self):
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value=None),
+            pytest.raises(ValueError, match="URL blocked by SSRF protection"),
+        ):
+            load_image_from_url("http://192.168.1.1/image.png")
+
+    def test_http_url_fetch_failure(self):
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
+            patch(
+                "ai_workers.common.utils._session.get",
+                side_effect=Exception("Connection refused"),
+            ),
+            pytest.raises(RuntimeError, match="Failed to load image from URL"),
+        ):
+            load_image_from_url("https://example.com/unreachable.png")
+
+    def test_http_url_no_redirects(self):
+        """Verify allow_redirects=False is passed to prevent redirect-based SSRF."""
+        img_bytes = _make_test_image_bytes()
+        mock_resp = MagicMock()
+        mock_resp.iter_content = MagicMock(return_value=iter([img_bytes]))
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
+        ):
+            load_image_from_url("https://example.com/image.png")
+
+        call_kwargs = mock_get.call_args.kwargs
+        assert call_kwargs["allow_redirects"] is False
+        assert call_kwargs["timeout"] == 30
+
+    def test_converts_to_rgb(self):
+        """Ensure RGBA/P/L images are converted to RGB."""
+        img = Image.new("RGBA", (1, 1), color=(255, 0, 0, 128))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        data_uri = f"data:image/png;base64,{b64}"
+
+        result = load_image_from_url(data_uri)
+        assert result.mode == "RGB"
+
+    def test_load_image_dns_rebinding_mitigation(self):
+        """Verify that the request is pinned to the validated IP even if DNS changes."""
+        safe_ip = "93.184.216.34"
+        url = "http://rebind.example.com/image.png"
+        img_bytes = _make_test_image_bytes()
+
+        # Mocking socket.getaddrinfo to simulate DNS rebinding
+        # 1. is_safe_url calls it to validate -> returns safe_ip
+        # 2. urllib3.create_connection (via requests) will NOT call it because of our patch if it's working
+        # OR if it does call it, we want to ensure it uses our pinned IP instead.
+
+        with (
+            patch("socket.getaddrinfo") as mock_getaddrinfo,
+            patch("ai_workers.common.utils._session.get") as mock_session_get,
+        ):
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", (safe_ip, 0))
+            ]
+
+            # Setup mock response
+            mock_resp = MagicMock()
+            mock_resp.iter_content.return_value = iter([img_bytes])
+            mock_resp.raise_for_status = MagicMock()
+            mock_session_get.return_value = mock_resp
+
+            from ai_workers.common.utils import _patched_create_connection, _pin_hostname_to_ip
+
+            # Test pinning context manager and patched connection
+            with (
+                _pin_hostname_to_ip("rebind.example.com", safe_ip),
+                patch("ai_workers.common.utils._original_create_connection") as mock_orig_cc,
+            ):
+                _patched_create_connection(("rebind.example.com", 80))
+                mock_orig_cc.assert_called_once_with((safe_ip, 80))
+
+            # Outside context, it should NOT use safe_ip
+            with patch("ai_workers.common.utils._original_create_connection") as mock_orig_cc:
+                _patched_create_connection(("rebind.example.com", 80))
+                mock_orig_cc.assert_called_once_with(("rebind.example.com", 80))
+
+            # Full integration test with mocked session
+            load_image_from_url(url)
+
+            # Verify is_safe_url was called (implicit by load_image_from_url success)
+            mock_getaddrinfo.assert_called()
+"""Coverage boost for uncovered branches in ai_workers (common + workers)."""
+
+from __future__ import annotations
+
+import os
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+# ===========================================================================
+# utils.py -- is_safe_url branches
+# ===========================================================================
+
+
+class TestUtilsUncoveredBranches:
+    """Cover lines 38-40, 67-69."""
+
+    def test_is_safe_url_parse_exception(self):
+        """Line 38-40: urlparse raises an exception."""
+        from ai_workers.common.utils import is_safe_url
+
+        with patch("ai_workers.common.utils.urlparse", side_effect=ValueError("bad")):
+            assert is_safe_url("http://example.com") is None
+
+    def test_is_safe_url_invalid_ip_from_dns(self):
+        """Line 67-69: ip_address() raises ValueError for malformed IP."""
+        import socket
+
+        from ai_workers.common.utils import is_safe_url
+
+        bad_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
+        with patch("socket.getaddrinfo", return_value=bad_addrinfo):
+            assert is_safe_url("http://example.com/img.png") is None
+
+
+# ===========================================================================
+# vl_embedding.py -- _last_token_pool + compute methods + serve() branches
+# Note: Pydantic models are now module-level to avoid class-not-defined errors in Modal
+# ===========================================================================
+
+
+class TestVLEmbeddingComputeMethods:
+    """Cover lines 99-106, 112-145, 157, 178-192, 217-221."""
+
+    def test_last_token_pool_left_padding(self):
+        """Lines 99-103: left padding branch."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        attention_mask = MagicMock()
+        last_col = MagicMock()
+        last_col.sum.return_value = 2  # equals batch_size
+        attention_mask.__getitem__ = MagicMock(return_value=last_col)
+        attention_mask.shape = (2, 5)
+
+        hidden = MagicMock()
+        last_hidden = MagicMock()
+        hidden.__getitem__ = MagicMock(return_value=last_hidden)
+
+        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        assert result is last_hidden
+
+    def test_last_token_pool_right_padding(self):
+        """Lines 104-108: right padding branch."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        attention_mask = MagicMock()
+        last_col = MagicMock()
+        last_col.sum.return_value = 1  # != batch_size=2
+        attention_mask.__getitem__ = MagicMock(return_value=last_col)
+        attention_mask.shape = (2, 5)
+        attention_mask.sum.return_value = MagicMock(__sub__=lambda self, x: MagicMock())
+
+        hidden = MagicMock()
+        hidden.shape = (2, 5, 8)
+        indexed = MagicMock()
+        hidden.__getitem__ = MagicMock(return_value=indexed)
+
+        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        assert result is indexed
+
+    def test_embed_text_method(self):
+        """Lines 112-145: _embed_text called through endpoint."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
+
+        with patch.dict(os.environ, {"API_KEY": "k"}):
+            app = server.serve()
+
+        from fastapi.testclient import TestClient
+
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={"model": "qwen3-vl-embedding-2b", "input": "hello"},
+            headers={"Authorization": "Bearer k"},
+        )
+
+        assert resp.status_code == 200
+        server._embed_text.assert_called_once()
+
+    def test_embed_multimodal_ssrf_blocked(self):
+        """Line 157: _embed_multimodal blocks unsafe URLs."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
+        server.processors = {"qwen3-vl-embedding-2b": MagicMock()}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"qwen_vl_utils": MagicMock()},
+            ),
+            patch("ai_workers.common.utils.is_safe_url", return_value=None),
+            pytest.raises(ValueError, match="SSRF"),
+        ):
+            server._embed_multimodal(
+                "qwen3-vl-embedding-2b", "text", "http://internal.local/img.png"
+            )
+
+    def test_embed_multimodal_base64_skips_ssrf(self):
+        """Line 156: data: URI skips SSRF check."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+
+        mock_processor = MagicMock()
+        mock_processor.apply_chat_template.return_value = "text"
+
+        # Mock the processor call result with attention_mask
+        mock_attention_mask = MagicMock()
+        mock_attention_mask.shape = (1, 5)
+        # Left padding: last col sum == batch_size
+        last_col = MagicMock()
+        last_col.sum.return_value = 1
+        mock_attention_mask.__getitem__ = MagicMock(return_value=last_col)
+
+        mock_inputs = MagicMock()
+        mock_inputs.to.return_value = mock_inputs
+        mock_inputs.__getitem__ = lambda self, key: mock_attention_mask
+        mock_processor.return_value = mock_inputs
+
+        # Model output
+        mock_outputs = MagicMock()
+        mock_model = MagicMock()
+        mock_model.return_value = mock_outputs
+
+        server.models = {"qwen3-vl-embedding-2b": mock_model}
+        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
+
+        mock_process_vision = MagicMock(return_value=([MagicMock()], None))
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"qwen_vl_utils": MagicMock(process_vision_info=mock_process_vision)},
+            ),
+            patch("ai_workers.common.utils.is_safe_url") as mock_ssrf,
+        ):
+            server._embed_multimodal(
+                "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
+            )
+            # is_safe_url should NOT be called for data: URIs
+            mock_ssrf.assert_not_called()
+
+    def test_embed_multimodal_via_endpoint(self):
+        """Lines 178-192, 217-221: multimodal input through endpoint."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        server._embed_multimodal = MagicMock(return_value=[0.5, 0.6])
+
+        with patch.dict(os.environ, {"API_KEY": "k"}):
+            app = server.serve()
+
+        from fastapi.testclient import TestClient
+
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+        assert resp.status_code == 200
+        server._embed_multimodal.assert_called_once()
+
+    def test_list_of_vlinputs_mixed_via_endpoint(self):
+        """Lines 287-295: list of VLEmbeddingInput with mixed image/text."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
+        server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
+
+        with patch.dict(os.environ, {"API_KEY": "k"}):
+            app = server.serve()
+
+        from fastapi.testclient import TestClient
+
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": [
+                    {"text": "with img", "image_url": "http://example.com/img.jpg"},
+                    {"text": "no image"},
+                ],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]) == 2
+
+
+# ===========================================================================
+# tts.py -- _synthesize non-list return
+# ===========================================================================
+
+
+class TestTTSSynthesizeEdgeCases:
+    """Cover edge case where model returns non-list wavs."""
+
+    def test_synthesize_non_list_wavs(self):
+        """Line 126: wavs is not a list (e.g., single numpy array)."""
+        from ai_workers.workers.tts import TTSServer
+
+        server = TTSServer()
+        mock_model = MagicMock()
+        # Simulate non-list return (single array instead of list of arrays)
+        single_wav = MagicMock()
+        mock_model.generate_custom_voice.return_value = (single_wav, 24000)
+        server.models = {"qwen3-tts-0.6b": mock_model}
+
+        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello")
+        assert sr == 24000
+        # wavs is the single_wav directly (not indexed from list)
+        assert wavs is single_wav
+
+
+# ===========================================================================
+# volumes.py -- download_models
+# ===========================================================================
+
+
+class TestDownloadModels:
+    """Cover download_models function (lines 82-105)."""
+
+    def test_download_models_success(self):
+        """Lines 82-97: successful download of models."""
+        mock_hf_hub = MagicMock()
+        mock_hf_hub.snapshot_download.return_value = "/cache/model"
+
+        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
+            from importlib import reload
+
+            from ai_workers.common import volumes
+
+            reload(volumes)
+
+            mock_vol = MagicMock()
+            with patch.object(volumes, "hf_cache_vol", mock_vol):
+                result = volumes.download_models()
+
+        assert "OK:" in result
+        mock_vol.commit.assert_called_once()
+
+    def test_download_models_failure(self):
+        """Lines 98-100: one model fails to download."""
+        mock_hf_hub = MagicMock()
+        mock_hf_hub.snapshot_download.side_effect = RuntimeError("network error")
+
+        with patch.dict("sys.modules", {"huggingface_hub": mock_hf_hub}):
+            from importlib import reload
+
+            from ai_workers.common import volumes
+
+            reload(volumes)
+
+            mock_vol = MagicMock()
+            with patch.object(volumes, "hf_cache_vol", mock_vol):
+                result = volumes.download_models()
+
+        assert "FAIL:" in result
+        assert "network error" in result
+        mock_vol.commit.assert_called_once()
+
+
+# ===========================================================================
+# __init__.py -- version fallback
+# ===========================================================================
+
+
+class TestPackageInit:
+    """Cover __init__.py line 7-9 (version fallback)."""
+
+    def test_version_fallback_when_metadata_unavailable(self):
+        """Lines 7-9: when importlib.metadata.version raises, fallback to 0.0.0-dev."""
+        with patch("importlib.metadata.version", side_effect=Exception("not found")):
+            import importlib
+
+            import ai_workers
+
+            importlib.reload(ai_workers)
+            assert ai_workers.__version__ == "0.0.0-dev"

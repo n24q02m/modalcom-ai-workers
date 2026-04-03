@@ -34,86 +34,86 @@ class TestIsSafeUrl:
 
     def test_public_http_url(self):
         with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
-            assert is_safe_url("http://example.com/image.png") is True
+            assert is_safe_url("http://example.com/image.png") == "93.184.216.34"
 
     def test_public_https_url(self):
         with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
-            assert is_safe_url("https://example.com/image.png") is True
+            assert is_safe_url("https://example.com/image.png") == "93.184.216.34"
 
     def test_rejects_ftp_scheme(self):
-        assert is_safe_url("ftp://example.com/file") is False
+        assert is_safe_url("ftp://example.com/file") is None
 
     def test_rejects_file_scheme(self):
-        assert is_safe_url("file:///etc/passwd") is False
+        assert is_safe_url("file:///etc/passwd") is None
 
     def test_rejects_javascript_scheme(self):
-        assert is_safe_url("javascript:alert(1)") is False
+        assert is_safe_url("javascript:alert(1)") is None
 
     def test_rejects_empty_scheme(self):
-        assert is_safe_url("://example.com") is False
+        assert is_safe_url("://example.com") is None
 
     def test_rejects_no_hostname(self):
-        assert is_safe_url("http://") is False
+        assert is_safe_url("http://") is None
 
     def test_rejects_private_ip(self):
         with patch("socket.getaddrinfo", return_value=_PRIVATE_ADDRINFO):
-            assert is_safe_url("http://192.168.1.1/image.png") is False
+            assert is_safe_url("http://192.168.1.1/image.png") is None
 
     def test_rejects_loopback(self):
         with patch("socket.getaddrinfo", return_value=_LOOPBACK_ADDRINFO):
-            assert is_safe_url("http://localhost/image.png") is False
+            assert is_safe_url("http://localhost/image.png") is None
 
     def test_rejects_link_local(self):
         with patch("socket.getaddrinfo", return_value=_LINK_LOCAL_ADDRINFO):
-            assert is_safe_url("http://169.254.1.1/image.png") is False
+            assert is_safe_url("http://169.254.1.1/image.png") is None
 
     def test_rejects_multicast(self):
         with patch("socket.getaddrinfo", return_value=_MULTICAST_ADDRINFO):
-            assert is_safe_url("http://224.0.0.1/image.png") is False
+            assert is_safe_url("http://224.0.0.1/image.png") is None
 
     def test_rejects_reserved(self):
         with patch("socket.getaddrinfo", return_value=_RESERVED_ADDRINFO):
-            assert is_safe_url("http://0.0.0.0/image.png") is False
+            assert is_safe_url("http://0.0.0.0/image.png") is None
 
     def test_rejects_ipv6_loopback(self):
         with patch("socket.getaddrinfo", return_value=_IPV6_LOOPBACK_ADDRINFO):
-            assert is_safe_url("http://[::1]/image.png") is False
+            assert is_safe_url("http://[::1]/image.png") is None
 
     def test_rejects_ipv6_private(self):
         with patch("socket.getaddrinfo", return_value=_IPV6_PRIVATE_ADDRINFO):
-            assert is_safe_url("http://[fd00::1]/image.png") is False
+            assert is_safe_url("http://[fd00::1]/image.png") is None
 
     def test_rejects_dns_failure(self):
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS failed")):
-            assert is_safe_url("http://nonexistent.invalid/image.png") is False
+            assert is_safe_url("http://nonexistent.invalid/image.png") is None
 
     def test_rejects_empty_resolution(self):
         with patch("socket.getaddrinfo", return_value=[]):
-            assert is_safe_url("http://example.com/image.png") is False
+            assert is_safe_url("http://example.com/image.png") is None
 
     def test_mixed_addresses_one_private(self):
         """If any resolved address is private, reject the URL."""
         mixed = _PUBLIC_ADDRINFO + _PRIVATE_ADDRINFO
         with patch("socket.getaddrinfo", return_value=mixed):
-            assert is_safe_url("http://example.com/image.png") is False
+            assert is_safe_url("http://example.com/image.png") is None
 
     def test_url_with_port(self):
         with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
-            assert is_safe_url("https://example.com:8080/image.png") is True
+            assert is_safe_url("https://example.com:8080/image.png") == "93.184.216.34"
 
     def test_url_with_path_and_query(self):
         with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
-            assert is_safe_url("https://example.com/path?q=1&b=2") is True
+            assert is_safe_url("https://example.com/path?q=1&b=2") == "93.184.216.34"
 
     def test_rejects_10_x_private(self):
         addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0))]
         with patch("socket.getaddrinfo", return_value=addrinfo):
-            assert is_safe_url("http://10.0.0.1/image.png") is False
+            assert is_safe_url("http://10.0.0.1/image.png") is None
 
     def test_rejects_172_16_private(self):
         addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("172.16.0.1", 0))]
         with patch("socket.getaddrinfo", return_value=addrinfo):
-            assert is_safe_url("http://172.16.0.1/image.png") is False
+            assert is_safe_url("http://172.16.0.1/image.png") is None
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ class TestLoadImageFromUrl:
         mock_resp.raise_for_status = MagicMock()
 
         with (
-            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
             patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
         ):
             result = load_image_from_url("https://example.com/image.png")
@@ -178,14 +178,14 @@ class TestLoadImageFromUrl:
 
     def test_http_url_ssrf_blocked(self):
         with (
-            patch("ai_workers.common.utils.is_safe_url", return_value=False),
+            patch("ai_workers.common.utils.is_safe_url", return_value=None),
             pytest.raises(ValueError, match="URL blocked by SSRF protection"),
         ):
             load_image_from_url("http://192.168.1.1/image.png")
 
     def test_http_url_fetch_failure(self):
         with (
-            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
             patch(
                 "ai_workers.common.utils._session.get",
                 side_effect=Exception("Connection refused"),
@@ -202,7 +202,7 @@ class TestLoadImageFromUrl:
         mock_resp.raise_for_status = MagicMock()
 
         with (
-            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("ai_workers.common.utils.is_safe_url", return_value="93.184.216.34"),
             patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
         ):
             load_image_from_url("https://example.com/image.png")
@@ -221,3 +221,49 @@ class TestLoadImageFromUrl:
 
         result = load_image_from_url(data_uri)
         assert result.mode == "RGB"
+
+    def test_load_image_dns_rebinding_mitigation(self):
+        """Verify that the request is pinned to the validated IP even if DNS changes."""
+        safe_ip = "93.184.216.34"
+        url = "http://rebind.example.com/image.png"
+        img_bytes = _make_test_image_bytes()
+
+        # Mocking socket.getaddrinfo to simulate DNS rebinding
+        # 1. is_safe_url calls it to validate -> returns safe_ip
+        # 2. urllib3.create_connection (via requests) will NOT call it because of our patch if it's working
+        # OR if it does call it, we want to ensure it uses our pinned IP instead.
+
+        with (
+            patch("socket.getaddrinfo") as mock_getaddrinfo,
+            patch("ai_workers.common.utils._session.get") as mock_session_get,
+        ):
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", (safe_ip, 0))
+            ]
+
+            # Setup mock response
+            mock_resp = MagicMock()
+            mock_resp.iter_content.return_value = iter([img_bytes])
+            mock_resp.raise_for_status = MagicMock()
+            mock_session_get.return_value = mock_resp
+
+            from ai_workers.common.utils import _patched_create_connection, _pin_hostname_to_ip
+
+            # Test pinning context manager and patched connection
+            with (
+                _pin_hostname_to_ip("rebind.example.com", safe_ip),
+                patch("ai_workers.common.utils._original_create_connection") as mock_orig_cc,
+            ):
+                _patched_create_connection(("rebind.example.com", 80))
+                mock_orig_cc.assert_called_once_with((safe_ip, 80))
+
+            # Outside context, it should NOT use safe_ip
+            with patch("ai_workers.common.utils._original_create_connection") as mock_orig_cc:
+                _patched_create_connection(("rebind.example.com", 80))
+                mock_orig_cc.assert_called_once_with(("rebind.example.com", 80))
+
+            # Full integration test with mocked session
+            load_image_from_url(url)
+
+            # Verify is_safe_url was called (implicit by load_image_from_url success)
+            mock_getaddrinfo.assert_called()
