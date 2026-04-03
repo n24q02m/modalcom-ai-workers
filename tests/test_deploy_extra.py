@@ -12,7 +12,16 @@ import pytest
 import typer.testing
 from click.exceptions import Exit as ClickExit
 
-from ai_workers.cli.deploy import _deploy_module, _deploy_single, app
+from ai_workers.cli.deploy import _deploy_app, _deploy_module, _deploy_single, app
+from ai_workers.common.config import (
+    GPU,
+    ModelClassType,
+    ModelConfig,
+    Precision,
+    ServingEngine,
+    Task,
+    Tier,
+)
 
 
 class TestDeployAllFlag:
@@ -63,11 +72,50 @@ class TestDeployAllFlag:
         result = self._invoke(["--all"])
         assert result.exit_code != 0
 
+    @patch("ai_workers.cli.deploy.list_models")
+    def test_all_skips_incomplete_configs(self, mock_list_models: MagicMock) -> None:
+        """--all should skip models without worker_module or modal_app_var (line 46)."""
+        # Mix of valid and invalid configs
+        mock_list_models.return_value = [
+            ModelConfig(
+                name="valid",
+                hf_id="h",
+                task=Task.EMBEDDING,
+                tier=Tier.LIGHT,
+                gpu=GPU.T4,
+                precision=Precision.FP16,
+                model_class=ModelClassType.AUTO_MODEL,
+                serving_engine=ServingEngine.CUSTOM_FASTAPI,
+                worker_module="m",
+                modal_app_name="n",
+                modal_app_var="v",
+            ),
+            ModelConfig(
+                name="invalid-no-module",
+                hf_id="h",
+                task=Task.EMBEDDING,
+                tier=Tier.LIGHT,
+                gpu=GPU.T4,
+                precision=Precision.FP16,
+                model_class=ModelClassType.AUTO_MODEL,
+                serving_engine=ServingEngine.CUSTOM_FASTAPI,
+                worker_module="",  # Missing
+                modal_app_name="n",
+                modal_app_var="v",
+            ),
+        ]
+        result = self._invoke(["--all", "--dry-run"])
+        assert result.exit_code == 0
+        assert "Deploying 1 apps" in result.output
+
     def test_no_worker_no_all_shows_error(self) -> None:
-        """Calling deploy without --all and no worker arg should show error."""
-        result = self._invoke(["--no-all"])
-        # Should show error about specifying model name
-        assert result.exit_code != 0 or "specify" in result.output or "Error" in result.output
+        """Calling deploy without --all and no worker arg should show error (lines 77-78)."""
+        from ai_workers.cli.deploy import deploy
+
+        with pytest.raises(ClickExit) as exc:
+            # ty check: Expected str, found None
+            deploy(worker=None, all_workers=False, dry_run=False)  # type: ignore[arg-type]
+        assert exc.value.exit_code == 1
 
 
 class TestDeployWorkerNone:
@@ -89,7 +137,7 @@ class TestDeploySingleSkipCases:
 
     def test_no_worker_module_skips_silently(self) -> None:
         """Config without worker_module should return without calling subprocess."""
-        from ai_workers.common.config import ModelConfig, get_model
+        from ai_workers.common.config import get_model
 
         config = get_model("qwen3-embedding-0.6b")
         # Patch get_model to return config without worker_module (empty string = falsy)
@@ -112,7 +160,7 @@ class TestDeploySingleSkipCases:
 
     def test_no_modal_app_var_skips_silently(self) -> None:
         """Config without modal_app_var should return without calling subprocess."""
-        from ai_workers.common.config import ModelConfig, get_model
+        from ai_workers.common.config import get_model
 
         config = get_model("qwen3-embedding-0.6b")
         patched = ModelConfig(
@@ -130,6 +178,25 @@ class TestDeploySingleSkipCases:
         )
         with patch("ai_workers.cli.deploy.get_model", return_value=patched):
             _deploy_single("qwen3-embedding-0.6b")
+
+
+class TestDeployAppErrors:
+    """Tests for _deploy_app error paths (lines 109-114)."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_file_not_found(self, mock_subprocess: MagicMock) -> None:
+        """Missing modal CLI in _deploy_app should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_app("mod", "var")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_called_process_error(self, mock_subprocess: MagicMock) -> None:
+        """Failed deploy in _deploy_app should raise Exit."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_app("mod", "var")
 
 
 class TestDeployModuleErrors:
