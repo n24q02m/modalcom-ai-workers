@@ -134,18 +134,20 @@ def test_embeddings_vlinput_with_image_url(server):
     async def mock_load_image(url):
         return MagicMock()
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        with patch.object(server, '_load_image_from_url', return_value=MagicMock()):
-            app = server.serve()
-            tc = TestClient(app, raise_server_exceptions=True)
-            resp = tc.post(
-                "/v1/embeddings",
-                json={
-                    "model": "qwen3-vl-embedding-2b",
-                    "input": {"text": "describe this image", "image_url": "http://example.com/img.jpg"},
-                },
-                headers={"Authorization": "Bearer k"},
-            )
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": {"text": "describe this image", "image_url": "http://example.com/img.jpg"},
+            },
+            headers={"Authorization": "Bearer k"},
+        )
 
     assert resp.status_code == 200
     data = resp.json()
@@ -193,21 +195,23 @@ def test_embeddings_list_of_vlinputs(server):
     server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        with patch.object(server, '_load_image_from_url', return_value=MagicMock()):
-            app = server.serve()
-            tc = TestClient(app, raise_server_exceptions=True)
-            resp = tc.post(
-                "/v1/embeddings",
-                json={
-                    "model": "qwen3-vl-embedding-2b",
-                    "input": [
-                        {"text": "img text", "image_url": "http://example.com/img.jpg"},
-                        {"text": "no image"},
-                    ],
-                },
-                headers={"Authorization": "Bearer k"},
-            )
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": [
+                    {"text": "img text", "image_url": "http://example.com/img.jpg"},
+                    {"text": "no image"},
+                ],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
 
     assert resp.status_code == 200
     data = resp.json()
@@ -232,21 +236,23 @@ def test_embeddings_list_of_vlinputs(server):
 def test_embeddings_multiple_multimodal_batching(server):
     server._embed_multimodal = MagicMock(return_value=[[0.1, 0.1], [0.2, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        with patch.object(server, '_load_image_from_url', return_value=MagicMock()):
-            app = server.serve()
-            tc = TestClient(app, raise_server_exceptions=True)
-            resp = tc.post(
-                "/v1/embeddings",
-                json={
-                    "model": "qwen3-vl-embedding-2b",
-                    "input": [
-                        {"text": "text1", "image_url": "http://example.com/img1.jpg"},
-                        {"text": "text2", "image_url": "http://example.com/img2.jpg"},
-                    ],
-                },
-                headers={"Authorization": "Bearer k"},
-            )
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": [
+                    {"text": "text1", "image_url": "http://example.com/img1.jpg"},
+                    {"text": "text2", "image_url": "http://example.com/img2.jpg"},
+                ],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
 
     assert resp.status_code == 200
     data = resp.json()
@@ -288,18 +294,20 @@ def test_embeddings_heavy_model(server):
 
 
 def test_embeddings_vlinput_image_fetch_failure(server):
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        with patch.object(server, '_load_image_from_url', side_effect=ValueError("Failed to load image")):
-            app = server.serve()
-            tc = TestClient(app, raise_server_exceptions=False)
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch.object(server, '_load_image_from_url', side_effect=ValueError("Failed to load image"))
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=False)
 
-            resp = tc.post(
-                "/v1/embeddings",
-                json={
-                    "model": "qwen3-vl-embedding-2b",
-                    "input": {"text": "describe this image", "image_url": "http://example.com/bad.jpg"},
-                },
-                headers={"Authorization": "Bearer k"},
-            )
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": {"text": "describe this image", "image_url": "http://example.com/bad.jpg"},
+            },
+            headers={"Authorization": "Bearer k"},
+        )
 
     assert resp.status_code == 400
