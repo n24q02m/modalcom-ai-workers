@@ -265,3 +265,26 @@ def test_load_audio_returns_numpy_tuple(server):
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert isinstance(result[1], int)  # sample rate
+
+
+def test_transcribe_file_too_large(server):
+    server._load_audio = MagicMock()
+    server._transcribe = MagicMock()
+
+    # Mock auth to bypass verify_api_key
+    with patch("ai_workers.common.auth.verify_api_key", side_effect=lambda r: None):
+        app = server.serve()
+        tc = TestClient(app)
+
+        # 25MB + 1 byte
+        max_size = 25 * 1024 * 1024
+        large_content = b"a" * (max_size + 1024)
+
+        resp = tc.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("large.wav", large_content, "audio/wav")},
+            data={"model": "qwen3-asr-0.6b"},
+        )
+
+        assert resp.status_code == 413
+        assert "Audio file too large" in resp.json()["error"]
