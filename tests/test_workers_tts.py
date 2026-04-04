@@ -1,7 +1,5 @@
 """Tests for TTSServer FastAPI routes (Qwen3-TTS CustomVoice)."""
 
-from __future__ import annotations
-
 import os
 from unittest.mock import MagicMock, patch
 
