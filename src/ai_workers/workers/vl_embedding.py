@@ -13,6 +13,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.config import get_model
@@ -189,6 +191,38 @@ class VLEmbeddingServer:
 
         return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
 
+    def _process_single_input(self, model_name: str, item: Any) -> list[list[float]]:
+        """Process a single input (str or VLEmbeddingInput) and return a list of embeddings."""
+        if isinstance(item, str):
+            return self._embed_text(model_name, [item])
+
+        # VLEmbeddingInput (use duck typing to avoid Pydantic issues outside serve())
+        image_url = getattr(item, "image_url", None)
+        text = getattr(item, "text", "")
+
+        if image_url:
+            emb = self._embed_multimodal(model_name, text, image_url)
+            return [emb]
+        return self._embed_text(model_name, [text])
+
+    def _process_inputs(self, model_name: str, inputs: Any) -> list[list[float]]:
+        """Process various input types and return a flattened list of embeddings."""
+        embeddings: list[list[float]] = []
+
+        if isinstance(inputs, list):
+            # Could be list[str] or list[VLEmbeddingInput]
+            if inputs and isinstance(inputs[0], str):
+                # Optimization: batch text-only inputs
+                return self._embed_text(model_name, inputs)
+
+            for item in inputs:
+                embeddings.extend(self._process_single_input(model_name, item))
+        else:
+            # Single str or VLEmbeddingInput
+            embeddings.extend(self._process_single_input(model_name, inputs))
+
+        return embeddings
+
     @modal.asgi_app()
     def serve(self):
         from fastapi import Body, FastAPI, Request
@@ -269,29 +303,7 @@ class VLEmbeddingServer:
 
             embeddings: list[list[float]] = []
 
-            if isinstance(body.input, str):
-                # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
-            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
-                # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
-            elif isinstance(body.input, VLEmbeddingInput):
-                # Single multimodal input
-                if body.input.image_url:
-                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
-                    embeddings = [emb]
-                else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
-            elif isinstance(body.input, list):
-                # List of multimodal inputs
-                for item in body.input:
-                    if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        emb = self._embed_multimodal(body.model, item.text, item.image_url)
-                        embeddings.append(emb)
-                    elif isinstance(item, VLEmbeddingInput):
-                        embs = self._embed_text(body.model, [item.text])
-                        embeddings.extend(embs)
-
+            embeddings = self._process_inputs(body.model, body.input)
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
             return EmbeddingResponse(data=data, model=body.model)
 
