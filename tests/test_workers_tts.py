@@ -13,6 +13,7 @@ from ai_workers.workers.tts import (
     DEFAULT_VOICE,
     MODEL_CONFIGS,
     SUPPORTED_SPEAKERS,
+    TTSOptions,
     TTSServer,
 )
 
@@ -254,7 +255,9 @@ def test_synthesize_default_speaker(server):
     mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    _wavs, sample_rate = server._synthesize("qwen3-tts-0.6b", "hello", "vivian", "English")
+    _wavs, sample_rate = server._synthesize(
+        "qwen3-tts-0.6b", "hello", TTSOptions(voice="vivian", language="English")
+    )
 
     mock_model.generate_custom_voice.assert_called_once_with(
         text="hello", language="English", speaker="vivian"
@@ -270,7 +273,11 @@ def test_synthesize_with_instruct(server):
     mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    server._synthesize("qwen3-tts-0.6b", "hello", "ryan", "English", instruct="Angry tone")
+    server._synthesize(
+        "qwen3-tts-0.6b",
+        "hello",
+        TTSOptions(voice="ryan", language="English", instruct="Angry tone"),
+    )
 
     mock_model.generate_custom_voice.assert_called_once_with(
         text="hello", language="English", speaker="ryan", instruct="Angry tone"
@@ -285,7 +292,7 @@ def test_synthesize_different_speaker(server):
     mock_model.generate_custom_voice.return_value = ([np.zeros(100, dtype=np.float32)], 24000)
     server.models = {"qwen3-tts-0.6b": mock_model}
 
-    server._synthesize("qwen3-tts-0.6b", "test", "aiden", "Auto")
+    server._synthesize("qwen3-tts-0.6b", "test", TTSOptions(voice="aiden", language="Auto"))
 
     call_kwargs = mock_model.generate_custom_voice.call_args[1]
     assert call_kwargs["speaker"] == "aiden"

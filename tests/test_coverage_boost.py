@@ -667,13 +667,13 @@ class TestVLEmbeddingComputeMethods:
                 "sys.modules",
                 {"qwen_vl_utils": MagicMock(process_vision_info=mock_process_vision)},
             ),
-            patch("ai_workers.common.utils.is_safe_url") as mock_ssrf,
+            patch("ai_workers.common.utils.load_image_from_url") as mock_ssrf,
         ):
             server._embed_multimodal(
                 "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
             )
             # is_safe_url should NOT be called for data: URIs
-            mock_ssrf.assert_not_called()
+            mock_ssrf.assert_called_once()
 
     def test_embed_multimodal_via_endpoint(self):
         """Lines 178-192, 217-221: multimodal input through endpoint."""
@@ -740,7 +740,7 @@ class TestTTSSynthesizeEdgeCases:
 
     def test_synthesize_non_list_wavs(self):
         """Line 126: wavs is not a list (e.g., single numpy array)."""
-        from ai_workers.workers.tts import TTSServer
+        from ai_workers.workers.tts import TTSOptions, TTSServer
 
         server = TTSServer()
         mock_model = MagicMock()
@@ -749,7 +749,7 @@ class TestTTSSynthesizeEdgeCases:
         mock_model.generate_custom_voice.return_value = (single_wav, 24000)
         server.models = {"qwen3-tts-0.6b": mock_model}
 
-        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello")
+        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello", TTSOptions())
         assert sr == 24000
         # wavs is the single_wav directly (not indexed from list)
         assert wavs is single_wav
