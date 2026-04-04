@@ -631,7 +631,7 @@ class TestVLEmbeddingComputeMethods:
             )
 
     def test_embed_multimodal_base64_skips_ssrf(self):
-        """Line 156: data: URI skips SSRF check."""
+        """Line 152: data: URI skips SSRF check (is_safe_url not called)."""
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
@@ -667,13 +667,13 @@ class TestVLEmbeddingComputeMethods:
                 "sys.modules",
                 {"qwen_vl_utils": MagicMock(process_vision_info=mock_process_vision)},
             ),
-            patch("ai_workers.common.utils.load_image_from_url") as mock_ssrf,
+            patch("ai_workers.common.utils.is_safe_url") as mock_is_safe,
         ):
             server._embed_multimodal(
                 "qwen3-vl-embedding-2b", ["describe"], ["data:image/png;base64,iVBOR..."]
             )
             # is_safe_url should NOT be called for data: URIs
-            mock_ssrf.assert_called_once()
+            mock_is_safe.assert_not_called()
 
     def test_embed_multimodal_via_endpoint(self):
         """Lines 178-192, 217-221: multimodal input through endpoint."""

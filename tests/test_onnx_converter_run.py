@@ -169,6 +169,7 @@ def test_onnx_convert_model_success():
         mock_attr = MagicMock()
         mock_attr.name = "to"
         mock_attr.i = 1  # TensorProto.FLOAT
+        mock_attr.g = None  # No subgraph - prevent isinstance() on MagicMock
         mock_node.attribute = [mock_attr]
         mock_q4f16_model.graph.node = [mock_node]
 
