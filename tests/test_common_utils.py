@@ -1,7 +1,5 @@
 """Tests for ai_workers.common.utils (SSRF protection + image loading)."""
 
-from __future__ import annotations
-
 import base64
 import io
 import socket

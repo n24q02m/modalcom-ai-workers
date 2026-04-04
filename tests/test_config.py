@@ -3,8 +3,6 @@
 Validates that all model configs are consistent and complete.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from ai_workers.common.config import (

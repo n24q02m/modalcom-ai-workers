@@ -1,7 +1,5 @@
 """Tests for common/logging.py — setup_logging."""
 
-from __future__ import annotations
-
 from unittest.mock import patch
 
 

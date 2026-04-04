@@ -11,8 +11,6 @@ Why this matters:
 - Schema drift between workers would cause inconsistent behaviour
 """
 
-from __future__ import annotations
-
 import json
 import re
 
