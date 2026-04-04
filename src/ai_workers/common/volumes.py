@@ -10,8 +10,6 @@ to ~5-10 seconds:
   2. GPU Snapshot: model already in GPU VRAM (no disk-to-GPU load)
 """
 
-from __future__ import annotations
-
 import modal
 
 # ---------------------------------------------------------------------------
