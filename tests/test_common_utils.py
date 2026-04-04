@@ -228,3 +228,60 @@ class TestLoadImageFromUrl:
 
         result = load_image_from_url(data_uri)
         assert result.mode == "RGB"
+
+    def test_url_parse_failure(self):
+        """Test is_safe_url handling of malformed URLs that fail to parse."""
+        with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
+            assert is_safe_url("http://[:::1]") is False
+
+    def test_rejects_invalid_ip_from_dns(self):
+        """Test is_safe_url when DNS returns an invalid IP string."""
+        invalid_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
+        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
+            assert is_safe_url("http://example.com") is False
+
+
+class TestLoadImageFromUrlEdgeCases:
+    """Additional edge case tests for load_image_from_url."""
+
+    def test_base64_size_limit_exceeded(self):
+        """Test that base64 data exceeding MAX_BASE64_SIZE raises ValueError."""
+        # MAX_BASE64_SIZE is 28MB.
+        large_data = "a" * (28 * 1024 * 1024 + 1)
+        data_uri = f"data:image/png;base64,{large_data}"
+        with pytest.raises(ValueError, match="Base64 image data exceeds size limit"):
+            load_image_from_url(data_uri)
+
+    def test_base64_invalid_image_data(self):
+        """Test valid base64 that is not an image (UnidentifiedImageError)."""
+        b64 = base64.b64encode(b"not an image").decode()
+        data_uri = f"data:image/png;base64,{b64}"
+        with pytest.raises(RuntimeError, match="Failed to decode base64 image data URI"):
+            load_image_from_url(data_uri)
+
+    def test_base64_truncated_image(self):
+        """Test base64 containing a truncated/corrupt image (OSError)."""
+        # Truncated PNG header
+        truncated_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b64 = base64.b64encode(truncated_bytes).decode()
+        data_uri = f"data:image/png;base64,{b64}"
+        with pytest.raises(RuntimeError, match="Failed to decode base64 image data URI"):
+            load_image_from_url(data_uri)
+
+    def test_http_url_size_limit_exceeded(self):
+        """Test that HTTP downloads exceeding MAX_IMAGE_SIZE raise ValueError."""
+        mock_resp = MagicMock()
+        # MAX_IMAGE_SIZE is 20MB. Return two 11MB chunks.
+        chunk = b"a" * (11 * 1024 * 1024)
+        mock_resp.iter_content = MagicMock(return_value=iter([chunk, chunk]))
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.close = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils.is_safe_url", return_value=True),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Image from URL exceeds size limit"),
+        ):
+            load_image_from_url("https://example.com/large.png")
+
+        mock_resp.close.assert_called_once()
