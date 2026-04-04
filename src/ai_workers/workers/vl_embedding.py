@@ -301,7 +301,7 @@ class VLEmbeddingServer:
                         text_indices.append(i)
                         text_texts.append(item.text)
 
-                embeddings: list[list[float]] = [None] * len(body.input)
+                embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
                     mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)

@@ -45,7 +45,7 @@ try:
 
     if not hasattr(connection, "_is_patched"):
         _original_create_connection = connection.create_connection
-        connection.create_connection = _patched_create_connection
+        connection.create_connection = _patched_create_connection  # type: ignore[assignment]
         connection._is_patched = True
 except ImportError:
     logger.warning("Could not apply SSRF IP pinning: urllib3 not found")
