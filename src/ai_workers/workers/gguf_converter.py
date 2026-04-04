@@ -18,7 +18,13 @@ Flow:
 
 from __future__ import annotations
 
+import gc
+import os
+import re
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import modal
 
@@ -155,6 +161,179 @@ def _generate_gguf_model_card(
     )
 
 
+def _check_if_gguf_exists(
+    hf_target: str,
+    gguf_repo_path: str,
+    hf_token: str,
+) -> bool:
+    """Check if the GGUF file already exists in the target HuggingFace repo."""
+    from huggingface_hub import list_repo_tree
+    from loguru import logger
+
+    try:
+        existing_files = [f.path for f in list_repo_tree(hf_target, token=hf_token, recursive=True)]
+        if gguf_repo_path in existing_files:
+            logger.info(
+                "File {} already exists in {}. Skipping. Use force=True to overwrite.",
+                gguf_repo_path,
+                hf_target,
+            )
+            return True
+    except Exception:
+        pass  # Repo does not exist yet, will be created
+    return False
+
+
+def _download_hf_model(
+    hf_source: str,
+    model_dir: Path,
+    hf_token: str,
+) -> None:
+    """Download the model from HuggingFace Hub."""
+    from huggingface_hub import snapshot_download
+    from loguru import logger
+
+    logger.info("Loading model {} from HuggingFace Hub...", hf_source)
+    snapshot_download(
+        repo_id=hf_source,
+        local_dir=str(model_dir.resolve()),
+        token=hf_token,
+    )
+    logger.info("Model downloaded to {}", model_dir)
+
+
+def _convert_hf_to_f16_gguf(
+    model_dir: Path,
+    f16_path: Path,
+) -> float:
+    """Convert HuggingFace model to F16 GGUF format."""
+    from loguru import logger
+
+    logger.info("Converting HF -> GGUF F16: {}", f16_path)
+
+    convert_cmd = [
+        "python",
+        "/opt/llama.cpp/convert_hf_to_gguf.py",
+        str(model_dir.resolve()),
+        "--outfile",
+        str(f16_path.resolve()),
+        "--outtype",
+        "f16",
+    ]
+    result = subprocess.run(
+        convert_cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        logger.error("convert_hf_to_gguf.py failed:\n{}", result.stderr)
+        msg = f"convert_hf_to_gguf.py failed with exit code {result.returncode}"
+        raise RuntimeError(msg)
+
+    f16_size = f16_path.stat().st_size / (1024**2)
+    logger.info("GGUF F16 exported: {:.2f} MB", f16_size)
+    return f16_size
+
+
+def _quantize_f16_to_gguf(
+    f16_path: Path,
+    q4_path: Path,
+    quant_type: str,
+    f16_size: float,
+) -> float:
+    """Quantize F16 GGUF to a specific quantization type."""
+    from loguru import logger
+
+    logger.info("Quantizing GGUF F16 -> {}: {}", quant_type, q4_path)
+
+    quantize_cmd = [
+        "/opt/llama.cpp/build/bin/llama-quantize",
+        str(f16_path.resolve()),
+        str(q4_path.resolve()),
+        quant_type,
+    ]
+    result = subprocess.run(
+        quantize_cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        logger.error("llama-quantize failed:\n{}", result.stderr)
+        msg = f"llama-quantize failed with exit code {result.returncode}"
+        raise RuntimeError(msg)
+
+    q4_size = q4_path.stat().st_size / (1024**2)
+    logger.info(
+        "GGUF {} quantized: {:.2f} MB (compression ratio: {:.1f}x)",
+        quant_type,
+        q4_size,
+        f16_size / q4_size if q4_size > 0 else 0,
+    )
+    return q4_size
+
+
+def _upload_gguf_artifacts(
+    api: object,
+    hf_target: str,
+    hf_source: str,
+    hf_token: str,
+    q4_path: Path,
+    gguf_filename: str,
+    gguf_repo_path: str,
+    quant_type: str,
+    q4_size: float,
+    config_obj: GgufModelConfig,
+) -> None:
+    """Upload GGUF model file, README, and config files to HuggingFace Hub."""
+    from huggingface_hub import hf_hub_download as _hf_download
+    from loguru import logger
+
+    logger.info("Uploading {} to {}...", gguf_repo_path, hf_target)
+
+    api.create_repo(
+        repo_id=hf_target,
+        repo_type="model",
+        exist_ok=True,
+        private=False,
+    )
+
+    api.upload_file(
+        path_or_fileobj=str(q4_path.resolve()),
+        path_in_repo=gguf_repo_path,
+        repo_id=hf_target,
+        repo_type="model",
+        commit_message=f"Add GGUF {quant_type} converted from {hf_source}",
+    )
+
+    # Upload model card
+    model_card = _generate_gguf_model_card(config_obj, gguf_filename, q4_size)
+    api.upload_file(
+        path_or_fileobj=model_card.encode("utf-8"),
+        path_in_repo="README.md",
+        repo_id=hf_target,
+        repo_type="model",
+        commit_message="docs: update model card",
+    )
+
+    # Upload tokenizer + config from source for model loading
+    for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
+        try:
+            local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=hf_token)
+            api.upload_file(
+                path_or_fileobj=local_cfg,
+                path_in_repo=cfg_file,
+                repo_id=hf_target,
+                repo_type="model",
+                commit_message=f"Add {cfg_file}",
+            )
+        except Exception:
+            pass  # Some config files may not exist
+
+    logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
+
+
 @gguf_convert_app.function(
     image=gguf_converter_image(),
     memory=32768,  # 32GB RAM
@@ -189,15 +368,7 @@ def gguf_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, gguf_file, size_mb.
     """
-    import gc
-    import os
-    import re
-    import subprocess
-    import tempfile
-    from pathlib import Path
-
-    from huggingface_hub import HfApi, list_repo_tree
-    from loguru import logger
+    from huggingface_hub import HfApi
 
     if not re.match(r"^[a-zA-Z0-9_.-]+$", gguf_name):
         raise ValueError(f"Invalid gguf_name: {gguf_name}")
@@ -216,25 +387,13 @@ def gguf_convert_model(
     # ------------------------------------------------------------------
     # Check if file already exists
     # ------------------------------------------------------------------
-    if not force:
-        try:
-            existing_files = [
-                f.path for f in list_repo_tree(hf_target, token=hf_token, recursive=True)
-            ]
-            if gguf_repo_path in existing_files:
-                logger.info(
-                    "File {} already exists in {}. Skipping. Use force=True to overwrite.",
-                    gguf_repo_path,
-                    hf_target,
-                )
-                return {
-                    "model_name": model_name,
-                    "status": "skipped",
-                    "reason": "already_exists",
-                    "hf_target": hf_target,
-                }
-        except Exception:
-            pass  # Repo does not exist yet, will be created
+    if not force and _check_if_gguf_exists(hf_target, gguf_repo_path, hf_token):
+        return {
+            "model_name": model_name,
+            "status": "skipped",
+            "reason": "already_exists",
+            "hf_target": hf_target,
+        }
 
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir) / "model"
@@ -245,17 +404,7 @@ def gguf_convert_model(
         # ------------------------------------------------------------------
         # Download model from HuggingFace Hub
         # ------------------------------------------------------------------
-        logger.info("Loading model {} from HuggingFace Hub...", hf_source)
-
-        # Download all required files
-        from huggingface_hub import snapshot_download
-
-        snapshot_download(
-            repo_id=hf_source,
-            local_dir=str(model_dir.resolve()),
-            token=hf_token,
-        )
-        logger.info("Model downloaded to {}", model_dir)
+        _download_hf_model(hf_source, model_dir, hf_token)
 
         # ------------------------------------------------------------------
         # Step 1: convert_hf_to_gguf.py -> F16 GGUF
@@ -263,30 +412,7 @@ def gguf_convert_model(
         f16_path = Path(tmpdir) / f"{gguf_name}-f16.gguf"
         q4_path = Path(tmpdir) / "output" / gguf_filename
 
-        logger.info("Converting HF -> GGUF F16: {}", f16_path)
-
-        convert_cmd = [
-            "python",
-            "/opt/llama.cpp/convert_hf_to_gguf.py",
-            str(model_dir.resolve()),
-            "--outfile",
-            str(f16_path.resolve()),
-            "--outtype",
-            "f16",
-        ]
-        result = subprocess.run(
-            convert_cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            logger.error("convert_hf_to_gguf.py failed:\n{}", result.stderr)
-            msg = f"convert_hf_to_gguf.py failed with exit code {result.returncode}"
-            raise RuntimeError(msg)
-
-        f16_size = f16_path.stat().st_size / (1024**2)
-        logger.info("GGUF F16 exported: {:.2f} MB", f16_size)
+        f16_size = _convert_hf_to_f16_gguf(model_dir, f16_path)
 
         # Free RAM
         gc.collect()
@@ -294,32 +420,7 @@ def gguf_convert_model(
         # ------------------------------------------------------------------
         # Step 2: llama-quantize -> Q4_K_M
         # ------------------------------------------------------------------
-        logger.info("Quantizing GGUF F16 -> {}: {}", quant_type, q4_path)
-
-        quantize_cmd = [
-            "/opt/llama.cpp/build/bin/llama-quantize",
-            str(f16_path.resolve()),
-            str(q4_path.resolve()),
-            quant_type,
-        ]
-        result = subprocess.run(
-            quantize_cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            logger.error("llama-quantize failed:\n{}", result.stderr)
-            msg = f"llama-quantize failed with exit code {result.returncode}"
-            raise RuntimeError(msg)
-
-        q4_size = q4_path.stat().st_size / (1024**2)
-        logger.info(
-            "GGUF {} quantized: {:.2f} MB (compression ratio: {:.1f}x)",
-            quant_type,
-            q4_size,
-            f16_size / q4_size if q4_size > 0 else 0,
-        )
+        q4_size = _quantize_f16_to_gguf(f16_path, q4_path, quant_type, f16_size)
 
         # Delete F16 intermediate
         f16_path.unlink()
@@ -327,24 +428,6 @@ def gguf_convert_model(
         # ------------------------------------------------------------------
         # Upload GGUF file to HuggingFace Hub
         # ------------------------------------------------------------------
-        logger.info("Uploading {} to {}...", gguf_repo_path, hf_target)
-
-        api.create_repo(
-            repo_id=hf_target,
-            repo_type="model",
-            exist_ok=True,
-            private=False,
-        )
-
-        api.upload_file(
-            path_or_fileobj=str(q4_path.resolve()),
-            path_in_repo=gguf_repo_path,
-            repo_id=hf_target,
-            repo_type="model",
-            commit_message=f"Add GGUF {quant_type} converted from {hf_source}",
-        )
-
-        # Upload model card
         config_obj = GgufModelConfig(
             name=model_name,
             hf_source=hf_source,
@@ -352,32 +435,18 @@ def gguf_convert_model(
             gguf_name=gguf_name,
             output_attr=output_attr,
         )
-        model_card = _generate_gguf_model_card(config_obj, gguf_filename, q4_size)
-        api.upload_file(
-            path_or_fileobj=model_card.encode("utf-8"),
-            path_in_repo="README.md",
-            repo_id=hf_target,
-            repo_type="model",
-            commit_message="docs: update model card",
+        _upload_gguf_artifacts(
+            api=api,
+            hf_target=hf_target,
+            hf_source=hf_source,
+            hf_token=hf_token,
+            q4_path=q4_path,
+            gguf_filename=gguf_filename,
+            gguf_repo_path=gguf_repo_path,
+            quant_type=quant_type,
+            q4_size=q4_size,
+            config_obj=config_obj,
         )
-
-        # Upload tokenizer + config from source for model loading
-        from huggingface_hub import hf_hub_download as _hf_download
-
-        for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
-            try:
-                local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=hf_token)
-                api.upload_file(
-                    path_or_fileobj=local_cfg,
-                    path_in_repo=cfg_file,
-                    repo_id=hf_target,
-                    repo_type="model",
-                    commit_message=f"Add {cfg_file}",
-                )
-            except Exception:
-                pass  # Some config files may not exist
-
-        logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
     gc.collect()
 
