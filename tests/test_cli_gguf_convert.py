@@ -144,6 +144,8 @@ def test_gguf_convert_auth_error():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 1
+    assert "Modal not authenticated" in result.output
+    assert "modal token set" in result.output
 
 
 # ---------------------------------------------------------------------------
