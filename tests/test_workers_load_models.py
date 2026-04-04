@@ -4,7 +4,6 @@ These tests call the methods directly with pre-populated mock objects to cover
 the container-startup code that cannot be reached via HTTP routes.
 """
 
-from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 

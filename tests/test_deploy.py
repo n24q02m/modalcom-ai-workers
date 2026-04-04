@@ -4,7 +4,6 @@ Validates command generation, dry-run mode, and error handling
 without actually calling modal deploy.
 """
 
-from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 

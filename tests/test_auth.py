@@ -4,7 +4,6 @@ Validates token verification, timing-safe comparison, dev mode bypass,
 and multi-key support for per-app isolation.
 """
 
-from __future__ import annotations
 
 import os
 from unittest.mock import MagicMock, patch

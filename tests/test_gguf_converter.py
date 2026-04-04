@@ -1,6 +1,5 @@
 """Tests for gguf_converter module: registry, _generate_gguf_model_card, GgufModelConfig."""
 
-from __future__ import annotations
 
 import pytest
 

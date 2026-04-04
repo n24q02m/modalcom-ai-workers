@@ -1,6 +1,5 @@
 """Tests for onnx_converter module: registry, _generate_model_card, OnnxModelConfig."""
 
-from __future__ import annotations
 
 from ai_workers.workers.onnx_converter import (
     ONNX_MODELS,

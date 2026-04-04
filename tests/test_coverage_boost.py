@@ -11,7 +11,6 @@ Targets:
 - volumes.py: download_models
 """
 
-from __future__ import annotations
 
 import os
 from unittest.mock import MagicMock, patch

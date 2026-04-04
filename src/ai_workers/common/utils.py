@@ -3,7 +3,6 @@
 Provides SSRF-safe image loading for all vision workers (OCR, VL embedding, VL reranker).
 """
 
-from __future__ import annotations
 
 import base64
 import io

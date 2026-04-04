@@ -1,6 +1,5 @@
 """CLI entry point: python -m ai_workers.cli <command>"""
 
-from __future__ import annotations
 
 import typer
 

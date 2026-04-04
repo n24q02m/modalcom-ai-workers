@@ -1,6 +1,5 @@
 """Tests for cli/gguf_convert.py — list_gguf_models and _gguf_convert_remote."""
 
-from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 

@@ -5,7 +5,6 @@ model class) is defined here. Both the CLI tools (convert, upload, deploy)
 and the Modal workers reference this registry.
 """
 
-from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field

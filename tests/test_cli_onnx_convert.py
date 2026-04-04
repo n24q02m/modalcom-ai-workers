@@ -1,6 +1,5 @@
 """Tests for cli/onnx_convert.py — list_onnx_models and _onnx_convert_remote."""
 
-from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 

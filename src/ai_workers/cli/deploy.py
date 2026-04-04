@@ -4,7 +4,6 @@ Wraps `modal deploy` for individual or all workers.
 Supports multi-app worker files by specifying the app variable name.
 """
 
-from __future__ import annotations
 
 import subprocess
 

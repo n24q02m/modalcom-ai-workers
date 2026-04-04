@@ -12,7 +12,6 @@ Usage:
   python -m ai_workers onnx-convert all --force
 """
 
-from __future__ import annotations
 
 import modal
 import typer

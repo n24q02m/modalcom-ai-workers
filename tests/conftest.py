@@ -5,7 +5,6 @@ into sys.modules BEFORE any worker/image module is imported.
 This lets us import and test worker FastAPI apps without GPU or heavy packages.
 """
 
-from __future__ import annotations
 
 import importlib.util
 import os

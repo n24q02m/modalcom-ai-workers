@@ -3,7 +3,6 @@
 Covers previously uncovered lines: 38-80, 133-138, 153-154, 157-158, 170-192.
 """
 
-from __future__ import annotations
 
 import subprocess
 from unittest.mock import MagicMock, patch

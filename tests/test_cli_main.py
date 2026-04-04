@@ -1,6 +1,5 @@
 """Tests for cli/__main__.py — root CLI app structure."""
 
-from __future__ import annotations
 
 from typer.testing import CliRunner
 
