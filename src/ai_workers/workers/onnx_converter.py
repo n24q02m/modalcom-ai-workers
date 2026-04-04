@@ -458,7 +458,6 @@ def onnx_convert_model(
         msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
         raise ValueError(msg)
 
-
     # ------------------------------------------------------------------
     # Check if repo already exists
     # ------------------------------------------------------------------

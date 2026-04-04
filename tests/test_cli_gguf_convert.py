@@ -222,4 +222,3 @@ def test_gguf_convert_dry_run():
         assert result.exit_code == 0
         assert "dry run -- skipped" in result.output
         mock_model.remote.assert_not_called()
-

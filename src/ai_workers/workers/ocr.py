@@ -215,7 +215,9 @@ class OCRServer:
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
                             try:
-                                image = await asyncio.to_thread(self._load_image_from_url, image_url)
+                                image = await asyncio.to_thread(
+                                    self._load_image_from_url, image_url
+                                )
                             except (ValueError, RuntimeError) as exc:
                                 return JSONResponse(status_code=400, content={"error": str(exc)})
                     elif isinstance(msg.content, str):

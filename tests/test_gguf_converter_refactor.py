@@ -41,7 +41,7 @@ def test_gguf_convert_model_orchestration(
         hf_source="org/source",
         hf_target="org/target",
         gguf_name="test",
-        force=False
+        force=False,
     )
 
     # Verify orchestration
@@ -55,6 +55,7 @@ def test_gguf_convert_model_orchestration(
     assert result["status"] == "success"
     assert result["size_mb"] == 250.0
 
+
 @patch("ai_workers.workers.gguf_converter._check_if_gguf_exists")
 @patch("os.environ.get")
 def test_gguf_convert_model_skips_if_exists(mock_env_get, mock_exists):
@@ -66,7 +67,7 @@ def test_gguf_convert_model_skips_if_exists(mock_env_get, mock_exists):
         hf_source="org/source",
         hf_target="org/target",
         gguf_name="test",
-        force=False
+        force=False,
     )
 
     assert result["status"] == "skipped"

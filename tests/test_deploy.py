@@ -271,6 +271,7 @@ class TestGroupDeployTargets:
         targets = _group_deploy_targets(models)
         assert len(targets) == 0
 
+
 class TestDeploySingleSkip:
     """Test skipping deployment when config attributes are missing."""
 
@@ -303,4 +304,3 @@ class TestDeploySingleSkip:
 
         _deploy_single("dummy-model")
         mock_deploy_app.assert_not_called()
-

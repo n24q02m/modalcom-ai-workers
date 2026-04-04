@@ -312,8 +312,6 @@ def test_onnx_convert_all_failure():
     assert "1 model(s) failed: test" in result.output
 
 
-
-
 # ---------------------------------------------------------------------------
 # dry-run skips remote call
 # ---------------------------------------------------------------------------
@@ -325,4 +323,3 @@ def test_onnx_convert_dry_run():
         assert result.exit_code == 0
         assert "dry run -- skipped" in result.output
         mock_model.remote.assert_not_called()
-

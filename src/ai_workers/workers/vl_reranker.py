@@ -200,9 +200,7 @@ class VLRerankerServer:
                 if probs.dim() == 1:
                     curr_scores = [probs[1].item()]
                 elif len(probs.shape) > 0 and probs.shape[0] > 0:
-                    curr_scores = (
-                        probs[:, 1].tolist() if probs.dim() == 2 else [probs[1].item()]
-                    )
+                    curr_scores = probs[:, 1].tolist() if probs.dim() == 2 else [probs[1].item()]
                 else:
                     curr_scores = []
 
@@ -335,9 +333,7 @@ class VLRerankerServer:
                 body.query,
                 doc_texts,
                 doc_images,
-                query_image=image_map.get(body.query_image_url)
-                if body.query_image_url
-                else None,
+                query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
             )
 
             # Build results
