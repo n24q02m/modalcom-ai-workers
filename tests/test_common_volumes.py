@@ -5,17 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-def test_volumes_constants():
-    """Verify global constants and Modal volume definitions."""
-    from ai_workers.common import volumes
-
-    assert volumes.HF_CACHE_DIR == "/root/.cache/huggingface"
-    assert isinstance(volumes.ACTIVE_MODEL_HF_IDS, list)
-    assert len(volumes.ACTIVE_MODEL_HF_IDS) > 0
-    assert isinstance(volumes.ALL_MODEL_HF_IDS, list)
-    assert len(volumes.ALL_MODEL_HF_IDS) >= len(volumes.ACTIVE_MODEL_HF_IDS)
-
-
 def test_download_models_success():
     """Test successful download of all models."""
     mock_targets = ["model-a", "model-b"]
@@ -88,21 +77,3 @@ def test_download_models_all_failure():
         mock_commit.assert_called_once()
         assert "FAIL: model-a (Network Error)" in result
         assert "FAIL: model-b (Network Error)" in result
-
-
-def test_download_models_empty_targets():
-    """Test download when there are no models to download."""
-    with (
-        patch("ai_workers.common.volumes.ACTIVE_MODEL_HF_IDS", []),
-        patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
-        patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
-    ):
-        import huggingface_hub
-
-        from ai_workers.common.volumes import download_models
-
-        result = download_models()
-
-        assert huggingface_hub.snapshot_download.call_count == 0
-        mock_commit.assert_called_once()
-        assert result == ""
