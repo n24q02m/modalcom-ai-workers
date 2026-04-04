@@ -25,8 +25,6 @@ Flow:
     7. Push all files to HuggingFace Hub (public repo)
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import modal
