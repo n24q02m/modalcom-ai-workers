@@ -136,7 +136,7 @@ def test_embeddings_vlinput_with_image_url(server):
 
     with (
         patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+        patch.object(server, "_load_image_from_url", return_value=MagicMock()),
     ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -197,7 +197,7 @@ def test_embeddings_list_of_vlinputs(server):
 
     with (
         patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+        patch.object(server, "_load_image_from_url", return_value=MagicMock()),
     ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -238,7 +238,7 @@ def test_embeddings_multiple_multimodal_batching(server):
 
     with (
         patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.object(server, '_load_image_from_url', return_value=MagicMock())
+        patch.object(server, "_load_image_from_url", return_value=MagicMock()),
     ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
@@ -296,7 +296,9 @@ def test_embeddings_heavy_model(server):
 def test_embeddings_vlinput_image_fetch_failure(server):
     with (
         patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.object(server, '_load_image_from_url', side_effect=ValueError("Failed to load image"))
+        patch.object(
+            server, "_load_image_from_url", side_effect=ValueError("Failed to load image")
+        ),
     ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=False)

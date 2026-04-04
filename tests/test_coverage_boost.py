@@ -690,7 +690,7 @@ class TestVLEmbeddingComputeMethods:
 
         with (
             patch.dict(os.environ, {"API_KEY": "k"}),
-            patch.object(server, '_load_image_from_url', return_value=MagicMock())
+            patch.object(server, "_load_image_from_url", return_value=MagicMock()),
         ):
             app = server.serve()
 
@@ -719,7 +719,7 @@ class TestVLEmbeddingComputeMethods:
 
         with (
             patch.dict(os.environ, {"API_KEY": "k"}),
-            patch.object(server, '_load_image_from_url', return_value=MagicMock())
+            patch.object(server, "_load_image_from_url", return_value=MagicMock()),
         ):
             app = server.serve()
 
