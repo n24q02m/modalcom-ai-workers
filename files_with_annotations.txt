@@ -1,0 +1,10 @@
+src/ai_workers/common/logging.py
+src/ai_workers/common/config.py
+src/ai_workers/common/volumes.py
+src/ai_workers/common/images.py
+src/ai_workers/workers/onnx_converter.py
+src/ai_workers/workers/gguf_converter.py
+src/ai_workers/cli/deploy.py
+src/ai_workers/cli/__main__.py
+src/ai_workers/cli/onnx_convert.py
+src/ai_workers/cli/gguf_convert.py

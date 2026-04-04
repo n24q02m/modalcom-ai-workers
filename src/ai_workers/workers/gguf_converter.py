@@ -16,8 +16,6 @@ Flow:
     4. Push to HuggingFace Hub (existing repo)
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import modal
