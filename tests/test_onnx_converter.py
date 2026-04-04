@@ -137,3 +137,85 @@ def test_generate_model_card_gguf_link():
     )
     card = _generate_model_card(cfg, int8_size_mb=50.0, q4f16_size_mb=30.0)
     assert "org/MyModel-GGUF" in card
+
+
+# ---------------------------------------------------------------------------
+# Security: trust_remote_code validation
+# ---------------------------------------------------------------------------
+
+
+def test_onnx_convert_model_untrusted_org_raises_error():
+    import pytest
+
+    from ai_workers.workers.onnx_converter import onnx_convert_model
+
+    with pytest.raises(ValueError, match="Untrusted organization 'malicious-org'"):
+        onnx_convert_model(
+            model_name="test",
+            hf_source="malicious-org/evil-model",
+            hf_target="mine/evil-onnx",
+            model_class="AutoModel",
+            output_attr="logits",
+            trust_remote_code=True,
+        )
+
+
+def test_onnx_convert_model_trusted_org_proceeds_past_validation():
+    from unittest.mock import MagicMock, patch
+
+    # Mock modules that are not installed in the test environment
+    mock_hf = MagicMock()
+    mock_hf.repo_exists.return_value = True
+
+    # Create a dummy model and tokenizer to mock from_pretrained
+    MagicMock()
+    MagicMock()
+
+    with patch.dict(
+        "sys.modules",
+        {
+            "huggingface_hub": mock_hf,
+            "onnx": MagicMock(),
+            "torch": MagicMock(),
+            "transformers": MagicMock(),
+            "onnxruntime": MagicMock(),
+            "onnxruntime.quantization": MagicMock(),
+            "onnxruntime.quantization.matmul_nbits_quantizer": MagicMock(),
+        },
+    ):
+        from ai_workers.workers.onnx_converter import onnx_convert_model
+
+        with (
+            patch("os.environ.get", return_value="fake-token"),
+            patch("tempfile.TemporaryDirectory") as mock_tmpdir,
+        ):
+            mock_tmpdir.return_value.__enter__.return_value = "/tmp/fake"
+
+            # Should NOT raise ValueError for untrusted org if trust_remote_code=False
+            # It will still fail later because of deep mocks but should pass security check
+            try:
+                onnx_convert_model(
+                    model_name="test",
+                    hf_source="any-org/any-model",
+                    hf_target="any/target",
+                    model_class="AutoModel",
+                    output_attr="logits",
+                    trust_remote_code=False,
+                )
+            except Exception as e:
+                if isinstance(e, ValueError) and "Untrusted organization" in str(e):
+                    raise
+
+            # Should NOT raise ValueError for trusted org if trust_remote_code=True
+            try:
+                onnx_convert_model(
+                    model_name="test",
+                    hf_source="Qwen/Qwen3-Embedding-0.6B",
+                    hf_target="n24q02m/Qwen3-Embedding-0.6B-ONNX",
+                    model_class="AutoModel",
+                    output_attr="last_hidden_state",
+                    trust_remote_code=True,
+                )
+            except Exception as e:
+                if isinstance(e, ValueError) and "Untrusted organization" in str(e):
+                    raise

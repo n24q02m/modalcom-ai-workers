@@ -211,3 +211,57 @@ def test_load_image_from_url_network(server):
         result = server._load_image_from_url("https://example.com/img.png")
 
     assert result.mode == "RGB"
+
+
+def test_chat_completions_invalid_image_url(server):
+    """ValueError from _load_image_from_url should return 400."""
+    server._load_image_from_url = MagicMock(
+        side_effect=ValueError("URL blocked by SSRF protection")
+    )
+
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_NAME,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": "http://127.0.0.1/pwn.png"}},
+                    ],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "URL blocked by SSRF protection"
+
+
+def test_chat_completions_failed_image_fetch(server):
+    """RuntimeError from _load_image_from_url should return 400."""
+    server._load_image_from_url = MagicMock(
+        side_effect=RuntimeError("Failed to load image from URL")
+    )
+
+    tc, key = _client(server)
+    resp = tc.post(
+        "/v1/chat/completions",
+        json={
+            "model": MODEL_NAME,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": "https://example.com/fail.png"}},
+                    ],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {key}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "Failed to load image from URL"

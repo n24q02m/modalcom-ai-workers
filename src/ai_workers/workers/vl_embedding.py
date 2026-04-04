@@ -123,60 +123,59 @@ class VLEmbeddingServer:
             for t in texts
         ]
 
-        # Process each message separately (VL processor handles one at a time)
-        all_embeddings = []
-        for messages in messages_batch:
-            text = processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            inputs = processor(text=text, return_tensors="pt", padding=True).to(model.device)
+        # Batched processing
+        text_inputs = processor.apply_chat_template(
+            messages_batch, tokenize=False, add_generation_prompt=True
+        )
+        inputs = processor(text=text_inputs, return_tensors="pt", padding=True).to(model.device)
 
-            with torch.no_grad():
-                outputs = model(**inputs)
-                # Official Qwen3-VL-Embedding: EOS token pooling
-                embedding = self._last_token_pool(
-                    outputs.last_hidden_state, inputs["attention_mask"]
-                )
-                # L2 normalize
-                embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            # Official Qwen3-VL-Embedding: EOS token pooling
+            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            # L2 normalize
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
-            all_embeddings.append(embedding[:, :EMBEDDING_DIM].cpu().tolist()[0])
+        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
-        return all_embeddings
-
-    def _embed_multimodal(self, model_name: str, text: str, image_url: str) -> list[float]:
-        """Embed a single image+text pair with EOS token pooling."""
+    def _embed_multimodal(
+        self, model_name: str, texts: list[str], image_urls: list[str]
+    ) -> list[list[float]]:
+        """Embed a batch of image+text pairs with EOS token pooling."""
         import torch
         from qwen_vl_utils import process_vision_info
 
         from ai_workers.common.utils import is_safe_url
 
-        # Validate URL before passing to process_vision_info (SSRF protection)
-        # Skip validation for base64 data URIs (no network call)
-        if not image_url.startswith("data:") and not is_safe_url(image_url):
-            raise ValueError(f"URL blocked by SSRF protection: {image_url}")
+        # Validate URLs before passing to process_vision_info (SSRF protection)
+        for url in image_urls:
+            if not url.startswith("data:") and not is_safe_url(url):
+                raise ValueError(f"URL blocked by SSRF protection: {url}")
 
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image_url},
-                    {"type": "text", "text": text},
-                ],
-            },
+        messages_batch = [
+            [
+                {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": url},
+                        {"type": "text", "text": text},
+                    ],
+                },
+            ]
+            for text, url in zip(texts, image_urls, strict=True)
         ]
 
-        text_input = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+        text_inputs = processor.apply_chat_template(
+            messages_batch, tokenize=False, add_generation_prompt=True
         )
-        image_inputs, video_inputs = process_vision_info(messages)
+        image_inputs, video_inputs = process_vision_info(messages_batch)
 
         inputs = processor(
-            text=[text_input],
+            text=text_inputs,
             images=image_inputs,
             videos=video_inputs,
             padding=True,
@@ -186,10 +185,10 @@ class VLEmbeddingServer:
         with torch.no_grad():
             outputs = model(**inputs)
             # Official Qwen3-VL-Embedding: EOS token pooling
-            embedding = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
-            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
-        return embedding[:, :EMBEDDING_DIM].cpu().tolist()[0]
+        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
     @modal.asgi_app()
     def serve(self):
@@ -280,19 +279,39 @@ class VLEmbeddingServer:
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    emb = self._embed_multimodal(body.model, body.input.text, body.input.image_url)
-                    embeddings = [emb]
+                    embeddings = self._embed_multimodal(
+                        body.model, [body.input.text], [body.input.image_url]
+                    )
                 else:
                     embeddings = self._embed_text(body.model, [body.input.text])
             elif isinstance(body.input, list):
-                # List of multimodal inputs
-                for item in body.input:
+                # List of multimodal inputs - aggregate for batching
+                mm_indices = []
+                mm_texts = []
+                mm_urls = []
+                text_indices = []
+                text_texts = []
+
+                for i, item in enumerate(body.input):
                     if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        emb = self._embed_multimodal(body.model, item.text, item.image_url)
-                        embeddings.append(emb)
+                        mm_indices.append(i)
+                        mm_texts.append(item.text)
+                        mm_urls.append(item.image_url)
                     elif isinstance(item, VLEmbeddingInput):
-                        embs = self._embed_text(body.model, [item.text])
-                        embeddings.extend(embs)
+                        text_indices.append(i)
+                        text_texts.append(item.text)
+
+                embeddings: list[list[float]] = [None] * len(body.input)
+
+                if mm_indices:
+                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                    for idx, res in zip(mm_indices, mm_results, strict=True):
+                        embeddings[idx] = res
+
+                if text_indices:
+                    text_results = self._embed_text(body.model, text_texts)
+                    for idx, res in zip(text_indices, text_results, strict=True):
+                        embeddings[idx] = res
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
             return EmbeddingResponse(data=data, model=body.model)

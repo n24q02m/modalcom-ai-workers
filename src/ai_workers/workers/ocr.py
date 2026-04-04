@@ -141,6 +141,8 @@ class OCRServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel
@@ -212,7 +214,10 @@ class OCRServer:
                     if isinstance(msg.content, list):
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
-                            image = self._load_image_from_url(image_url)
+                            try:
+                                image = await asyncio.to_thread(self._load_image_from_url, image_url)
+                            except (ValueError, RuntimeError) as exc:
+                                return JSONResponse(status_code=400, content={"error": str(exc)})
                     elif isinstance(msg.content, str):
                         text_prompt = msg.content
                     break
@@ -233,7 +238,7 @@ class OCRServer:
                     usage=Usage(),
                 )
 
-            result = self._run_ocr(image, text_prompt)
+            result = await asyncio.to_thread(self._run_ocr, image, text_prompt)
 
             return ChatCompletionResponse(
                 id=f"chatcmpl-{uuid.uuid4().hex[:12]}",

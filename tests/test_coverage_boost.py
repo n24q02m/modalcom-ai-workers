@@ -627,7 +627,7 @@ class TestVLEmbeddingComputeMethods:
             pytest.raises(ValueError, match="SSRF"),
         ):
             server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "text", "http://internal.local/img.png"
+                "qwen3-vl-embedding-2b", ["text"], ["http://internal.local/img.png"]
             )
 
     def test_embed_multimodal_base64_skips_ssrf(self):
@@ -670,7 +670,7 @@ class TestVLEmbeddingComputeMethods:
             patch("ai_workers.common.utils.is_safe_url") as mock_ssrf,
         ):
             server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
+                "qwen3-vl-embedding-2b", ["describe"], ["data:image/png;base64,iVBOR..."]
             )
             # is_safe_url should NOT be called for data: URIs
             mock_ssrf.assert_not_called()
@@ -680,7 +680,7 @@ class TestVLEmbeddingComputeMethods:
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.5, 0.6])
+        server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):
             app = server.serve()
@@ -705,7 +705,7 @@ class TestVLEmbeddingComputeMethods:
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
+        server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -740,7 +740,7 @@ class TestTTSSynthesizeEdgeCases:
 
     def test_synthesize_non_list_wavs(self):
         """Line 126: wavs is not a list (e.g., single numpy array)."""
-        from ai_workers.workers.tts import TTSServer
+        from ai_workers.workers.tts import TTSOptions, TTSServer
 
         server = TTSServer()
         mock_model = MagicMock()
@@ -749,7 +749,7 @@ class TestTTSSynthesizeEdgeCases:
         mock_model.generate_custom_voice.return_value = (single_wav, 24000)
         server.models = {"qwen3-tts-0.6b": mock_model}
 
-        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello")
+        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello", TTSOptions())
         assert sr == 24000
         # wavs is the single_wav directly (not indexed from list)
         assert wavs is single_wav
