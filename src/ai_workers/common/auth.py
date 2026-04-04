@@ -1,7 +1,5 @@
 """Bearer token authentication middleware for FastAPI workers."""
 
-from __future__ import annotations
-
 import hmac
 import os
 
