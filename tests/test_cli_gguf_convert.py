@@ -210,3 +210,16 @@ def test_gguf_convert_all_error_handling():
     assert "2 model(s) failed" in result.output
     assert "model1" in result.output
     assert "model2" in result.output
+
+
+# dry-run skips remote call
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_dry_run():
+    with patch("ai_workers.cli.gguf_convert.gguf_convert_model") as mock_model:
+        result = runner.invoke(app, ["--dry-run", "qwen3-embedding-0.6b-gguf"])
+        assert result.exit_code == 0
+        assert "dry run -- skipped" in result.output
+        mock_model.remote.assert_not_called()
+

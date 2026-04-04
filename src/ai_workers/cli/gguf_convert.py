@@ -42,6 +42,11 @@ def gguf_convert(
         "-q",
         help="GGUF quantization type (default: Q4_K_M)",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Skip remote execution",
+    ),
 ) -> None:
     """Convert HuggingFace model to GGUF on Modal CPU, push to HF Hub."""
     if model is None:
@@ -61,7 +66,7 @@ def gguf_convert(
         failed: list[str] = []
         for name in GGUF_MODELS:
             try:
-                _gguf_convert_remote(name, force=force, quant_type=quant_type)
+                _gguf_convert_remote(name, force=force, quant_type=quant_type, dry_run=dry_run)
             except (SystemExit, Exception):
                 failed.append(name)
         if failed:
@@ -74,11 +79,11 @@ def gguf_convert(
         )
         return
 
-    _gguf_convert_remote(model, force=force, quant_type=quant_type)
+    _gguf_convert_remote(model, force=force, quant_type=quant_type, dry_run=dry_run)
 
 
 def _gguf_convert_remote(
-    model_name: str, *, force: bool = False, quant_type: str = "Q4_K_M"
+    model_name: str, *, force: bool = False, quant_type: str = "Q4_K_M", dry_run: bool = False
 ) -> None:
     """Call Modal remote function to GGUF convert a model."""
     if model_name not in GGUF_MODELS:
@@ -87,6 +92,9 @@ def _gguf_convert_remote(
         raise typer.Exit(code=1)
 
     config = GGUF_MODELS[model_name]
+    if dry_run:
+        console.print("[yellow]  (dry run -- skipped)[/yellow]")
+        return
 
     console.print(f"\n[bold cyan]{'=' * 60}[/bold cyan]")
     console.print(f"[bold]GGUF Converting: {config.name}[/bold]")

@@ -37,6 +37,11 @@ def onnx_convert(
         "-f",
         help="Overwrite if repo already exists on HF Hub",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Skip remote execution",
+    ),
 ) -> None:
     """Convert HuggingFace model to ONNX multi-variant (INT8 + Q4F16) on Modal CPU, push to HF Hub."""
     if model is None:
@@ -56,7 +61,7 @@ def onnx_convert(
         failed: list[str] = []
         for name in ONNX_MODELS:
             try:
-                _onnx_convert_remote(name, force=force)
+                _onnx_convert_remote(name, force=force, dry_run=dry_run)
             except (SystemExit, Exception):
                 failed.append(name)
         if failed:
@@ -69,10 +74,10 @@ def onnx_convert(
         )
         return
 
-    _onnx_convert_remote(model, force=force)
+    _onnx_convert_remote(model, force=force, dry_run=dry_run)
 
 
-def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
+def _onnx_convert_remote(model_name: str, *, force: bool = False, dry_run: bool = False) -> None:
     """Call Modal remote function to ONNX convert a model."""
     if model_name not in ONNX_MODELS:
         available = ", ".join(sorted(ONNX_MODELS.keys()))
@@ -80,6 +85,9 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False) -> None:
         raise typer.Exit(code=1)
 
     config = ONNX_MODELS[model_name]
+    if dry_run:
+        console.print("[yellow]  (dry run -- skipped)[/yellow]")
+        return
 
     console.print(f"\n[bold cyan]{'=' * 60}[/bold cyan]")
     console.print(f"[bold]ONNX Converting: {config.name}[/bold]")
