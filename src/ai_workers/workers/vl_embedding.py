@@ -149,12 +149,10 @@ class VLEmbeddingServer:
         import torch
         from qwen_vl_utils import process_vision_info
 
-        from ai_workers.common.utils import is_safe_url
+        from ai_workers.common.utils import load_image_from_url
 
-        # Validate URL before passing to process_vision_info (SSRF protection)
-        # Skip validation for base64 data URIs (no network call)
-        if not image_url.startswith("data:") and not is_safe_url(image_url):
-            raise ValueError(f"URL blocked by SSRF protection: {image_url}")
+        # Load image via SSRF-safe utility with IP pinning
+        image = load_image_from_url(image_url)
 
         model = self.models[model_name]
         processor = self.processors[model_name]
@@ -164,7 +162,7 @@ class VLEmbeddingServer:
             {
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": image_url},
+                    {"type": "image", "image": image},
                     {"type": "text", "text": text},
                 ],
             },
