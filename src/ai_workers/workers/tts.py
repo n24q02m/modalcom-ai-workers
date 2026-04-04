@@ -166,7 +166,7 @@ class TTSServer:
             }
 
         @app.post("/v1/audio/speech")
-        async def create_speech(body: SpeechRequest = Body(...)):
+        def create_speech(body: SpeechRequest = Body(...)):
             """OpenAI-compatible TTS endpoint.
 
             Returns WAV audio bytes. Uses preset speakers from CustomVoice models.
