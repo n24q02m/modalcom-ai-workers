@@ -270,3 +270,37 @@ class TestGroupDeployTargets:
 
         targets = _group_deploy_targets(models)
         assert len(targets) == 0
+
+class TestDeploySingleSkip:
+    """Test skipping deployment when config attributes are missing."""
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    @patch("ai_workers.cli.deploy.get_model")
+    def test_skip_missing_worker_module(
+        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock
+    ) -> None:
+        """Should skip if worker_module is missing."""
+        mock_config = MagicMock()
+        mock_config.name = "dummy-model"
+        mock_config.worker_module = ""
+        mock_config.modal_app_var = "dummy_app"
+        mock_get_model.return_value = mock_config
+
+        _deploy_single("dummy-model")
+        mock_deploy_app.assert_not_called()
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    @patch("ai_workers.cli.deploy.get_model")
+    def test_skip_missing_modal_app_var(
+        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock
+    ) -> None:
+        """Should skip if modal_app_var is missing."""
+        mock_config = MagicMock()
+        mock_config.name = "dummy-model"
+        mock_config.worker_module = "ai_workers.workers.dummy"
+        mock_config.modal_app_var = ""
+        mock_get_model.return_value = mock_config
+
+        _deploy_single("dummy-model")
+        mock_deploy_app.assert_not_called()
+
