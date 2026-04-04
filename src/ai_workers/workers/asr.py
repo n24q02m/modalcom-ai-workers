@@ -181,7 +181,7 @@ class ASRServer:
             max_audio_size = 25 * 1024 * 1024  # 25 MB
 
             # Early exit if Content-Length exceeds limit (if provided by client)
-            if file.size and file.size > max_audio_size:
+            if file.size is not None and file.size > max_audio_size:
                 return JSONResponse(
                     status_code=413,
                     content={
