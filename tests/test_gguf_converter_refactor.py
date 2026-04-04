@@ -1,12 +1,12 @@
-from unittest.mock import MagicMock, patch
-import pytest
 import sys
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Mock huggingface_hub to avoid ModuleNotFoundError in environment
 sys.modules["huggingface_hub"] = MagicMock()
 
+# ruff: noqa: E402
 from ai_workers.workers.gguf_converter import gguf_convert_model
+
 
 @patch("ai_workers.workers.gguf_converter._check_if_gguf_exists")
 @patch("ai_workers.workers.gguf_converter._download_hf_model")

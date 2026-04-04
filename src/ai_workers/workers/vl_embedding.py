@@ -166,7 +166,7 @@ class VLEmbeddingServer:
                     ],
                 },
             ]
-            for text, url in zip(texts, image_urls)
+            for text, url in zip(texts, image_urls, strict=False)
         ]
 
         text_inputs = processor.apply_chat_template(
@@ -305,12 +305,12 @@ class VLEmbeddingServer:
 
                 if mm_indices:
                     mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
-                    for idx, res in zip(mm_indices, mm_results):
+                    for idx, res in zip(mm_indices, mm_results, strict=False):
                         embeddings[idx] = res
 
                 if text_indices:
                     text_results = self._embed_text(body.model, text_texts)
-                    for idx, res in zip(text_indices, text_results):
+                    for idx, res in zip(text_indices, text_results, strict=False):
                         embeddings[idx] = res
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
