@@ -627,7 +627,7 @@ class TestVLEmbeddingComputeMethods:
             pytest.raises(ValueError, match="SSRF"),
         ):
             server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "text", "http://internal.local/img.png"
+                "qwen3-vl-embedding-2b", ["text"], ["http://internal.local/img.png"]
             )
 
     def test_embed_multimodal_base64_skips_ssrf(self):
@@ -670,7 +670,7 @@ class TestVLEmbeddingComputeMethods:
             patch("ai_workers.common.utils.load_image_from_url") as mock_ssrf,
         ):
             server._embed_multimodal(
-                "qwen3-vl-embedding-2b", "describe", "data:image/png;base64,iVBOR..."
+                "qwen3-vl-embedding-2b", ["describe"], ["data:image/png;base64,iVBOR..."]
             )
             # is_safe_url should NOT be called for data: URIs
             mock_ssrf.assert_called_once()
@@ -680,7 +680,7 @@ class TestVLEmbeddingComputeMethods:
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.5, 0.6])
+        server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):
             app = server.serve()
@@ -705,7 +705,7 @@ class TestVLEmbeddingComputeMethods:
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
+        server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
         with patch.dict(os.environ, {"API_KEY": "k"}):

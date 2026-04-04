@@ -129,7 +129,7 @@ def test_embeddings_list_of_strings(server):
 
 
 def test_embeddings_vlinput_with_image_url(server):
-    server._embed_multimodal = MagicMock(return_value=[0.5, 0.6, 0.7])
+    server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6, 0.7]])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -148,7 +148,7 @@ def test_embeddings_vlinput_with_image_url(server):
     assert len(data["data"]) == 1
     assert data["data"][0]["embedding"] == [0.5, 0.6, 0.7]
     server._embed_multimodal.assert_called_once_with(
-        "qwen3-vl-embedding-2b", "describe this image", "http://example.com/img.jpg"
+        "qwen3-vl-embedding-2b", ["describe this image"], ["http://example.com/img.jpg"]
     )
 
 
@@ -182,7 +182,7 @@ def test_embeddings_vlinput_without_image_url(server):
 
 
 def test_embeddings_list_of_vlinputs(server):
-    server._embed_multimodal = MagicMock(return_value=[0.9, 0.8])
+    server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -203,6 +203,47 @@ def test_embeddings_list_of_vlinputs(server):
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["data"]) == 2
+    assert data["data"][0]["embedding"] == [0.9, 0.8]
+    assert data["data"][1]["embedding"] == [0.1, 0.2]
+    server._embed_multimodal.assert_called_once_with(
+        "qwen3-vl-embedding-2b", ["img text"], ["http://example.com/img.jpg"]
+    )
+    server._embed_text.assert_called_once_with("qwen3-vl-embedding-2b", ["no image"])
+
+
+# ---------------------------------------------------------------------------
+# /v1/embeddings — multiple multimodal inputs (batching test)
+# ---------------------------------------------------------------------------
+
+
+def test_embeddings_multiple_multimodal_batching(server):
+    server._embed_multimodal = MagicMock(return_value=[[0.1, 0.1], [0.2, 0.2]])
+
+    with patch.dict(os.environ, {"API_KEY": "k"}):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": [
+                    {"text": "text1", "image_url": "http://example.com/img1.jpg"},
+                    {"text": "text2", "image_url": "http://example.com/img2.jpg"},
+                ],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["data"]) == 2
+    assert data["data"][0]["embedding"] == [0.1, 0.1]
+    assert data["data"][1]["embedding"] == [0.2, 0.2]
+    server._embed_multimodal.assert_called_once_with(
+        "qwen3-vl-embedding-2b",
+        ["text1", "text2"],
+        ["http://example.com/img1.jpg", "http://example.com/img2.jpg"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +288,7 @@ def test_embeddings_vlinput_image_fetch_failure(server):
         server.models = {"qwen3-vl-embedding-2b": MagicMock()}
 
         mock_processor = MagicMock()
-        mock_processor.apply_chat_template.return_value = "chat_text"
+        mock_processor.apply_chat_template.return_value = ["chat_text"]
         server.processors = {"qwen3-vl-embedding-2b": mock_processor}
 
         resp = tc.post(
