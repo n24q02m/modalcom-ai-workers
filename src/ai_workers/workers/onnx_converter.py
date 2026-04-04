@@ -63,6 +63,9 @@ class OnnxModelConfig:
 ONNX_MODELS: dict[str, OnnxModelConfig] = {}
 
 
+TRUSTED_ORGS = ["Qwen", "deepseek-ai"]
+
+
 def _register(config: OnnxModelConfig) -> OnnxModelConfig:
     ONNX_MODELS[config.name] = config
     return config
@@ -210,6 +213,12 @@ def onnx_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, variants, total_size_mb.
     """
+    if trust_remote_code:
+        org = hf_source.split("/")[0]
+        if org not in TRUSTED_ORGS:
+            msg = f"Untrusted organization '{org}'. trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
+            raise ValueError(msg)
+
     import gc
     import os
     import tempfile
