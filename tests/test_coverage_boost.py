@@ -740,7 +740,7 @@ class TestTTSSynthesizeEdgeCases:
 
     def test_synthesize_non_list_wavs(self):
         """Line 126: wavs is not a list (e.g., single numpy array)."""
-        from ai_workers.workers.tts import TTSServer
+        from ai_workers.workers.tts import TTSOptions, TTSServer
 
         server = TTSServer()
         mock_model = MagicMock()
@@ -749,7 +749,7 @@ class TestTTSSynthesizeEdgeCases:
         mock_model.generate_custom_voice.return_value = (single_wav, 24000)
         server.models = {"qwen3-tts-0.6b": mock_model}
 
-        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello")
+        wavs, sr = server._synthesize("qwen3-tts-0.6b", "hello", TTSOptions())
         assert sr == 24000
         # wavs is the single_wav directly (not indexed from list)
         assert wavs is single_wav
