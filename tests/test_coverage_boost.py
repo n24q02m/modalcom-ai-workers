@@ -16,6 +16,8 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+from ai_workers.common.utils import last_token_pool
+
 import pytest
 
 # ===========================================================================
@@ -28,7 +30,7 @@ class TestUtilsUncoveredBranches:
 
     def test_is_safe_url_parse_exception(self):
         """Line 38-40: urlparse raises an exception."""
-        from ai_workers.common.utils import is_safe_url
+        from ai_workers.common.utils import last_token_pool, is_safe_url
 
         with patch("ai_workers.common.utils.urlparse", side_effect=ValueError("bad")):
             assert is_safe_url("http://example.com") is False
@@ -37,7 +39,7 @@ class TestUtilsUncoveredBranches:
         """Line 67-69: ip_address() raises ValueError for malformed IP."""
         import socket
 
-        from ai_workers.common.utils import is_safe_url
+        from ai_workers.common.utils import last_token_pool, is_safe_url
 
         bad_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
         with patch("socket.getaddrinfo", return_value=bad_addrinfo):
@@ -45,7 +47,7 @@ class TestUtilsUncoveredBranches:
 
     def test_load_image_base64_exceeds_size_limit(self):
         """Line 103: base64 data exceeds MAX_BASE64_SIZE."""
-        from ai_workers.common.utils import load_image_from_url
+        from ai_workers.common.utils import last_token_pool, load_image_from_url
 
         with (
             patch("ai_workers.common.utils.MAX_BASE64_SIZE", 10),
@@ -55,7 +57,7 @@ class TestUtilsUncoveredBranches:
 
     def test_load_image_url_exceeds_download_size_limit(self):
         """Line 135-136: downloaded image exceeds MAX_IMAGE_SIZE."""
-        from ai_workers.common.utils import load_image_from_url
+        from ai_workers.common.utils import last_token_pool, load_image_from_url
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
@@ -72,7 +74,7 @@ class TestUtilsUncoveredBranches:
 
     def test_load_image_url_valueerror_reraise(self):
         """Line 143: ValueError from size limit is re-raised, not wrapped in RuntimeError."""
-        from ai_workers.common.utils import load_image_from_url
+        from ai_workers.common.utils import last_token_pool, load_image_from_url
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
@@ -198,7 +200,7 @@ class TestEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Should return hidden[:, -1]
         assert result is last_hidden
 
@@ -216,7 +218,7 @@ class TestEmbeddingComputeMethods:
         hidden = MagicMock()
         hidden.shape = (2, 5, 8)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Returns hidden[arange, sequence_lengths]
         assert result is not None
 
@@ -566,7 +568,7 @@ class TestVLEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is last_hidden
 
     def test_last_token_pool_right_padding(self):
@@ -585,7 +587,7 @@ class TestVLEmbeddingComputeMethods:
         indexed = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=indexed)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is indexed
 
     def test_embed_text_method(self):
