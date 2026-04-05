@@ -219,3 +219,42 @@ def test_onnx_convert_model_trusted_org_proceeds_past_validation():
             except Exception as e:
                 if isinstance(e, ValueError) and "Untrusted organization" in str(e):
                     raise
+
+
+def test_validate_hf_repo_id_path_traversal():
+    import pytest
+
+    from ai_workers.common.utils import validate_hf_repo_id
+
+    with pytest.raises(ValueError, match="path traversal detected"):
+        validate_hf_repo_id("Qwen/../evil", trust_remote_code=False)
+
+
+def test_onnx_convert_model_invalid_model_class():
+    import pytest
+
+    from ai_workers.workers.onnx_converter import onnx_convert_model
+
+    with pytest.raises(ValueError, match="Invalid model_class 'EvilClass'"):
+        onnx_convert_model(
+            model_name="test",
+            hf_source="Qwen/Qwen3-Embedding-0.6B",
+            hf_target="mine/target",
+            model_class="EvilClass",
+            output_attr="logits",
+        )
+
+
+def test_onnx_convert_model_invalid_output_attr():
+    import pytest
+
+    from ai_workers.workers.onnx_converter import onnx_convert_model
+
+    with pytest.raises(ValueError, match="Invalid output_attr 'evil_attr'"):
+        onnx_convert_model(
+            model_name="test",
+            hf_source="Qwen/Qwen3-Embedding-0.6B",
+            hf_target="mine/target",
+            model_class="AutoModel",
+            output_attr="evil_attr",
+        )

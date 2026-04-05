@@ -214,3 +214,38 @@ def load_image_from_url(url: str):
         raise
     except Exception as e:
         raise RuntimeError(f"Failed to load image from URL: {url}") from e
+
+
+# ---------------------------------------------------------------------------
+# HuggingFace Security
+# ---------------------------------------------------------------------------
+
+TRUSTED_ORGS = ["Qwen", "deepseek-ai"]
+
+
+def validate_hf_repo_id(repo_id: str, trust_remote_code: bool) -> None:
+    """Validate HuggingFace repository ID for security.
+
+    Checks for:
+    - Path traversal attempts (..)
+    - Trusted organization if trust_remote_code is True
+
+    Args:
+        repo_id: HuggingFace repository ID (e.g. "org/model").
+        trust_remote_code: Whether remote code execution is requested.
+
+    Raises:
+        ValueError: If the repository ID is invalid or untrusted.
+    """
+    if ".." in repo_id:
+        raise ValueError(f"Invalid repository ID: path traversal detected in '{repo_id}'")
+
+    if trust_remote_code:
+        parts = repo_id.split("/")
+        org = parts[0] if len(parts) > 1 else ""
+        if org not in TRUSTED_ORGS:
+            msg = (
+                f"Untrusted organization '{org}' in '{repo_id}'. "
+                f"trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
+            )
+            raise ValueError(msg)
