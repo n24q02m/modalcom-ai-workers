@@ -240,3 +240,80 @@ class TestMultiKeySupport:
             # Per-app key works
             request = _make_request(auth_header="Bearer app-key")
             await verify_api_key(request)
+
+
+class TestAuthMiddleware:
+    """Test the shared auth_middleware function."""
+
+    @pytest.mark.asyncio
+    async def test_middleware_allows_health(self) -> None:
+        """Accessing /health should bypass authentication."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from ai_workers.common.auth import auth_middleware
+
+        app = FastAPI()
+        app.middleware("http")(auth_middleware)
+
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        client = TestClient(app)
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_middleware_allows_root(self) -> None:
+        """Accessing / should bypass authentication."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from ai_workers.common.auth import auth_middleware
+
+        app = FastAPI()
+        app.middleware("http")(auth_middleware)
+
+        @app.get("/")
+        async def root():
+            return {"hello": "world"}
+
+        client = TestClient(app)
+        response = client.get("/")
+        assert response.status_code == 200
+        assert response.json() == {"hello": "world"}
+
+    @pytest.mark.asyncio
+    async def test_middleware_requires_auth_for_other_paths(self) -> None:
+        """Other paths should require a valid Bearer token."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from ai_workers.common.auth import auth_middleware
+
+        app = FastAPI()
+        app.middleware("http")(auth_middleware)
+
+        @app.post("/v1/embeddings")
+        async def embeddings():
+            return {"data": []}
+
+        with patch.dict(os.environ, {"WORKER_API_KEY": "secret-key"}, clear=False):
+            client = TestClient(app)
+
+            # No token
+            response = client.post("/v1/embeddings")
+            assert response.status_code == 401
+            assert "Missing Bearer token" in response.json()["detail"]
+
+            # Invalid token
+            response = client.post("/v1/embeddings", headers={"Authorization": "Bearer wrong"})
+            assert response.status_code == 401
+            assert "Invalid API key" in response.json()["detail"]
+
+            # Valid token
+            response = client.post("/v1/embeddings", headers={"Authorization": "Bearer secret-key"})
+            assert response.status_code == 200
+            assert response.json() == {"data": []}
