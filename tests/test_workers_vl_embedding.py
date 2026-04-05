@@ -60,7 +60,10 @@ def test_embeddings_requires_auth(server):
 
 
 def test_embeddings_unknown_model(server):
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -80,7 +83,10 @@ def test_embeddings_unknown_model(server):
 def test_embeddings_string_input(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -106,7 +112,10 @@ def test_embeddings_string_input(server):
 def test_embeddings_list_of_strings(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -131,7 +140,10 @@ def test_embeddings_list_of_strings(server):
 def test_embeddings_vlinput_with_image_url(server):
     server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6, 0.7]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -148,7 +160,7 @@ def test_embeddings_vlinput_with_image_url(server):
     assert len(data["data"]) == 1
     assert data["data"][0]["embedding"] == [0.5, 0.6, 0.7]
     server._embed_multimodal.assert_called_once_with(
-        "qwen3-vl-embedding-2b", ["describe this image"], ["http://example.com/img.jpg"]
+        "qwen3-vl-embedding-2b", ["describe this image"], ["mock_img"]
     )
 
 
@@ -160,7 +172,10 @@ def test_embeddings_vlinput_with_image_url(server):
 def test_embeddings_vlinput_without_image_url(server):
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -185,7 +200,10 @@ def test_embeddings_list_of_vlinputs(server):
     server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
     server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -206,7 +224,7 @@ def test_embeddings_list_of_vlinputs(server):
     assert data["data"][0]["embedding"] == [0.9, 0.8]
     assert data["data"][1]["embedding"] == [0.1, 0.2]
     server._embed_multimodal.assert_called_once_with(
-        "qwen3-vl-embedding-2b", ["img text"], ["http://example.com/img.jpg"]
+        "qwen3-vl-embedding-2b", ["img text"], ["mock_img"]
     )
     server._embed_text.assert_called_once_with("qwen3-vl-embedding-2b", ["no image"])
 
@@ -219,7 +237,10 @@ def test_embeddings_list_of_vlinputs(server):
 def test_embeddings_multiple_multimodal_batching(server):
     server._embed_multimodal = MagicMock(return_value=[[0.1, 0.1], [0.2, 0.2]])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -242,7 +263,7 @@ def test_embeddings_multiple_multimodal_batching(server):
     server._embed_multimodal.assert_called_once_with(
         "qwen3-vl-embedding-2b",
         ["text1", "text2"],
-        ["http://example.com/img1.jpg", "http://example.com/img2.jpg"],
+        ["mock_img", "mock_img"],
     )
 
 
@@ -254,7 +275,10 @@ def test_embeddings_multiple_multimodal_batching(server):
 def test_embeddings_heavy_model(server):
     server._embed_text = MagicMock(return_value=[[0.1] * 10])
 
-    with patch.dict(os.environ, {"API_KEY": "k"}):
+    with (
+        patch("ai_workers.common.utils.load_image_from_url", return_value="mock_img"),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
         app = server.serve()
         tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
@@ -272,32 +296,23 @@ def test_embeddings_heavy_model(server):
 # ---------------------------------------------------------------------------
 
 
-def test_embeddings_vlinput_image_fetch_failure(server):
-    mock_qwen_vl_utils = MagicMock()
-    mock_qwen_vl_utils.process_vision_info.side_effect = ValueError("Failed to load image")
-
+def test_embeddings_invalid_image_url(server):
+    """ValueError from load_image_from_url should return 400."""
     with (
+        patch(
+            "ai_workers.common.utils.load_image_from_url", side_effect=ValueError("SSRF blocked")
+        ),
         patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.dict("sys.modules", {"qwen_vl_utils": mock_qwen_vl_utils}),
     ):
         app = server.serve()
-        # Ensure raise_server_exceptions is False so it returns a 500 status code
-        tc = TestClient(app, raise_server_exceptions=False)
-
-        # _embed_multimodal needs actual server structure for this test to reach process_vision_info
-        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
-
-        mock_processor = MagicMock()
-        mock_processor.apply_chat_template.return_value = ["chat_text"]
-        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
-
+        tc = TestClient(app, raise_server_exceptions=True)
         resp = tc.post(
             "/v1/embeddings",
             json={
                 "model": "qwen3-vl-embedding-2b",
-                "input": {"text": "describe this image", "image_url": "http://example.com/bad.jpg"},
+                "input": {"text": "q", "image_url": "http://unsafe.url"},
             },
             headers={"Authorization": "Bearer k"},
         )
-
-    assert resp.status_code == 500
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "SSRF blocked"
