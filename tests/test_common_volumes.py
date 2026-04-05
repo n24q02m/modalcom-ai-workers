@@ -77,3 +77,28 @@ def test_download_models_all_failure():
         mock_commit.assert_called_once()
         assert "FAIL: model-a (Network Error)" in result
         assert "FAIL: model-b (Network Error)" in result
+
+
+def test_download_models_logging_on_failure():
+    """Test that download_models logs errors correctly when an exception occurs."""
+    mock_targets = ["model-fail"]
+
+    with (
+        patch("ai_workers.common.volumes.ACTIVE_MODEL_HF_IDS", mock_targets),
+        patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
+        patch("ai_workers.common.volumes.hf_cache_vol.commit"),
+        patch("loguru.logger.error") as mock_logger_error,
+    ):
+        import huggingface_hub
+
+        from ai_workers.common.volumes import download_models
+
+        huggingface_hub.snapshot_download.side_effect = Exception("Generic Error")
+
+        download_models()
+
+        mock_logger_error.assert_called_once()
+        # Verify it contains repo_id and error message
+        args, _ = mock_logger_error.call_args
+        assert "model-fail" in args[1]
+        assert "Generic Error" in str(args[2])
