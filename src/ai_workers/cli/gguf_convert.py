@@ -125,20 +125,15 @@ def _gguf_convert_remote(
                 f"Use --force to overwrite.[/yellow]"
             )
         elif status == "success":
-            size_mb = result.get("size_mb", 0)
-            gguf_file = result.get("gguf_file", "")
-            url = result.get("url", "")
-            console.print(
-                f"[green]GGUF Convert {config.name}: SUCCESS "
-                f"({gguf_file}, {size_mb:.2f} MB)[/green]"
-            )
-            console.print(f"  [dim]{url}[/dim]")
+            console.print("\n[bold green]Conversion Success![/bold green]")
+            for k, v in result.items():
+                console.print(f"  {k}: {v}")
         else:
             console.print(f"[red]GGUF Convert {config.name}: unknown status — {result}[/red]")
             raise typer.Exit(code=1) from None
 
     except modal.exception.AuthError:
-        console.print("[red]Error: Modal not authenticated. Run `modal token set` first.[/red]")
+        console.print("[red]Authentication failed. Run `modal token new`.[/red]")
         raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"[red]GGUF Convert {config.name}: FAILED — {e}[/red]")
