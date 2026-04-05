@@ -127,6 +127,19 @@ class TestIsSafeUrl:
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://example.com") is False
 
+    def test_is_safe_url_ipaddress_value_error(self):
+        """Test is_safe_url handles ValueError from ipaddress.ip_address."""
+        with (
+            patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO),
+            patch("ipaddress.ip_address", side_effect=ValueError("Mocked error")),
+        ):
+            assert is_safe_url("http://example.com") is False
+
+    def test_is_safe_url_generic_exception(self):
+        """Test is_safe_url catches generic Exception and returns False."""
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=Exception("Unexpected")):
+            assert is_safe_url("http://example.com") is False
+
 
 # load_image_from_url
 # ---------------------------------------------------------------------------
