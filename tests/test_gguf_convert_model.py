@@ -145,3 +145,61 @@ def test_gguf_convert_model_quantize_fail(mock_hf_hub, mock_env):
         mock_stat.return_value.st_size = 100
         with pytest.raises(RuntimeError, match=re.escape("llama-quantize failed")):
             gguf_convert_model("m", "s", "t", "v")
+
+
+def test_gguf_convert_model_repo_not_found(mock_hf_hub, mock_env):
+    """Test when repo doesn't exist, it should continue and create it."""
+    mock_hf_hub["list_repo_tree"].side_effect = Exception("Repo not found")
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.resolve", side_effect=lambda: MagicMock()),
+        patch("tempfile.TemporaryDirectory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp/fake"
+        mock_stat.return_value.st_size = 100 * 1024 * 1024
+
+        result = gguf_convert_model(
+            model_name="test-model",
+            hf_source="org/source",
+            hf_target="org/target-GGUF",
+            gguf_name="test",
+        )
+
+        assert result["status"] == "success"
+        mock_hf_hub["list_repo_tree"].assert_called_once()
+        mock_hf_hub["api"].create_repo.assert_called_once()
+
+
+def test_gguf_convert_model_config_download_fail(mock_hf_hub, mock_env):
+    """Test when config files fail to download, it should still succeed."""
+    mock_hf_hub["hf_hub_download"].side_effect = Exception("Download failed")
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.resolve", side_effect=lambda: MagicMock()),
+        patch("tempfile.TemporaryDirectory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp/fake"
+        mock_stat.return_value.st_size = 100 * 1024 * 1024
+
+        result = gguf_convert_model(
+            model_name="test-model",
+            hf_source="org/source",
+            hf_target="org/target-GGUF",
+            gguf_name="test",
+        )
+
+        assert result["status"] == "success"
+        # hf_hub_download is called for each config file
+        assert mock_hf_hub["hf_hub_download"].call_count >= 1
