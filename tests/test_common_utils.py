@@ -127,6 +127,11 @@ class TestIsSafeUrl:
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://example.com") is False
 
+    def test_unexpected_error(self):
+        """Test is_safe_url catch-all exception block."""
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Surprise")):
+            assert is_safe_url("http://example.com") is False
+
 
 # load_image_from_url
 # ---------------------------------------------------------------------------
