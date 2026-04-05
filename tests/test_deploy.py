@@ -50,10 +50,14 @@ class TestDeploySingleDryRun:
 class TestDeploySingleErrors:
     """Test deploy error handling."""
 
-    def test_invalid_model_name(self) -> None:
+    def test_invalid_model_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Invalid model name should raise Exit (via typer.Exit -> click.Exit)."""
         with pytest.raises(ClickExit):
             _deploy_single("nonexistent-model")
+        captured = capsys.readouterr()
+        assert "Error:" in captured.out
+        assert "nonexistent-model" in captured.out
+        assert "Available:" in captured.out
 
     @patch("ai_workers.cli.deploy.subprocess")
     def test_modal_not_found(self, mock_subprocess: MagicMock) -> None:
