@@ -150,6 +150,10 @@ def _ensure_requests_stub() -> None:
     """Inject a minimal requests stub if requests is not installed."""
     if "requests" in sys.modules:
         return
+    if importlib.util.find_spec("requests") is not None:
+        return
+    if "requests" in sys.modules:
+        return
 
     requests_stub = types.ModuleType("requests")
     requests_stub.get = MagicMock(return_value=MagicMock())

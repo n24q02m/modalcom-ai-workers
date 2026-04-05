@@ -185,6 +185,7 @@ class TestLoadImageFromUrl:
             allow_redirects=False,
             timeout=30,
             stream=True,
+            proxies={"http": None, "https": None},
         )
 
     def test_http_url_ssrf_blocked(self):

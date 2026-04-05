@@ -129,6 +129,9 @@ def is_safe_url(url: str) -> bool:
     - Hostname must resolve to a public IP (not private/loopback/link-local/multicast)
     - Both IPv4 and IPv6 addresses are validated
 
+    Note: This check is subject to DNS rebinding attacks if used alone.
+    Always use load_image_from_url which implements IP pinning.
+
     Args:
         url: The URL to validate.
 
@@ -148,9 +151,12 @@ def is_safe_url(url: str) -> bool:
 def load_image_from_url(url: str):
     """Load a PIL Image from a URL or base64 data URI with SSRF protection.
 
-    Supports:
-    - Base64 data URIs (data:image/...;base64,...) — no network call
-    - HTTP/HTTPS URLs — validated against SSRF before fetching
+    This function provides defense-in-depth against SSRF:
+    - Disallows non-public IP ranges (private, loopback, link-local, etc.).
+    - Uses DNS pinning to prevent DNS rebinding attacks.
+    - Disallows redirects (allow_redirects=False).
+    - Disallows proxies to prevent bypasses.
+    - Enforces size limits to prevent memory exhaustion.
 
     Args:
         url: Image URL or base64 data URI.
@@ -159,8 +165,8 @@ def load_image_from_url(url: str):
         PIL.Image.Image in RGB mode.
 
     Raises:
-        ValueError: If the URL is blocked by SSRF protection or has an unsupported scheme.
-        RuntimeError: If the image fetch or decode fails.
+        ValueError: If the URL is blocked by SSRF protection or exceeds size limits.
+        RuntimeError: If the image fetch or decode fails, or if security patching is inactive.
     """
     from PIL import Image, UnidentifiedImageError
 
@@ -178,6 +184,15 @@ def load_image_from_url(url: str):
         except (binascii.Error, UnidentifiedImageError, OSError) as e:
             raise RuntimeError("Failed to decode base64 image data URI") from e
 
+    # Ensure IP pinning patch is active for safety
+    try:
+        from urllib3.util import connection
+
+        if not getattr(connection, "_is_patched", False):
+            raise RuntimeError("SSRF IP pinning is not active")
+    except ImportError as e:
+        raise RuntimeError("SSRF IP pinning is not active: urllib3 not found") from e
+
     # SSRF check for HTTP URLs and IP pinning
     try:
         safe_ips = _get_safe_ips(url)
@@ -194,6 +209,7 @@ def load_image_from_url(url: str):
                 allow_redirects=False,
                 timeout=30,
                 stream=True,
+                proxies={"http": None, "https": None},
             )
             response.raise_for_status()
 
