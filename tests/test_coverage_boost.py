@@ -820,3 +820,18 @@ class TestPackageInit:
 
             importlib.reload(ai_workers)
             assert ai_workers.__version__ == "0.0.0-dev"
+
+    def test_modal_init_failure_handled(self):
+        """Line 8: when modal.is_local raises, it is suppressed."""
+        # Use patch.dict to mock modal even if it is not installed
+        with patch.dict("sys.modules", {"modal": MagicMock()}):
+            import modal
+
+            modal.is_local.side_effect = Exception("modal error")
+
+            import importlib
+
+            import ai_workers
+
+            importlib.reload(ai_workers)
+            # Should not raise
