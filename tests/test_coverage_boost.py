@@ -152,7 +152,10 @@ class TestASRUncoveredBranches:
 
         server = ASRServer()
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
             app = server.serve()
 
         from fastapi.testclient import TestClient
@@ -229,17 +232,19 @@ class TestEmbeddingComputeMethods:
         # Mock _embed to return proper embeddings + token count
         server._embed = MagicMock(return_value=([[0.1, 0.2, 0.3]], 5))
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={"model": "qwen3-embedding-0.6b", "input": "test"},
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={"model": "qwen3-embedding-0.6b", "input": "test"},
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         assert resp.json()["usage"]["total_tokens"] == 5
@@ -498,21 +503,23 @@ class TestRerankerUncoveredBranches:
         server = RerankerServer()
         server._score_batch = MagicMock(return_value=[0.8])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v2/rerank",
-            json={
-                "model": "qwen3-reranker-8b",
-                "query": "test query",
-                "documents": ["test doc"],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v2/rerank",
+                json={
+                    "model": "qwen3-reranker-8b",
+                    "query": "test query",
+                    "documents": ["test doc"],
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         assert resp.json()["model"] == "qwen3-reranker-8b"
@@ -524,21 +531,23 @@ class TestRerankerUncoveredBranches:
 
         server = RerankerServer()
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v2/rerank",
-            json={
-                "model": "bad-model",
-                "query": "q",
-                "documents": ["d"],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v2/rerank",
+                json={
+                    "model": "bad-model",
+                    "query": "q",
+                    "documents": ["d"],
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 400
         assert "Invalid rerank request for model:" in resp.json()["error"]
@@ -595,40 +604,49 @@ class TestVLEmbeddingComputeMethods:
         server = VLEmbeddingServer()
         server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={"model": "qwen3-vl-embedding-2b", "input": "hello"},
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={"model": "qwen3-vl-embedding-2b", "input": "hello"},
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         server._embed_text.assert_called_once()
 
     def test_embed_multimodal_ssrf_blocked(self):
-        """Line 157: _embed_multimodal blocks unsafe URLs."""
+        """SSRF is blocked when load_image_from_url fails."""
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
+        from fastapi.testclient import TestClient
+        import os
+        from unittest.mock import patch, MagicMock
 
         server = VLEmbeddingServer()
         server.models = {"qwen3-vl-embedding-2b": MagicMock()}
         server.processors = {"qwen3-vl-embedding-2b": MagicMock()}
 
         with (
-            patch.dict(
-                "sys.modules",
-                {"qwen_vl_utils": MagicMock()},
-            ),
-            patch("ai_workers.common.utils.is_safe_url", return_value=False),
-            pytest.raises(ValueError, match="SSRF"),
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.is_safe_url", return_value=False)
         ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", ["text"], ["http://internal.local/img.png"]
-            )
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            with pytest.raises(ValueError, match="SSRF"):
+                tc.post(
+                    "/v1/embeddings",
+                    json={
+                        "model": "qwen3-vl-embedding-2b",
+                        "input": {"text": "text", "image_url": "http://internal.local/img.png"}
+                    },
+                    headers={"Authorization": "Bearer k"},
+                )
 
     def test_embed_multimodal_base64_skips_ssrf(self):
         """Line 152: data: URI skips SSRF check (is_safe_url not called)."""
@@ -682,20 +700,22 @@ class TestVLEmbeddingComputeMethods:
         server = VLEmbeddingServer()
         server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         server._embed_multimodal.assert_called_once()
@@ -708,23 +728,25 @@ class TestVLEmbeddingComputeMethods:
         server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
-            app = server.serve()
-
         from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": [
-                    {"text": "with img", "image_url": "http://example.com/img.jpg"},
-                    {"text": "no image"},
-                ],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url", return_value="mock_pil_image"),
+        ):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": [
+                        {"text": "with img", "image_url": "http://example.com/img.jpg"},
+                        {"text": "no image"},
+                    ],
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         assert len(resp.json()["data"]) == 2
