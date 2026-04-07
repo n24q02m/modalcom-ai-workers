@@ -49,6 +49,7 @@ class TestDeploySingleDryRun:
 
 class TestDeploySingleErrors:
     """Test deploy error handling."""
+
     @patch("ai_workers.cli.deploy.console")
     def test_invalid_model_name(self, mock_console: MagicMock) -> None:
         """Invalid model name should raise Exit and print error."""
