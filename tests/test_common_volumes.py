@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 
 def test_download_models_success():
@@ -11,7 +11,7 @@ def test_download_models_success():
 
     with (
         patch("ai_workers.common.volumes.ACTIVE_MODEL_HF_IDS", mock_targets),
-        patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
+        patch.dict("sys.modules", {"huggingface_hub": MagicMock(), "loguru": MagicMock()}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
         import huggingface_hub
@@ -37,9 +37,10 @@ def test_download_models_partial_failure():
             raise RuntimeError("Download timeout")
         return "/mock/path"
 
+    mock_loguru = MagicMock()
     with (
         patch("ai_workers.common.volumes.ACTIVE_MODEL_HF_IDS", mock_targets),
-        patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
+        patch.dict("sys.modules", {"huggingface_hub": MagicMock(), "loguru": mock_loguru}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
         import huggingface_hub
@@ -55,14 +56,20 @@ def test_download_models_partial_failure():
         assert "OK: model-a" in result
         assert "FAIL: model-fail (Download timeout)" in result
 
+        # Verify logger.error was called for the failure
+        mock_loguru.logger.error.assert_called_once_with(
+            "Failed to download {}: {}", "model-fail", ANY
+        )
+
 
 def test_download_models_all_failure():
     """Test download where all models fail."""
     mock_targets = ["model-a", "model-b"]
 
+    mock_loguru = MagicMock()
     with (
         patch("ai_workers.common.volumes.ACTIVE_MODEL_HF_IDS", mock_targets),
-        patch.dict("sys.modules", {"huggingface_hub": MagicMock()}),
+        patch.dict("sys.modules", {"huggingface_hub": MagicMock(), "loguru": mock_loguru}),
         patch("ai_workers.common.volumes.hf_cache_vol.commit") as mock_commit,
     ):
         import huggingface_hub
@@ -77,3 +84,8 @@ def test_download_models_all_failure():
         mock_commit.assert_called_once()
         assert "FAIL: model-a (Network Error)" in result
         assert "FAIL: model-b (Network Error)" in result
+
+        # Verify logger.error was called for each failure
+        assert mock_loguru.logger.error.call_count == 2
+        mock_loguru.logger.error.assert_any_call("Failed to download {}: {}", "model-a", ANY)
+        mock_loguru.logger.error.assert_any_call("Failed to download {}: {}", "model-b", ANY)
