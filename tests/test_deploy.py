@@ -304,3 +304,49 @@ class TestDeploySingleSkip:
 
         _deploy_single("dummy-model")
         mock_deploy_app.assert_not_called()
+
+
+class TestDeployAppErrors:
+    """Test error handling in _deploy_app."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_modal_not_found(self, mock_subprocess: MagicMock) -> None:
+        """_deploy_app: Missing modal CLI should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            from ai_workers.cli.deploy import _deploy_app
+
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_failure(self, mock_subprocess: MagicMock) -> None:
+        """_deploy_app: Failed deploy should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            from ai_workers.cli.deploy import _deploy_app
+
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+
+class TestDeployModuleErrorsMerged:
+    """Test error handling in _deploy_module."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_modal_not_found(self, mock_subprocess: MagicMock) -> None:
+        """_deploy_module: Missing modal CLI should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_failure(self, mock_subprocess: MagicMock) -> None:
+        """_deploy_module: Failed deploy should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
