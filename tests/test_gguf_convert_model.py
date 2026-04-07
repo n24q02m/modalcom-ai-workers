@@ -145,3 +145,69 @@ def test_gguf_convert_model_quantize_fail(mock_hf_hub, mock_env):
         mock_stat.return_value.st_size = 100
         with pytest.raises(RuntimeError, match=re.escape("llama-quantize failed")):
             gguf_convert_model("m", "s", "t", "v")
+
+
+def test_gguf_convert_model_repo_not_found(mock_hf_hub, mock_env):
+    """Test when target repo does not exist (list_repo_tree fails)."""
+    mock_hf_hub["list_repo_tree"].side_effect = Exception("Repo not found")
+
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.resolve", side_effect=lambda: MagicMock()),
+        patch("tempfile.TemporaryDirectory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp/fake"
+        mock_stat.return_value.st_size = 100
+
+        result = gguf_convert_model(
+            model_name="test-model",
+            hf_source="org/source",
+            hf_target="org/target-GGUF",
+            gguf_name="test",
+        )
+
+        assert result["status"] == "success"
+        # Should still proceed and try to create the repo
+        mock_hf_hub["api"].create_repo.assert_called_once()
+
+
+def test_gguf_convert_model_config_download_fail(mock_hf_hub, mock_env):
+    """Test when some config files fail to download."""
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    # Fail for one config file, succeed for others
+    # Sequence: config.json, tokenizer.json, tokenizer_config.json
+    mock_hf_hub["hf_hub_download"].side_effect = [
+        "/tmp/config.json",
+        Exception("Not found"),
+        "/tmp/tokenizer_config.json",
+    ]
+
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("pathlib.Path.stat") as mock_stat,
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.resolve", side_effect=lambda: MagicMock()),
+        patch("tempfile.TemporaryDirectory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp/fake"
+        mock_stat.return_value.st_size = 100
+
+        result = gguf_convert_model(
+            model_name="test-model",
+            hf_source="org/source",
+            hf_target="org/target-GGUF",
+            gguf_name="test",
+        )
+
+        assert result["status"] == "success"
+        # 1 for GGUF, 1 for README, 2 for configs = 4
+        assert mock_hf_hub["api"].upload_file.call_count == 4
