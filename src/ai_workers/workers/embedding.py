@@ -18,10 +18,12 @@ import modal
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
-from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
 # Configuration
+from ai_workers.common.utils import last_token_pool
+from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
+
 # ---------------------------------------------------------------------------
 
 SCALEDOWN_WINDOW = 300  # 5 minutes
@@ -91,20 +93,6 @@ class EmbeddingServer:
             self.tokenizers[name] = tokenizer
             logger.info("Loaded {} successfully", name)
 
-    @staticmethod
-    def _last_token_pool(last_hidden_states, attention_mask):
-        """Official Qwen3-Embedding pooling: extract last non-padding token hidden state."""
-        import torch
-
-        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
-        if left_padding:
-            return last_hidden_states[:, -1]
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        return last_hidden_states[
-            torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
-        ]
-
     def _embed(self, model_name: str, texts: list[str]) -> tuple[list[list[float]], int]:
         """Embed texts using the specified model with last token (EOS) pooling."""
         import torch
@@ -123,7 +111,7 @@ class EmbeddingServer:
         with torch.no_grad():
             outputs = model(**inputs)
             # Official Qwen3-Embedding: last token (EOS) pooling
-            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+            embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             # L2 normalize
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
