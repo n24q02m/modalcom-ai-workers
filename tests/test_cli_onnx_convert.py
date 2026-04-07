@@ -323,3 +323,24 @@ def test_onnx_convert_dry_run():
         assert result.exit_code == 0
         assert "dry run -- skipped" in result.output
         mock_model.remote.assert_not_called()
+
+
+def test_onnx_convert_all_system_exit():
+    """Verify 'onnx-convert all' continues if _onnx_convert_remote raises SystemExit."""
+    # Use two test models to verify the loop doesn't abort early.
+    test_models = {"test1": MagicMock(name="test1"), "test2": MagicMock(name="test2")}
+
+    def mock_convert(name, **kwargs):
+        if name == "test1":
+            raise SystemExit(1)
+        raise Exception("boom")
+
+    with (
+        patch("ai_workers.cli.onnx_convert.ONNX_MODELS", test_models),
+        patch("ai_workers.cli.onnx_convert._onnx_convert_remote", side_effect=mock_convert),
+    ):
+        result = runner.invoke(app, ["all"])
+
+    assert result.exit_code == 1
+    # Both models should be in the failure list.
+    assert "2 model(s) failed: test1, test2" in result.output
