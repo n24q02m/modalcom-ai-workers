@@ -73,7 +73,6 @@ def test_rerank_unknown_model(server):
 
 def test_rerank_text_only_docs(server):
     server._score_batch = MagicMock(return_value=[0.8, 0.8])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -105,7 +104,6 @@ def test_rerank_text_only_docs(server):
 
 def test_rerank_multimodal_docs(server):
     server._score_batch = MagicMock(return_value=[0.9, 0.4])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with (
         patch("ai_workers.workers.vl_reranker.load_image_from_url", return_value="mock_img"),
@@ -141,7 +139,6 @@ def test_rerank_multimodal_docs(server):
 
 def test_rerank_sorted_descending(server):
     server._score_batch = MagicMock(return_value=[0.3, 0.9, 0.5])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with (
         patch("ai_workers.workers.vl_reranker.load_image_from_url", return_value="mock_img"),
@@ -171,7 +168,6 @@ def test_rerank_sorted_descending(server):
 
 def test_rerank_top_n(server):
     server._score_batch = MagicMock(return_value=[0.3, 0.9, 0.5])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with (
         patch("ai_workers.workers.vl_reranker.load_image_from_url", return_value="mock_img"),
@@ -200,7 +196,6 @@ def test_rerank_top_n(server):
 
 def test_rerank_with_query_image_url(server):
     server._score_batch = MagicMock(return_value=[0.7])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with (
         patch("ai_workers.workers.vl_reranker.load_image_from_url", return_value="mock_img"),
@@ -231,7 +226,6 @@ def test_rerank_with_query_image_url(server):
 
 def test_rerank_heavy_model(server):
     server._score_batch = MagicMock(return_value=[0.6])
-    server._load_image = MagicMock(return_value="mock_img")
 
     with (
         patch("ai_workers.workers.vl_reranker.load_image_from_url", return_value="mock_img"),
