@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import builtins
+import importlib
 import io
 import socket
 from unittest.mock import MagicMock, patch
@@ -27,6 +29,7 @@ _MULTICAST_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.1",
 _IPV6_LOOPBACK_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0))]
 _IPV6_PRIVATE_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fd00::1", 0, 0, 0))]
 _RESERVED_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("0.0.0.0", 0))]
+_IPV6_UNSPECIFIED_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::", 0, 0, 0))]
 
 
 class TestIsSafeUrl:
@@ -83,6 +86,10 @@ class TestIsSafeUrl:
         with patch("socket.getaddrinfo", return_value=_IPV6_PRIVATE_ADDRINFO):
             assert is_safe_url("http://[fd00::1]/image.png") is False
 
+    def test_rejects_ipv6_unspecified(self):
+        with patch("socket.getaddrinfo", return_value=_IPV6_UNSPECIFIED_ADDRINFO):
+            assert is_safe_url("http://[::]/image.png") is False
+
     def test_rejects_dns_failure(self):
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("DNS failed")):
             assert is_safe_url("http://nonexistent.invalid/image.png") is False
@@ -122,6 +129,10 @@ class TestIsSafeUrl:
         invalid_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
         with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             assert is_safe_url("http://example.com/image.png") is False
+
+    def test_rejects_generic_exception(self):
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=Exception("Unexpected")):
+            assert is_safe_url("http://example.com") is False
 
     def test_rejects_parse_failure(self):
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
@@ -238,10 +249,6 @@ class TestLoadImageFromUrl:
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://[:::1]") is False
 
-    def test_rejects_invalid_ip_from_dns(self):
-        """Test is_safe_url when DNS returns an invalid IP string."""
-        invalid_addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("not-an-ip", 0))]
-        with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             assert is_safe_url("http://example.com") is False
 
 
@@ -289,3 +296,65 @@ class TestLoadImageFromUrlEdgeCases:
             load_image_from_url("https://example.com/large.png")
 
         mock_resp.close.assert_called_once()
+
+
+class TestInternalUtils:
+    def test_pin_hostname_to_ip_nested(self):
+        from ai_workers.common.utils import _pin_hostname_to_ip, _thread_local
+
+        hostname = "example.com"
+        ip1 = "1.1.1.1"
+        ip2 = "2.2.2.2"
+
+        with _pin_hostname_to_ip(hostname, ip1):
+            assert _thread_local.pinned_ips[hostname] == ip1
+            with _pin_hostname_to_ip(hostname, ip2):
+                assert _thread_local.pinned_ips[hostname] == ip2
+            # This should cover line 67
+            assert _thread_local.pinned_ips[hostname] == ip1
+        assert hostname not in getattr(_thread_local, "pinned_ips", {})
+
+    def test_patched_create_connection_with_pin(self):
+        import ai_workers.common.utils
+        from ai_workers.common.utils import _patched_create_connection, _thread_local
+
+        mock_original = MagicMock()
+        with patch.object(ai_workers.common.utils, "_original_create_connection", mock_original):
+            if not hasattr(_thread_local, "pinned_ips"):
+                _thread_local.pinned_ips = {}
+            _thread_local.pinned_ips["pinned.com"] = "9.9.9.9"
+            try:
+                _patched_create_connection(("pinned.com", 80))
+                mock_original.assert_called_once_with(("9.9.9.9", 80))
+            finally:
+                _thread_local.pinned_ips.pop("pinned.com", None)
+
+    def test_patched_create_connection_no_pin(self):
+        import ai_workers.common.utils
+        from ai_workers.common.utils import _thread_local
+
+        mock_original = MagicMock()
+        with patch.object(ai_workers.common.utils, "_original_create_connection", mock_original):
+            if hasattr(_thread_local, "pinned_ips"):
+                _thread_local.pinned_ips.pop("unpinned.com", None)
+            ai_workers.common.utils._patched_create_connection(("unpinned.com", 80))
+            mock_original.assert_called_once_with(("unpinned.com", 80))
+
+
+def test_urllib3_import_error():
+    """Test that the module can be imported even if urllib3 is missing."""
+    # We use a mocked import to raise ImportError when urllib3 is requested
+    real_import = builtins.__import__
+
+    def mocked_import(name, *args, **kwargs):
+        if name == "urllib3.util":
+            raise ImportError("Mocked ImportError")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=mocked_import):
+        import ai_workers.common.utils
+
+        importlib.reload(ai_workers.common.utils)
+
+    # Restore the module to a clean state
+    importlib.reload(ai_workers.common.utils)
