@@ -50,10 +50,18 @@ class TestDeploySingleDryRun:
 class TestDeploySingleErrors:
     """Test deploy error handling."""
 
-    def test_invalid_model_name(self) -> None:
-        """Invalid model name should raise Exit (via typer.Exit -> click.Exit)."""
+    @patch("ai_workers.cli.deploy.console")
+    def test_invalid_model_name(self, mock_console: MagicMock) -> None:
+        """Invalid model name should raise Exit and print error."""
         with pytest.raises(ClickExit):
             _deploy_single("nonexistent-model")
+
+        # Verify error message is printed
+        mock_console.print.assert_called_once()
+        args, _ = mock_console.print.call_args
+        output = args[0]
+        assert "[red]Error:" in output
+        assert "Model 'nonexistent-model' not found." in output
 
     @patch("ai_workers.cli.deploy.subprocess")
     def test_modal_not_found(self, mock_subprocess: MagicMock) -> None:
