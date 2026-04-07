@@ -1,5 +1,6 @@
 """Tests to improve coverage for uncovered branches and error paths.
 
+
 Targets:
 - utils.py: URL parse error, invalid IP, base64 size limit, image download size limit, ValueError re-raise
 - asr.py: _transcribe list/object results, audio file too large
@@ -17,6 +18,8 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from ai_workers.common.utils import last_token_pool
 
 # ===========================================================================
 # utils.py -- uncovered branches
@@ -185,7 +188,6 @@ class TestEmbeddingComputeMethods:
 
     def test_last_token_pool_left_padding(self):
         """Lines 99-101: left_padding branch (all last tokens non-padded)."""
-        from ai_workers.workers.embedding import EmbeddingServer
 
         # Mock attention_mask where [:, -1].sum() == shape[0] (left padding)
         attention_mask = MagicMock()
@@ -198,13 +200,12 @@ class TestEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Should return hidden[:, -1]
         assert result is last_hidden
 
     def test_last_token_pool_right_padding(self):
         """Lines 102-106: right_padding branch (variable sequence lengths)."""
-        from ai_workers.workers.embedding import EmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -216,7 +217,7 @@ class TestEmbeddingComputeMethods:
         hidden = MagicMock()
         hidden.shape = (2, 5, 8)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Returns hidden[arange, sequence_lengths]
         assert result is not None
 
@@ -554,7 +555,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_last_token_pool_left_padding(self):
         """Lines 99-103: left padding branch."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -566,12 +566,11 @@ class TestVLEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is last_hidden
 
     def test_last_token_pool_right_padding(self):
         """Lines 104-108: right padding branch."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -585,7 +584,7 @@ class TestVLEmbeddingComputeMethods:
         indexed = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=indexed)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is indexed
 
     def test_embed_text_method(self):
