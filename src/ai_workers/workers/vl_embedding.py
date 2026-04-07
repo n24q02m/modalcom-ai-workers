@@ -13,7 +13,7 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
-from typing import Any
+from typing import Any, cast
 
 import modal
 
@@ -70,8 +70,8 @@ class VLEmbeddingServer:
         from loguru import logger
         from transformers import AutoModel, AutoProcessor
 
-        self.models: dict[str, object] = {}
-        self.processors: dict[str, object] = {}
+        self.models: dict[str, Any] = {}
+        self.processors: dict[str, Any] = {}
 
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
@@ -274,7 +274,9 @@ class VLEmbeddingServer:
                 embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input])
             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
-                embeddings = await asyncio.to_thread(self._embed_text, body.model, body.input)
+                embeddings = await asyncio.to_thread(
+                    self._embed_text, body.model, cast("list[str]", body.input)
+                )
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:

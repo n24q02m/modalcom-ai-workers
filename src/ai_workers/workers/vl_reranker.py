@@ -75,8 +75,8 @@ class VLRerankerServer:
         from loguru import logger
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
-        self.models: dict[str, object] = {}
-        self.processors: dict[str, object] = {}
+        self.models: dict[str, Any] = {}
+        self.processors: dict[str, Any] = {}
         self.yes_no_weights: dict[str, object] = {}
 
         for name, cfg in MODEL_CONFIGS.items():

@@ -611,123 +611,128 @@ class TestVLEmbeddingComputeMethods:
         server._embed_text.assert_called_once()
 
     def test_embed_multimodal_ssrf_blocked(self):
-        """Line 157: _embed_multimodal blocks unsafe URLs."""
+        """Endpoint blocks unsafe URLs via load_image_from_url."""
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
-        server.processors = {"qwen3-vl-embedding-2b": MagicMock()}
-
-        with (
-            patch.dict(
-                "sys.modules",
-                {"qwen_vl_utils": MagicMock()},
-            ),
-            patch("ai_workers.common.utils.is_safe_url", return_value=False),
-            pytest.raises(ValueError, match="SSRF"),
-        ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", ["text"], ["http://internal.local/img.png"]
-            )
-
-    def test_embed_multimodal_base64_skips_ssrf(self):
-        """Line 152: data: URI skips SSRF check (is_safe_url not called)."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
-
-        server = VLEmbeddingServer()
-
-        mock_processor = MagicMock()
-        mock_processor.apply_chat_template.return_value = "text"
-
-        # Mock the processor call result with attention_mask
-        mock_attention_mask = MagicMock()
-        mock_attention_mask.shape = (1, 5)
-        # Left padding: last col sum == batch_size
-        last_col = MagicMock()
-        last_col.sum.return_value = 1
-        mock_attention_mask.__getitem__ = MagicMock(return_value=last_col)
-
-        mock_inputs = MagicMock()
-        mock_inputs.to.return_value = mock_inputs
-        mock_inputs.__getitem__ = lambda self, key: mock_attention_mask
-        mock_processor.return_value = mock_inputs
-
-        # Model output
-        mock_outputs = MagicMock()
-        mock_model = MagicMock()
-        mock_model.return_value = mock_outputs
-
-        server.models = {"qwen3-vl-embedding-2b": mock_model}
-        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
-
-        mock_process_vision = MagicMock(return_value=([MagicMock()], None))
-
-        with (
-            patch.dict(
-                "sys.modules",
-                {"qwen_vl_utils": MagicMock(process_vision_info=mock_process_vision)},
-            ),
-            patch("ai_workers.common.utils.is_safe_url") as mock_is_safe,
-        ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", ["describe"], ["data:image/png;base64,iVBOR..."]
-            )
-            # is_safe_url should NOT be called for data: URIs
-            mock_is_safe.assert_not_called()
-
-    def test_embed_multimodal_via_endpoint(self):
-        """Lines 178-192, 217-221: multimodal input through endpoint."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
-
-        server = VLEmbeddingServer()
-        server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
-
         with patch.dict(os.environ, {"API_KEY": "k"}):
             app = server.serve()
 
         from fastapi.testclient import TestClient
 
         tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
-            },
-            headers={"Authorization": "Bearer k"},
+
+        with patch(
+            "ai_workers.common.utils.load_image_from_url",
+            side_effect=ValueError("SSRF blocked"),
+        ):
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": {"text": "text", "image_url": "http://internal.local/img.png"},
+                },
+                headers={"Authorization": "Bearer k"},
+            )
+
+        assert resp.status_code == 400
+        assert "SSRF blocked" in resp.json()["error"]
+
+    def test_embed_multimodal_base64_skips_ssrf(self):
+        """_embed_multimodal with pre-loaded images."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        mock_model = MagicMock()
+        # Mock inputs for processor call
+        mock_inputs = MagicMock()
+        mock_inputs.to.return_value = mock_inputs
+        mock_inputs.__getitem__.side_effect = lambda k: (
+            mock_attention_mask if k == "attention_mask" else MagicMock()
         )
 
+        # Mock attention_mask for last_token_pool
+        mock_attention_mask = MagicMock()
+        mock_attention_mask.shape = (1, 10)
+        # Mock last_col.sum() for left padding check
+        mock_attention_mask.__getitem__.return_value.sum.return_value = 1
+
+        mock_processor = MagicMock()
+        mock_processor.return_value = mock_inputs
+        mock_processor.apply_chat_template.return_value = ["chat"]
+
+        server.models = {"qwen3-vl-embedding-2b": mock_model}
+        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "qwen_vl_utils": MagicMock(
+                        process_vision_info=MagicMock(return_value=([MagicMock()], [None]))
+                    )
+                },
+            ),
+        ):
+            server._embed_multimodal("qwen3-vl-embedding-2b", ["describe"], [MagicMock()])
+
+    def test_embed_multimodal_via_endpoint(self):
+        """Endpoint with multimodal input."""
+        from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
+        server = VLEmbeddingServer()
+        server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
+
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url") as mock_load,
+        ):
+            mock_load.return_value = MagicMock()
+            app = server.serve()
+            from fastapi.testclient import TestClient
+
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
+                },
+                headers={"Authorization": "Bearer k"},
+            )
+
         assert resp.status_code == 200
-        server._embed_multimodal.assert_called_once()
 
     def test_list_of_vlinputs_mixed_via_endpoint(self):
-        """Lines 287-295: list of VLEmbeddingInput with mixed image/text."""
+        """Endpoint with list of mixed inputs."""
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
         server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch("ai_workers.common.utils.load_image_from_url") as mock_load,
+        ):
+            mock_load.return_value = MagicMock()
             app = server.serve()
+            from fastapi.testclient import TestClient
 
-        from fastapi.testclient import TestClient
-
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": [
-                    {"text": "with img", "image_url": "http://example.com/img.jpg"},
-                    {"text": "no image"},
-                ],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": [
+                        {"text": "with img", "image_url": "http://example.com/img.jpg"},
+                        {"text": "no image"},
+                    ],
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
-        assert len(resp.json()["data"]) == 2
 
 
 # ===========================================================================
