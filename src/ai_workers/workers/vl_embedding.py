@@ -13,6 +13,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.config import get_model
@@ -139,18 +141,11 @@ class VLEmbeddingServer:
         return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
     def _embed_multimodal(
-        self, model_name: str, texts: list[str], image_urls: list[str]
+        self, model_name: str, texts: list[str], images: list[Any]
     ) -> list[list[float]]:
         """Embed a batch of image+text pairs with EOS token pooling."""
         import torch
         from qwen_vl_utils import process_vision_info
-
-        from ai_workers.common.utils import is_safe_url
-
-        # Validate URLs before passing to process_vision_info (SSRF protection)
-        for url in image_urls:
-            if not url.startswith("data:") and not is_safe_url(url):
-                raise ValueError(f"URL blocked by SSRF protection: {url}")
 
         model = self.models[model_name]
         processor = self.processors[model_name]
@@ -161,12 +156,12 @@ class VLEmbeddingServer:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": url},
+                        {"type": "image", "image": image},
                         {"type": "text", "text": text},
                     ],
                 },
             ]
-            for text, url in zip(texts, image_urls, strict=False)
+            for text, image in zip(texts, images, strict=False)
         ]
 
         text_inputs = processor.apply_chat_template(
@@ -192,6 +187,8 @@ class VLEmbeddingServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, field_validator
@@ -259,6 +256,8 @@ class VLEmbeddingServer:
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
         async def create_embeddings(body: VLEmbeddingRequest = Body(...)):
+            from ai_workers.common.utils import load_image_from_url
+
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
                     status_code=400,
@@ -272,18 +271,24 @@ class VLEmbeddingServer:
 
             if isinstance(body.input, str):
                 # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input])
             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, body.input)
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    embeddings = self._embed_multimodal(
-                        body.model, [body.input.text], [body.input.image_url]
-                    )
+                    try:
+                        image = await asyncio.to_thread(load_image_from_url, body.input.image_url)
+                        embeddings = await asyncio.to_thread(
+                            self._embed_multimodal, body.model, [body.input.text], [image]
+                        )
+                    except (ValueError, RuntimeError) as exc:
+                        return JSONResponse(status_code=400, content={"error": str(exc)})
                 else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
+                    embeddings = await asyncio.to_thread(
+                        self._embed_text, body.model, [body.input.text]
+                    )
             elif isinstance(body.input, list):
                 # List of multimodal inputs - aggregate for batching
                 mm_indices = []
@@ -304,12 +309,21 @@ class VLEmbeddingServer:
                 embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
-                    for idx, res in zip(mm_indices, mm_results, strict=False):
-                        embeddings[idx] = res
+                    try:
+                        # Pre-fetch images concurrently
+                        fetched_images = await asyncio.gather(
+                            *(asyncio.to_thread(load_image_from_url, url) for url in mm_urls)
+                        )
+                        mm_results = await asyncio.to_thread(
+                            self._embed_multimodal, body.model, mm_texts, fetched_images
+                        )
+                        for idx, res in zip(mm_indices, mm_results, strict=False):
+                            embeddings[idx] = res
+                    except (ValueError, RuntimeError) as exc:
+                        return JSONResponse(status_code=400, content={"error": str(exc)})
 
                 if text_indices:
-                    text_results = self._embed_text(body.model, text_texts)
+                    text_results = await asyncio.to_thread(self._embed_text, body.model, text_texts)
                     for idx, res in zip(text_indices, text_results, strict=False):
                         embeddings[idx] = res
 
