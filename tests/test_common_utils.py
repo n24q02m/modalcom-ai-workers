@@ -127,6 +127,22 @@ class TestIsSafeUrl:
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://example.com") is False
 
+    def test_rejects_unexpected_exception(self):
+        """Test that an unexpected exception in _get_safe_ips returns False."""
+        with patch(
+            "ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Unexpected error")
+        ):
+            assert is_safe_url("http://example.com") is False
+
+    def test_rejects_invalid_ip_format(self):
+        """Test that an invalid IP format from DNS resolution is handled (ValueError)."""
+        addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("invalid-ip", 0))]
+        with (
+            patch("socket.getaddrinfo", return_value=addrinfo),
+            patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")),
+        ):
+            assert is_safe_url("http://example.com") is False
+
 
 # load_image_from_url
 # ---------------------------------------------------------------------------
