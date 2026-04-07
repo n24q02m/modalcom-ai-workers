@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import gc
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -444,10 +445,32 @@ def onnx_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, variants, total_size_mb.
     """
+    # ------------------------------------------------------------------
+    # Security: validate input arguments
+    # ------------------------------------------------------------------
+    # 1. Validate HF repo IDs (org/repo)
+    repo_id_regex = r"^[a-zA-Z0-9][-a-zA-Z0-9_.]*/[a-zA-Z0-9][-a-zA-Z0-9_.]*$"
+    if not re.match(repo_id_regex, hf_source):
+        msg = f"Invalid hf_source format: {hf_source}. Expected 'org/repo'."
+        raise ValueError(msg)
+    if not re.match(repo_id_regex, hf_target):
+        msg = f"Invalid hf_target format: {hf_target}. Expected 'org/repo'."
+        raise ValueError(msg)
+
+    # 2. Validate output_attr
+    allowed_attrs = ("last_hidden_state", "logits", "yesno_logits")
+    if output_attr not in allowed_attrs:
+        msg = f"Invalid output_attr: {output_attr}. Allowed: {allowed_attrs}"
+        raise ValueError(msg)
+
+    # 3. Validate trust_remote_code
     if trust_remote_code:
         org = hf_source.split("/")[0]
         if org not in TRUSTED_ORGS:
-            msg = f"Untrusted organization '{org}'. trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
+            msg = (
+                f"Untrusted organization '{org}'. "
+                f"trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
+            )
             raise ValueError(msg)
 
     from huggingface_hub import repo_exists

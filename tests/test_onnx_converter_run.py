@@ -81,8 +81,8 @@ def test_onnx_convert_model_missing_token():
         with pytest.raises(ValueError, match="HF_TOKEN is not set"):
             onnx_convert_model(
                 model_name="test",
-                hf_source="src",
-                hf_target="tgt",
+                hf_source="org/src",
+                hf_target="org/tgt",
                 model_class="AutoModel",
                 output_attr="last_hidden_state",
             )
@@ -94,8 +94,8 @@ def test_onnx_convert_model_already_exists():
 
         result = onnx_convert_model(
             model_name="test",
-            hf_source="src",
-            hf_target="tgt",
+            hf_source="org/src",
+            hf_target="org/tgt",
             model_class="AutoModel",
             output_attr="last_hidden_state",
             force=False,
@@ -103,7 +103,7 @@ def test_onnx_convert_model_already_exists():
 
         assert result["status"] == "skipped"
         assert result["reason"] == "already_exists"
-        mock_hf_hub.repo_exists.assert_called_once_with("tgt", token="test-token")
+        mock_hf_hub.repo_exists.assert_called_once_with("org/tgt", token="test-token")
 
 
 def test_onnx_convert_model_invalid_class():
@@ -113,8 +113,8 @@ def test_onnx_convert_model_invalid_class():
         with pytest.raises(ValueError, match="Model class 'InvalidClass' is invalid"):
             onnx_convert_model(
                 model_name="test",
-                hf_source="src",
-                hf_target="tgt",
+                hf_source="org/src",
+                hf_target="org/tgt",
                 model_class="InvalidClass",
                 output_attr="last_hidden_state",
             )
