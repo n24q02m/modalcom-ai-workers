@@ -119,6 +119,23 @@ class TestDeployModuleDryRun:
         _deploy_module("ai_workers.workers.embedding")
         mock_subprocess.run.assert_called_once()
 
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_failure(self, mock_subprocess: MagicMock) -> None:
+        """Failed deploy module should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_modal_not_found(self, mock_subprocess: MagicMock) -> None:
+        """Missing modal CLI in deploy_module should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
 
 class TestDeployAllGrouping:
     """Test that deploy --all correctly groups models by module."""
