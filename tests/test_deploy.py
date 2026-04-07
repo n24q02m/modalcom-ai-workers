@@ -10,8 +10,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from click.exceptions import Exit as ClickExit
+from typer.testing import CliRunner
 
-from ai_workers.cli.deploy import _deploy_module, _deploy_single, _module_to_file_path
+from ai_workers.cli.deploy import (
+    _deploy_app,
+    _deploy_module,
+    _deploy_single,
+    _module_to_file_path,
+    app,
+)
 from ai_workers.common.config import MODEL_REGISTRY
 
 
@@ -304,3 +311,110 @@ class TestDeploySingleSkip:
 
         _deploy_single("dummy-model")
         mock_deploy_app.assert_not_called()
+
+
+class TestDeployAppErrors:
+    """Test _deploy_app error handling."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_modal_not_found(self, mock_subprocess: MagicMock) -> None:
+        """Missing modal CLI should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_failure(self, mock_subprocess: MagicMock) -> None:
+        """Failed deploy should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_app("ai_workers.workers.embedding", "embedding_app")
+
+
+class TestDeployModuleErrors:
+    """Test _deploy_module error handling."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_modal_not_found(self, mock_subprocess: MagicMock) -> None:
+        """Missing modal CLI should raise Exit."""
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_failure(self, mock_subprocess: MagicMock) -> None:
+        """Failed deploy should raise Exit."""
+        import subprocess
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_module("ai_workers.workers.embedding")
+
+
+class TestDeployCli:
+    """Test the deploy CLI command using CliRunner."""
+
+    def setup_method(self) -> None:
+        self.runner = CliRunner()
+
+    @patch("ai_workers.cli.deploy._deploy_single")
+    def test_deploy_single_worker(self, mock_deploy_single: MagicMock) -> None:
+        result = self.runner.invoke(app, ["qwen3-embedding-0.6b"])
+        assert result.exit_code == 0
+        mock_deploy_single.assert_called_once_with("qwen3-embedding-0.6b", dry_run=False)
+
+    @patch("ai_workers.cli.deploy._deploy_single")
+    def test_deploy_single_worker_dry_run(self, mock_deploy_single: MagicMock) -> None:
+        # Options before arguments for callback
+        result = self.runner.invoke(app, ["--dry-run", "qwen3-embedding-0.6b"])
+        assert result.exit_code == 0
+        mock_deploy_single.assert_called_once_with("qwen3-embedding-0.6b", dry_run=True)
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    def test_deploy_all(self, mock_deploy_app: MagicMock) -> None:
+        result = self.runner.invoke(app, ["--all"])
+        assert result.exit_code == 0
+        # Should be 7 unique (module, app_var) pairs
+        assert mock_deploy_app.call_count == 7
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    def test_deploy_all_dry_run(self, mock_deploy_app: MagicMock) -> None:
+        result = self.runner.invoke(app, ["--all", "--dry-run"])
+        assert result.exit_code == 0
+        assert mock_deploy_app.call_count == 7
+        assert mock_deploy_app.call_args[1]["dry_run"] is True
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    def test_deploy_all_failures(self, mock_deploy_app: MagicMock) -> None:
+        import typer
+
+        mock_deploy_app.side_effect = typer.Exit(code=1)
+        result = self.runner.invoke(app, ["--all"])
+        assert result.exit_code == 1
+        assert "Deploy FAILED" in result.stdout
+
+    def test_deploy_no_args(self) -> None:
+        # Typer with no_args_is_help=True shows help and exits with 0 usually
+        result = self.runner.invoke(app, [])
+        assert "Usage:" in result.stdout
+
+    def test_deploy_no_worker_no_all(self) -> None:
+        result = self.runner.invoke(app, ["--dry-run"])
+        assert result.exit_code == 1
+        assert "Error: specify a model name or use --all" in result.stdout
+
+
+class TestListWorkersCli:
+    """Test the list command using CliRunner."""
+
+    def setup_method(self) -> None:
+        self.runner = CliRunner()
+
+    def test_list_workers(self) -> None:
+        from ai_workers.cli.deploy import list_workers
+
+        list_workers()
