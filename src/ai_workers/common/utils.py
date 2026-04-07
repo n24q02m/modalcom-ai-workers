@@ -112,7 +112,14 @@ def _get_safe_ips(url: str) -> list[str]:
         except ValueError as e:
             raise ValueError(f"Invalid IP address from DNS: {ip_str}") from e
 
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
             raise ValueError(
                 f"Rejected URL {url} — hostname {hostname} resolves to non-public IP: {ip}"
             )
