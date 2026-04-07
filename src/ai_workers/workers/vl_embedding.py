@@ -17,6 +17,7 @@ import modal
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
+from ai_workers.common.utils import last_token_pool
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
@@ -93,55 +94,46 @@ class VLEmbeddingServer:
             self.processors[name] = processor
             logger.info("Loaded {} successfully", name)
 
-    @staticmethod
-    def _last_token_pool(last_hidden_states, attention_mask):
-        """Official Qwen3-VL-Embedding pooling: extract EOS token hidden state."""
-        import torch
-
-        left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
-        if left_padding:
-            return last_hidden_states[:, -1]
-        sequence_lengths = attention_mask.sum(dim=1) - 1
-        batch_size = last_hidden_states.shape[0]
-        return last_hidden_states[
-            torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths
-        ]
-
     def _embed_text(self, model_name: str, texts: list[str]) -> list[list[float]]:
-        """Embed text-only inputs using EOS token pooling."""
+        """Embed text-only inputs using EOS token pooling and chunked batching."""
         import torch
 
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        # Wrap texts in chat format with system instruction
-        messages_batch = [
-            [
-                {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
-                {"role": "user", "content": [{"type": "text", "text": t}]},
+        all_embeddings = []
+        batch_size = 32  # Efficient batch size for text-only embedding on A10G
+
+        for i in range(0, len(texts), batch_size):
+            chunk_texts = texts[i : i + batch_size]
+            messages_batch = [
+                [
+                    {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+                    {"role": "user", "content": [{"type": "text", "text": t}]},
+                ]
+                for t in chunk_texts
             ]
-            for t in texts
-        ]
 
-        # Batched processing
-        text_inputs = processor.apply_chat_template(
-            messages_batch, tokenize=False, add_generation_prompt=True
-        )
-        inputs = processor(text=text_inputs, return_tensors="pt", padding=True).to(model.device)
+            # Batched processing
+            text_inputs = processor.apply_chat_template(
+                messages_batch, tokenize=False, add_generation_prompt=True
+            )
+            inputs = processor(text=text_inputs, return_tensors="pt", padding=True).to(model.device)
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            # Official Qwen3-VL-Embedding: EOS token pooling
-            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
-            # L2 normalize
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            with torch.no_grad():
+                outputs = model(**inputs)
+                # Official Qwen3-VL-Embedding: EOS token pooling
+                embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+                # L2 normalize
+                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                all_embeddings.extend(embeddings[:, :EMBEDDING_DIM].cpu().tolist())
 
-        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
+        return all_embeddings
 
     def _embed_multimodal(
         self, model_name: str, texts: list[str], image_urls: list[str]
     ) -> list[list[float]]:
-        """Embed a batch of image+text pairs with EOS token pooling."""
+        """Embed image+text pairs using EOS token pooling and chunked batching."""
         import torch
         from qwen_vl_utils import process_vision_info
 
@@ -155,40 +147,48 @@ class VLEmbeddingServer:
         model = self.models[model_name]
         processor = self.processors[model_name]
 
-        messages_batch = [
-            [
-                {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": url},
-                        {"type": "text", "text": text},
-                    ],
-                },
+        all_embeddings = []
+        batch_size = 4  # Small batch size for A10G memory safety with VL models
+
+        for i in range(0, len(texts), batch_size):
+            chunk_texts = texts[i : i + batch_size]
+            chunk_urls = image_urls[i : i + batch_size]
+
+            messages_batch = [
+                [
+                    {"role": "system", "content": [{"type": "text", "text": DEFAULT_INSTRUCTION}]},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": url},
+                            {"type": "text", "text": text},
+                        ],
+                    },
+                ]
+                for text, url in zip(chunk_texts, chunk_urls, strict=False)
             ]
-            for text, url in zip(texts, image_urls, strict=False)
-        ]
 
-        text_inputs = processor.apply_chat_template(
-            messages_batch, tokenize=False, add_generation_prompt=True
-        )
-        image_inputs, video_inputs = process_vision_info(messages_batch)
+            text_inputs = processor.apply_chat_template(
+                messages_batch, tokenize=False, add_generation_prompt=True
+            )
+            image_inputs, video_inputs = process_vision_info(messages_batch)
 
-        inputs = processor(
-            text=text_inputs,
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to(model.device)
+            inputs = processor(
+                text=text_inputs,
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            ).to(model.device)
 
-        with torch.no_grad():
-            outputs = model(**inputs)
-            # Official Qwen3-VL-Embedding: EOS token pooling
-            embeddings = self._last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            with torch.no_grad():
+                outputs = model(**inputs)
+                # Official Qwen3-VL-Embedding: EOS token pooling
+                embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
+                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                all_embeddings.extend(embeddings[:, :EMBEDDING_DIM].cpu().tolist())
 
-        return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
+        return all_embeddings
 
     @modal.asgi_app()
     def serve(self):
