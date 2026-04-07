@@ -138,7 +138,7 @@ def _gguf_convert_remote(
             raise typer.Exit(code=1) from None
 
     except modal.exception.AuthError:
-        console.print("[red]Error: Modal not authenticated. Run `modal token set` first.[/red]")
+        console.print("[red]Authentication failed. Run `modal token new`.[/red]")
         raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"[red]GGUF Convert {config.name}: FAILED — {e}[/red]")

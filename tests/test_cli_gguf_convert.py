@@ -36,13 +36,13 @@ def test_gguf_convert_unknown_model_exits_1():
 
 
 # ---------------------------------------------------------------------------
-# no model arg exits 1
+# no model arg exits 2 (Typer usage error)
 # ---------------------------------------------------------------------------
 
 
-def test_gguf_convert_no_model_exits_1():
+def test_gguf_convert_no_model_exits_2():
     result = runner.invoke(app, [])
-    assert result.exit_code != 0
+    assert result.exit_code == 2
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ def test_gguf_convert_success():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 0
-    assert "THANH CONG" in result.output or "success" in result.output.lower()
+    assert "success" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ def test_gguf_convert_skipped():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 0
-    assert "Bo qua" in result.output or "skipped" in result.output.lower()
+    assert "skipped" in result.output.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +144,7 @@ def test_gguf_convert_auth_error():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 1
+    assert "Authentication failed. Run `modal token new`." in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +223,82 @@ def test_gguf_convert_dry_run():
         assert result.exit_code == 0
         assert "dry run -- skipped" in result.output
         mock_model.remote.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# unknown status
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_unknown_status():
+    mock_result = {"status": "what_is_this"}
+
+    mock_remote_fn = MagicMock(return_value=mock_result)
+    mock_gguf_convert_model = MagicMock()
+    mock_gguf_convert_model.remote = mock_remote_fn
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=None)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_gguf_convert_app = MagicMock()
+    mock_gguf_convert_app.run.return_value = mock_cm
+
+    auth_error_cls = type("AuthError", (Exception,), {})
+
+    with (
+        patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
+        patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
+        patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+    ):
+        mock_modal.exception.AuthError = auth_error_cls
+        mock_modal.enable_output.return_value = mock_cm
+        result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
+
+    assert result.exit_code == 1
+    assert "unknown status" in result.output
+
+
+# ---------------------------------------------------------------------------
+# general exception
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_general_exception():
+    mock_remote_fn = MagicMock(side_effect=ValueError("something went wrong"))
+    mock_gguf_convert_model = MagicMock()
+    mock_gguf_convert_model.remote = mock_remote_fn
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=None)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_gguf_convert_app = MagicMock()
+    mock_gguf_convert_app.run.return_value = mock_cm
+
+    auth_error_cls = type("AuthError", (Exception,), {})
+
+    with (
+        patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
+        patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
+        patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+    ):
+        mock_modal.exception.AuthError = auth_error_cls
+        mock_modal.enable_output.return_value = mock_cm
+        result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
+
+    assert result.exit_code == 1
+    assert "FAILED — something went wrong" in result.output
+
+
+# ---------------------------------------------------------------------------
+# no model arg manual trigger
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_no_model_manual_trigger():
+    # Specifically triggers the "if model is None" block (lines 52-56)
+    # by passing an optional flag but NO positional argument.
+    result = runner.invoke(app, ["--dry-run"])
+    assert result.exit_code == 1
+    assert "Please specify a model" in result.output

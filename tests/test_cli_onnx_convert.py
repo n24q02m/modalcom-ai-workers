@@ -204,7 +204,7 @@ def test_onnx_convert_auth_error_from_remote():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-onnx"])
 
     assert result.exit_code == 1
-    assert "Modal not authenticated" in result.output
+    assert "Authentication failed. Run `modal token new`." in result.output
 
 
 # ---------------------------------------------------------------------------
