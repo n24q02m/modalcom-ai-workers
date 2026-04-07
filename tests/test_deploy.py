@@ -304,3 +304,49 @@ class TestDeploySingleSkip:
 
         _deploy_single("dummy-model")
         mock_deploy_app.assert_not_called()
+
+
+class TestDeployAppErrors:
+    """Test error handling in _deploy_app."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_file_not_found(self, mock_subprocess: MagicMock) -> None:
+        from ai_workers.cli.deploy import _deploy_app
+
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_app("mod", "app")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_app_called_process_error(self, mock_subprocess: MagicMock) -> None:
+        import subprocess
+
+        from ai_workers.cli.deploy import _deploy_app
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_app("mod", "app")
+
+
+class TestDeployModuleErrors:
+    """Test error handling in _deploy_module."""
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_file_not_found(self, mock_subprocess: MagicMock) -> None:
+        from ai_workers.cli.deploy import _deploy_module
+
+        mock_subprocess.run.side_effect = FileNotFoundError()
+        with pytest.raises(ClickExit):
+            _deploy_module("mod")
+
+    @patch("ai_workers.cli.deploy.subprocess")
+    def test_deploy_module_called_process_error(self, mock_subprocess: MagicMock) -> None:
+        import subprocess
+
+        from ai_workers.cli.deploy import _deploy_module
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "modal deploy")
+        mock_subprocess.CalledProcessError = subprocess.CalledProcessError
+        with pytest.raises(ClickExit):
+            _deploy_module("mod")
