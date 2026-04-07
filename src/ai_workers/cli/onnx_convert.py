@@ -139,7 +139,7 @@ def _onnx_convert_remote(model_name: str, *, force: bool = False, dry_run: bool 
             raise typer.Exit(code=1) from None
 
     except modal.exception.AuthError:
-        console.print("[red]Error: Modal not authenticated. Run `modal token set` first.[/red]")
+        console.print("[red]Authentication failed. Run `modal token new`.[/red]")
         raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"[red]ONNX Convert {config.name}: FAILED — {e}[/red]")
