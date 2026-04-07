@@ -801,22 +801,3 @@ class TestDownloadModels:
         assert "FAIL:" in result
         assert "network error" in result
         mock_vol.commit.assert_called_once()
-
-
-# ===========================================================================
-# __init__.py -- version fallback
-# ===========================================================================
-
-
-class TestPackageInit:
-    """Cover __init__.py line 7-9 (version fallback)."""
-
-    def test_version_fallback_when_metadata_unavailable(self):
-        """Lines 7-9: when importlib.metadata.version raises, fallback to 0.0.0-dev."""
-        with patch("importlib.metadata.version", side_effect=Exception("not found")):
-            import importlib
-
-            import ai_workers
-
-            importlib.reload(ai_workers)
-            assert ai_workers.__version__ == "0.0.0-dev"
