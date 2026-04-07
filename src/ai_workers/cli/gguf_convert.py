@@ -63,15 +63,15 @@ def gguf_convert(
         console.print(
             f"[bold]Converting {len(GGUF_MODELS)} models to GGUF {quant_type} on Modal CPU...[/bold]"
         )
-        failed: list[str] = []
+        failures: list[str] = []
         for name in GGUF_MODELS:
             try:
                 _gguf_convert_remote(name, force=force, quant_type=quant_type, dry_run=dry_run)
             except (SystemExit, Exception):
-                failed.append(name)
-        if failed:
+                failures.append(name)
+        if failures:
             console.print(
-                f"\n[red bold]{len(failed)} model(s) failed: {', '.join(failed)}[/red bold]"
+                f"\n[red bold]Conversion FAILED: {', '.join(failures)}[/red bold]"
             )
             raise typer.Exit(code=1)
         console.print(
