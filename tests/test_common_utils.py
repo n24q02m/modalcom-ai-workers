@@ -289,3 +289,53 @@ class TestLoadImageFromUrlEdgeCases:
             load_image_from_url("https://example.com/large.png")
 
         mock_resp.close.assert_called_once()
+
+
+class TestUtilsCoverageExtended:
+    """Additional tests to reach near-100% coverage in ai_workers/common/utils.py."""
+
+    def test_is_safe_url_unexpected_exception(self):
+        """Test the catch-all Exception block in is_safe_url (lines 143-145)."""
+        # If _get_safe_ips raises a non-ValueError, it hits the 'except Exception' block.
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Unexpected")):
+            assert is_safe_url("http://example.com") is False
+
+    def test_is_safe_url_urlparse_exception(self):
+        """Specifically satisfy the task request to mock urlparse and assert False in is_safe_url."""
+        # _get_safe_ips calls urlparse. If it raises, _get_safe_ips raises ValueError,
+        # which is caught by is_safe_url and returns False.
+        with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
+            assert is_safe_url("http://example.com") is False
+
+    def test_pin_hostname_to_ip_nested(self):
+        """Test nested IP pinning to cover the restoration of previous_ip (line 67)."""
+        from ai_workers.common.utils import _pin_hostname_to_ip, _thread_local
+
+        hostname = "nested.example.com"
+        # Reset state for isolation
+        if hasattr(_thread_local, "pinned_ips"):
+            _thread_local.pinned_ips.pop(hostname, None)
+
+        with _pin_hostname_to_ip(hostname, "1.1.1.1"):
+            assert _thread_local.pinned_ips[hostname] == "1.1.1.1"
+            with _pin_hostname_to_ip(hostname, "2.2.2.2"):
+                assert _thread_local.pinned_ips[hostname] == "2.2.2.2"
+            # Restoration of previous IP (line 67)
+            assert _thread_local.pinned_ips[hostname] == "1.1.1.1"
+        assert hostname not in _thread_local.pinned_ips
+
+    def test_patched_create_connection(self):
+        """Test _patched_create_connection with and without pinned IPs (lines 35-40)."""
+        from ai_workers.common.utils import _patched_create_connection, _pin_hostname_to_ip
+
+        mock_original = MagicMock()
+        with patch("ai_workers.common.utils._original_create_connection", mock_original):
+            # 1. No pin exists
+            _patched_create_connection(("no-pin.com", 80), timeout=10)
+            mock_original.assert_called_with(("no-pin.com", 80), timeout=10)
+            mock_original.reset_mock()
+
+            # 2. Pin exists
+            with _pin_hostname_to_ip("pinned.com", "9.9.9.9"):
+                _patched_create_connection(("pinned.com", 443))
+                mock_original.assert_called_with(("9.9.9.9", 443))
