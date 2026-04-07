@@ -270,48 +270,51 @@ class VLEmbeddingServer:
 
             embeddings: list[list[float]] = []
 
-            if isinstance(body.input, str):
-                # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
-            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
-                # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
-            elif isinstance(body.input, VLEmbeddingInput):
-                # Single multimodal input
-                if body.input.image_url:
-                    embeddings = self._embed_multimodal(
-                        body.model, [body.input.text], [body.input.image_url]
-                    )
-                else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
-            elif isinstance(body.input, list):
-                # List of multimodal inputs - aggregate for batching
-                mm_indices = []
-                mm_texts = []
-                mm_urls = []
-                text_indices = []
-                text_texts = []
+            try:
+                if isinstance(body.input, str):
+                    # Single text input
+                    embeddings = self._embed_text(body.model, [body.input])
+                elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
+                    # List of text inputs
+                    embeddings = self._embed_text(body.model, body.input)
+                elif isinstance(body.input, VLEmbeddingInput):
+                    # Single multimodal input
+                    if body.input.image_url:
+                        embeddings = self._embed_multimodal(
+                            body.model, [body.input.text], [body.input.image_url]
+                        )
+                    else:
+                        embeddings = self._embed_text(body.model, [body.input.text])
+                elif isinstance(body.input, list):
+                    # List of multimodal inputs - aggregate for batching
+                    mm_indices = []
+                    mm_texts = []
+                    mm_urls = []
+                    text_indices = []
+                    text_texts = []
 
-                for i, item in enumerate(body.input):
-                    if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        mm_indices.append(i)
-                        mm_texts.append(item.text)
-                        mm_urls.append(item.image_url)
-                    elif isinstance(item, VLEmbeddingInput):
-                        text_indices.append(i)
-                        text_texts.append(item.text)
+                    for i, item in enumerate(body.input):
+                        if isinstance(item, VLEmbeddingInput) and item.image_url:
+                            mm_indices.append(i)
+                            mm_texts.append(item.text)
+                            mm_urls.append(item.image_url)
+                        elif isinstance(item, VLEmbeddingInput):
+                            text_indices.append(i)
+                            text_texts.append(item.text)
 
-                embeddings: list[list[float] | None] = [None] * len(body.input)
+                    embeddings: list[list[float] | None] = [None] * len(body.input)
 
-                if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
-                    for idx, res in zip(mm_indices, mm_results, strict=False):
-                        embeddings[idx] = res
+                    if mm_indices:
+                        mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                        for idx, res in zip(mm_indices, mm_results, strict=False):
+                            embeddings[idx] = res
 
-                if text_indices:
-                    text_results = self._embed_text(body.model, text_texts)
-                    for idx, res in zip(text_indices, text_results, strict=False):
-                        embeddings[idx] = res
+                    if text_indices:
+                        text_results = self._embed_text(body.model, text_texts)
+                        for idx, res in zip(text_indices, text_results, strict=False):
+                            embeddings[idx] = res
+            except (ValueError, RuntimeError) as exc:
+                return JSONResponse(status_code=400, content={"error": str(exc)})
 
             data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
             return EmbeddingResponse(data=data, model=body.model)

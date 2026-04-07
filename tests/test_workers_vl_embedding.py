@@ -19,12 +19,6 @@ def server():
     return s
 
 
-def _make_client(server, api_key="k"):
-    with patch.dict(os.environ, {"API_KEY": api_key}):
-        app = server.serve()
-    return TestClient(app, raise_server_exceptions=True), api_key
-
-
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -272,32 +266,39 @@ def test_embeddings_heavy_model(server):
 # ---------------------------------------------------------------------------
 
 
-def test_embeddings_vlinput_image_fetch_failure(server):
-    mock_qwen_vl_utils = MagicMock()
-    mock_qwen_vl_utils.process_vision_info.side_effect = ValueError("Failed to load image")
+def test_embeddings_image_fetch_value_error(server):
+    """ValueError from _embed_multimodal should return 400."""
+    server._embed_multimodal = MagicMock(side_effect=ValueError("SSRF Blocked"))
 
-    with (
-        patch.dict(os.environ, {"API_KEY": "k"}),
-        patch.dict("sys.modules", {"qwen_vl_utils": mock_qwen_vl_utils}),
-    ):
+    with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
-        # Ensure raise_server_exceptions is False so it returns a 500 status code
-        tc = TestClient(app, raise_server_exceptions=False)
-
-        # _embed_multimodal needs actual server structure for this test to reach process_vision_info
-        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
-
-        mock_processor = MagicMock()
-        mock_processor.apply_chat_template.return_value = ["chat_text"]
-        server.processors = {"qwen3-vl-embedding-2b": mock_processor}
-
+        tc = TestClient(app)
         resp = tc.post(
             "/v1/embeddings",
             json={
                 "model": "qwen3-vl-embedding-2b",
-                "input": {"text": "describe this image", "image_url": "http://example.com/bad.jpg"},
+                "input": {"text": "t", "image_url": "http://example.com/bad.jpg"},
             },
             headers={"Authorization": "Bearer k"},
         )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "SSRF Blocked"
 
-    assert resp.status_code == 500
+
+def test_embeddings_image_fetch_runtime_error(server):
+    """RuntimeError from _embed_multimodal should return 400."""
+    server._embed_multimodal = MagicMock(side_effect=RuntimeError("Fetch Failed"))
+
+    with patch.dict(os.environ, {"API_KEY": "k"}):
+        app = server.serve()
+        tc = TestClient(app)
+        resp = tc.post(
+            "/v1/embeddings",
+            json={
+                "model": "qwen3-vl-embedding-2b",
+                "input": [{"text": "t", "image_url": "http://example.com/fail.jpg"}],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "Fetch Failed"
