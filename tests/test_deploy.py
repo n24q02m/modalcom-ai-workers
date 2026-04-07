@@ -304,3 +304,51 @@ class TestDeploySingleSkip:
 
         _deploy_single("dummy-model")
         mock_deploy_app.assert_not_called()
+
+
+class TestDeployAllFailures:
+    """Test failure reporting in deploy --all."""
+
+    @patch("ai_workers.cli.deploy._deploy_app")
+    @patch("ai_workers.cli.deploy.list_models")
+    def test_deploy_all_reports_failures(
+        self, mock_list_models: MagicMock, mock_deploy_app: MagicMock
+    ) -> None:
+        """Should aggregate and report failures when deploying all workers."""
+        import typer
+        from typer.testing import CliRunner
+
+        from ai_workers.cli.deploy import app
+        from ai_workers.common.config import ModelConfig, Task, Tier
+
+        mock_list_models.return_value = [
+            ModelConfig(
+                name="m1",
+                hf_id="h1",
+                task=Task.EMBEDDING,
+                tier=Tier.LIGHT,
+                worker_module="mod1",
+                modal_app_var="app1",
+            ),
+            ModelConfig(
+                name="m2",
+                hf_id="h2",
+                task=Task.RERANKER_LLM,
+                tier=Tier.HEAVY,
+                worker_module="mod2",
+                modal_app_var="app2",
+            ),
+        ]
+
+        def side_effect(module, app_var, dry_run=False):
+            if module == "mod1":
+                raise typer.Exit(code=1)
+            return None
+
+        mock_deploy_app.side_effect = side_effect
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["--all"])
+
+        assert result.exit_code == 1
+        assert "Deploy FAILED: m1" in result.stdout
