@@ -345,7 +345,13 @@ def _quantize_int8(fp32_path: Path, int8_path: Path, fp32_total_size: float) -> 
 
 
 def _fix_cast_nodes(graph) -> None:
-    """Recursively update Cast(to=FLOAT) -> Cast(to=FLOAT16) in graph and subgraphs."""
+    """Recursively update Cast(to=FLOAT) -> Cast(to=FLOAT16) in graph and subgraphs.
+
+    This is necessary because convert_float_to_float16 doesn't update Cast op's 'to' attribute.
+    Internal Cast(to=float32) nodes create type mismatches with float16 tensors.
+    Force all Cast(to=float32) -> Cast(to=float16) for type consistency.
+    TensorProto.FLOAT = 1, TensorProto.FLOAT16 = 10.
+    """
     import onnx
 
     for node in graph.node:
@@ -353,9 +359,9 @@ def _fix_cast_nodes(graph) -> None:
             for attr in node.attribute:
                 if attr.name == "to" and attr.i == onnx.TensorProto.FLOAT:
                     attr.i = onnx.TensorProto.FLOAT16
-        # Recursively handle subgraphs in If/Loop nodes
+        # Recursively handle subgraphs in If/Loop/Scan nodes
         for attr in node.attribute:
-            if attr.g and isinstance(attr.g, onnx.GraphProto):
+            if attr.type == onnx.AttributeProto.GRAPH:
                 _fix_cast_nodes(attr.g)
 
 
@@ -382,8 +388,11 @@ def _quantize_q4f16(fp32_path: Path, q4f16_path: Path, fp32_total_size: float) -
 
     _fix_cast_nodes(q4f16_model.graph)
 
+    # Clear stale type annotations — OnnxRuntime infers types from ops at load.
     q4f16_model.graph.ClearField("value_info")
     onnx.save(q4f16_model, str(q4f16_path))
+
+    del quantizer, q4f16_model
     q4f16_size = q4f16_path.stat().st_size / (1024**2)
     logger.info(
         "Q4F16 quantized: {:.2f} MB (compression ratio: {:.1f}x)",
