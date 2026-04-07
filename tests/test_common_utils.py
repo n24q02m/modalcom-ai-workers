@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import socket
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from ai_workers.common.utils import is_safe_url, load_image_from_url
+from ai_workers.common.utils import (
+    _patched_create_connection,
+    _pin_hostname_to_ip,
+    _thread_local,
+    is_safe_url,
+    load_image_from_url,
+)
 
 # ---------------------------------------------------------------------------
 # is_safe_url
@@ -244,6 +251,20 @@ class TestLoadImageFromUrl:
         with patch("socket.getaddrinfo", return_value=invalid_addrinfo):
             assert is_safe_url("http://example.com") is False
 
+    def test_is_safe_url_ipaddress_value_error(self):
+        """Test is_safe_url when ipaddress.ip_address raises ValueError."""
+        addrinfo = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("invalid-ip", 0))]
+        with (
+            patch("socket.getaddrinfo", return_value=addrinfo),
+            patch("ipaddress.ip_address", side_effect=ValueError("Invalid IP")),
+        ):
+            assert is_safe_url("http://example.com") is False
+
+    def test_is_safe_url_unexpected_exception(self):
+        """Test is_safe_url when _get_safe_ips raises an unexpected exception."""
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Unexpected")):
+            assert is_safe_url("http://example.com") is False
+
 
 class TestLoadImageFromUrlEdgeCases:
     """Additional edge case tests for load_image_from_url."""
@@ -289,3 +310,60 @@ class TestLoadImageFromUrlEdgeCases:
             load_image_from_url("https://example.com/large.png")
 
         mock_resp.close.assert_called_once()
+
+
+class TestUtilsInternal:
+    """Tests for internal utility functions and initialization logic."""
+
+    def test_pin_hostname_to_ip_nested(self):
+        """Test _pin_hostname_to_ip when hostname is already pinned (nested case)."""
+        hostname = "example.com"
+        ip1 = "1.1.1.1"
+        ip2 = "2.2.2.2"
+
+        with _pin_hostname_to_ip(hostname, ip1):
+            assert _thread_local.pinned_ips[hostname] == ip1
+            with _pin_hostname_to_ip(hostname, ip2):
+                assert _thread_local.pinned_ips[hostname] == ip2
+            assert _thread_local.pinned_ips[hostname] == ip1
+        assert hostname not in _thread_local.pinned_ips
+
+    def test_patched_create_connection_pinned(self):
+        """Test _patched_create_connection when host is pinned."""
+        host = "example.com"
+        pinned_ip = "1.1.1.1"
+        port = 80
+
+        # Mock _original_create_connection which is in the module scope
+        with (
+            patch("ai_workers.common.utils._pin_hostname_to_ip", side_effect=_pin_hostname_to_ip),
+            _pin_hostname_to_ip(host, pinned_ip),
+            patch("ai_workers.common.utils._original_create_connection") as mock_orig,
+        ):
+            _patched_create_connection((host, port))
+            mock_orig.assert_called_once_with((pinned_ip, port))
+
+    def test_patched_create_connection_not_pinned(self):
+        """Test _patched_create_connection when host is NOT pinned."""
+        host = "example.com"
+        port = 80
+
+        if hasattr(_thread_local, "pinned_ips"):
+            _thread_local.pinned_ips.pop(host, None)
+
+        with patch("ai_workers.common.utils._original_create_connection") as mock_orig:
+            _patched_create_connection((host, port))
+            mock_orig.assert_called_once_with((host, port))
+
+    def test_urllib3_import_error(self):
+        """Test the module initialization when urllib3 is missing."""
+        with (
+            patch.dict("sys.modules", {"urllib3.util": None}),
+            patch("loguru.logger.warning") as mock_warning,
+        ):
+            # Reload the module to trigger the try-except block
+            import ai_workers.common.utils
+
+            importlib.reload(ai_workers.common.utils)
+
+            mock_warning.assert_any_call("Could not apply SSRF IP pinning: urllib3 not found")
