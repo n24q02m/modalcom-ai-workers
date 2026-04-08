@@ -9,9 +9,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer.testing
 from click.exceptions import Exit as ClickExit
 
-from ai_workers.cli.deploy import _deploy_module, _deploy_single, _module_to_file_path
+from ai_workers.cli.deploy import _deploy_module, _deploy_single, _module_to_file_path, app
 from ai_workers.common.config import MODEL_REGISTRY
 
 
@@ -273,14 +274,15 @@ class TestGroupDeployTargets:
 
 
 class TestDeploySingleSkip:
-    """Test skipping deployment when config attributes are missing."""
+    """Enhanced tests for skipping deployment when config attributes are missing."""
 
+    @patch("ai_workers.cli.deploy.console")
     @patch("ai_workers.cli.deploy._deploy_app")
     @patch("ai_workers.cli.deploy.get_model")
-    def test_skip_missing_worker_module(
-        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock
+    def test_skip_missing_worker_module_with_output(
+        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock, mock_console: MagicMock
     ) -> None:
-        """Should skip if worker_module is missing."""
+        """Should skip and print message if worker_module is missing."""
         mock_config = MagicMock()
         mock_config.name = "dummy-model"
         mock_config.worker_module = ""
@@ -288,14 +290,20 @@ class TestDeploySingleSkip:
         mock_get_model.return_value = mock_config
 
         _deploy_single("dummy-model")
-        mock_deploy_app.assert_not_called()
 
+        mock_deploy_app.assert_not_called()
+        # Verify yellow skipping message
+        mock_console.print.assert_called_once_with(
+            "[yellow]Skipping dummy-model -- no worker_module configured[/yellow]"
+        )
+
+    @patch("ai_workers.cli.deploy.console")
     @patch("ai_workers.cli.deploy._deploy_app")
     @patch("ai_workers.cli.deploy.get_model")
-    def test_skip_missing_modal_app_var(
-        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock
+    def test_skip_missing_modal_app_var_with_output(
+        self, mock_get_model: MagicMock, mock_deploy_app: MagicMock, mock_console: MagicMock
     ) -> None:
-        """Should skip if modal_app_var is missing."""
+        """Should skip and print message if modal_app_var is missing."""
         mock_config = MagicMock()
         mock_config.name = "dummy-model"
         mock_config.worker_module = "ai_workers.workers.dummy"
@@ -303,4 +311,24 @@ class TestDeploySingleSkip:
         mock_get_model.return_value = mock_config
 
         _deploy_single("dummy-model")
+
         mock_deploy_app.assert_not_called()
+        # Verify yellow skipping message
+        mock_console.print.assert_called_once_with(
+            "[yellow]Skipping dummy-model -- no modal_app_var configured[/yellow]"
+        )
+
+    @patch("ai_workers.cli.deploy.get_model")
+    def test_skip_via_cli_runner(self, mock_get_model: MagicMock) -> None:
+        """Verify skip behavior via Typer CliRunner."""
+        mock_config = MagicMock()
+        mock_config.name = "dummy-model"
+        mock_config.worker_module = ""
+        mock_config.modal_app_var = "dummy_app"
+        mock_get_model.return_value = mock_config
+
+        runner = typer.testing.CliRunner()
+        result = runner.invoke(app, ["dummy-model"])
+
+        assert result.exit_code == 0
+        assert "Skipping dummy-model -- no worker_module configured" in result.output
