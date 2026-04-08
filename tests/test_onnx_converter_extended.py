@@ -1,11 +1,10 @@
 # ruff: noqa: E402
-import sys
-from unittest.mock import MagicMock
 
-# Mock modal before importing the worker
-sys.modules["modal"] = MagicMock()
+import pytest
 
-import onnx
+# Skip if onnx is not installed (e.g. in CI)
+onnx = pytest.importorskip("onnx")
+
 from onnx import TensorProto, helper
 
 from ai_workers.workers.onnx_converter import _fix_cast_nodes
@@ -26,24 +25,7 @@ def test_fix_cast_nodes_recursive():
     )
 
     # If node with subgraphs in attributes
-    # We must add it to a graph for it to be mutable in some ONNX versions/wrappers
-    main_graph = helper.make_graph(
-        [node1],
-        "main",
-        [
-            helper.make_tensor_value_info("X", TensorProto.FLOAT, [1]),
-            helper.make_tensor_value_info("cond", TensorProto.BOOL, []),
-            helper.make_tensor_value_info("in", TensorProto.FLOAT, [1]),
-        ],
-        [
-            helper.make_tensor_value_info("Y", TensorProto.FLOAT, [1]),
-            helper.make_tensor_value_info("out", TensorProto.FLOAT, [1]),
-            helper.make_tensor_value_info("out2", TensorProto.FLOAT, [1]),
-        ],
-    )
-
     node2 = helper.make_node("If", ["cond"], ["out"], then_branch=sub_graph, else_branch=sub_graph)
-    main_graph.node.extend([node2])
 
     # 3. Dummy node with Attribute type GRAPHS
     sub_node_2 = helper.make_node("Cast", ["C"], ["D"], to=TensorProto.FLOAT)
@@ -63,7 +45,22 @@ def test_fix_cast_nodes_recursive():
     attr3.type = onnx.AttributeProto.GRAPHS
     attr3.graphs.extend([sub_graph_2])
     node3.attribute.extend([attr3])
-    main_graph.node.extend([node3])
+
+    # Create graph with ALL nodes at once to ensure they are properly part of the Proto
+    main_graph = helper.make_graph(
+        [node1, node2, node3],
+        "main",
+        [
+            helper.make_tensor_value_info("X", TensorProto.FLOAT, [1]),
+            helper.make_tensor_value_info("cond", TensorProto.BOOL, []),
+            helper.make_tensor_value_info("in", TensorProto.FLOAT, [1]),
+        ],
+        [
+            helper.make_tensor_value_info("Y", TensorProto.FLOAT, [1]),
+            helper.make_tensor_value_info("out", TensorProto.FLOAT, [1]),
+            helper.make_tensor_value_info("out2", TensorProto.FLOAT, [1]),
+        ],
+    )
 
     _fix_cast_nodes(main_graph)
 
@@ -81,9 +78,9 @@ def test_fix_cast_nodes_recursive():
         if attr.name in ["then_branch", "else_branch"]:
             assert attr.g is not None
             found_sub_cast = False
-            for sub_node in attr.g.node:
-                if sub_node.op_type == "Cast":
-                    for sub_attr in sub_node.attribute:
+            for sub_node_in_g in attr.g.node:
+                if sub_node_in_g.op_type == "Cast":
+                    for sub_attr in sub_node_in_g.attribute:
                         if sub_attr.name == "to":
                             assert sub_attr.i == TensorProto.FLOAT16
                             found_sub_cast = True
