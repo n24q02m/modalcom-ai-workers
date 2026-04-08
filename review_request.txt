@@ -1,0 +1,3 @@
+I have added a new test case 'test_unexpected_error' to 'TestIsSafeUrl' in 'tests/test_common_utils.py'.
+This test mocks 'ai_workers.common.utils._get_safe_ips' to raise a 'RuntimeError', which triggers the catch-all 'except Exception' block in 'is_safe_url' (src/ai_workers/common/utils.py:143-145).
+Verified with pytest-cov that these lines are now covered.
