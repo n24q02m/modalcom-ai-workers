@@ -273,3 +273,27 @@ def test_load_image_from_url_error():
         pytest.raises(ValueError, match=r"URL blocked by SSRF protection: http://bad.url"),
     ):
         load_image_from_url("http://bad.url")
+
+
+def test_rerank_invalid_image_url(server):
+    """ValueError from load_image_from_url should return 400."""
+    with (
+        patch(
+            "ai_workers.workers.vl_reranker.load_image_from_url",
+            side_effect=ValueError("SSRF blocked"),
+        ),
+        patch.dict(os.environ, {"API_KEY": "k"}),
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/rerank",
+            json={
+                "model": "qwen3-vl-reranker-8b",
+                "query": "q",
+                "documents": [{"text": "d", "image_url": "http://unsafe.url"}],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "SSRF blocked"

@@ -311,9 +311,12 @@ class VLRerankerServer:
 
             # Pre-fetch images concurrently
             unique_urls = list(image_urls)
-            fetched_images = await asyncio.gather(
-                *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
-            )
+            try:
+                fetched_images = await asyncio.gather(
+                    *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
+                )
+            except (ValueError, RuntimeError) as exc:
+                return JSONResponse(status_code=400, content={"error": str(exc)})
             image_map = dict(zip(unique_urls, fetched_images, strict=True))
 
             # Prepare inputs for batched scoring
@@ -328,7 +331,8 @@ class VLRerankerServer:
                     doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
 
             # Score all documents in a single batched call
-            scores = self._score_batch(
+            scores = await asyncio.to_thread(
+                self._score_batch,
                 body.model,
                 body.query,
                 doc_texts,
