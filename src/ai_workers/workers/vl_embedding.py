@@ -283,10 +283,14 @@ class VLEmbeddingServer:
                 if body.input.image_url:
                     embeddings = await asyncio.to_thread(
                         self._embed_multimodal,
-                        body.model, [body.input.text], [body.input.image_url]
+                        body.model,
+                        [body.input.text],
+                        [body.input.image_url],
                     )
                 else:
-                    embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input.text])
+                    embeddings = await asyncio.to_thread(
+                        self._embed_text, body.model, [body.input.text]
+                    )
             elif isinstance(body.input, list):
                 # List of multimodal inputs - aggregate for batching
                 mm_indices = []
@@ -307,7 +311,9 @@ class VLEmbeddingServer:
                 embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
-                    mm_results = await asyncio.to_thread(self._embed_multimodal, body.model, mm_texts, mm_urls)
+                    mm_results = await asyncio.to_thread(
+                        self._embed_multimodal, body.model, mm_texts, mm_urls
+                    )
                     for idx, res in zip(mm_indices, mm_results, strict=False):
                         embeddings[idx] = res
 
