@@ -190,3 +190,26 @@ class TestDeployListSubcommand:
         # "list" is not a valid model name → exit code 1 with error message
         assert result.exit_code == 1
         assert "not found" in result.output or "Error" in result.output
+
+
+class TestDeployAppFileNotFound:
+    """Tests for FileNotFoundError in _deploy_app (lines 107-109)."""
+
+    @patch("ai_workers.cli.deploy.subprocess.run")
+    def test_deploy_app_file_not_found_output(self, mock_run: MagicMock) -> None:
+        """Should show error message when modal CLI is not found in _deploy_app."""
+        mock_run.side_effect = FileNotFoundError()
+        runner = typer.testing.CliRunner()
+        # Use a real model name that exists in MODEL_REGISTRY
+        result = runner.invoke(app, ["qwen3-embedding-0.6b"])
+        assert result.exit_code == 1
+        assert "Error: `modal` CLI not found. Run `pip install modal`" in result.output
+
+
+def test_deploy_callback_worker_optional_for_coverage():
+    """Directly call deploy with None to cover lines 61-62 if CLI runner fails to reach it."""
+    from ai_workers.cli.deploy import deploy
+
+    with pytest.raises(ClickExit) as excinfo:
+        deploy(worker=None, all_workers=False)
+    assert excinfo.value.exit_code == 1
