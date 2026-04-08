@@ -13,6 +13,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.config import get_model
@@ -139,18 +141,11 @@ class VLEmbeddingServer:
         return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
     def _embed_multimodal(
-        self, model_name: str, texts: list[str], image_urls: list[str]
+        self, model_name: str, texts: list[str], images: list[Any]
     ) -> list[list[float]]:
         """Embed a batch of image+text pairs with EOS token pooling."""
         import torch
         from qwen_vl_utils import process_vision_info
-
-        from ai_workers.common.utils import is_safe_url
-
-        # Validate URLs before passing to process_vision_info (SSRF protection)
-        for url in image_urls:
-            if not url.startswith("data:") and not is_safe_url(url):
-                raise ValueError(f"URL blocked by SSRF protection: {url}")
 
         model = self.models[model_name]
         processor = self.processors[model_name]
@@ -161,12 +156,12 @@ class VLEmbeddingServer:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": url},
+                        {"type": "image", "image": img},
                         {"type": "text", "text": text},
                     ],
                 },
             ]
-            for text, url in zip(texts, image_urls, strict=False)
+            for text, img in zip(texts, images, strict=False)
         ]
 
         text_inputs = processor.apply_chat_template(
@@ -259,6 +254,10 @@ class VLEmbeddingServer:
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
         async def create_embeddings(body: VLEmbeddingRequest = Body(...)):
+            import asyncio
+
+            from ai_workers.common.utils import load_image_from_url
+
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
                     status_code=400,
@@ -267,6 +266,22 @@ class VLEmbeddingServer:
                         f"Available: {list(MODEL_CONFIGS.keys())}"
                     },
                 )
+
+            # Deduplicate image URLs
+            image_urls = set()
+            if isinstance(body.input, VLEmbeddingInput) and body.input.image_url:
+                image_urls.add(body.input.image_url)
+            elif isinstance(body.input, list):
+                for item in body.input:
+                    if isinstance(item, VLEmbeddingInput) and item.image_url:
+                        image_urls.add(item.image_url)
+
+            # Pre-fetch images concurrently
+            unique_urls = list(image_urls)
+            fetched_images = await asyncio.gather(
+                *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
+            )
+            image_map = dict(zip(unique_urls, fetched_images, strict=True))
 
             embeddings: list[list[float]] = []
 
@@ -280,7 +295,7 @@ class VLEmbeddingServer:
                 # Single multimodal input
                 if body.input.image_url:
                     embeddings = self._embed_multimodal(
-                        body.model, [body.input.text], [body.input.image_url]
+                        body.model, [body.input.text], [image_map[body.input.image_url]]
                     )
                 else:
                     embeddings = self._embed_text(body.model, [body.input.text])
@@ -304,7 +319,9 @@ class VLEmbeddingServer:
                 embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                    mm_results = self._embed_multimodal(
+                        body.model, mm_texts, [image_map[url] for url in mm_urls]
+                    )
                     for idx, res in zip(mm_indices, mm_results, strict=False):
                         embeddings[idx] = res
 
