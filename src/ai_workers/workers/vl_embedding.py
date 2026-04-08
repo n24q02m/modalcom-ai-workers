@@ -192,6 +192,8 @@ class VLEmbeddingServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, field_validator
@@ -272,18 +274,19 @@ class VLEmbeddingServer:
 
             if isinstance(body.input, str):
                 # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input])
             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, body.input)
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    embeddings = self._embed_multimodal(
+                    embeddings = await asyncio.to_thread(
+                        self._embed_multimodal,
                         body.model, [body.input.text], [body.input.image_url]
                     )
                 else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
+                    embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input.text])
             elif isinstance(body.input, list):
                 # List of multimodal inputs - aggregate for batching
                 mm_indices = []
@@ -304,12 +307,12 @@ class VLEmbeddingServer:
                 embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                    mm_results = await asyncio.to_thread(self._embed_multimodal, body.model, mm_texts, mm_urls)
                     for idx, res in zip(mm_indices, mm_results, strict=False):
                         embeddings[idx] = res
 
                 if text_indices:
-                    text_results = self._embed_text(body.model, text_texts)
+                    text_results = await asyncio.to_thread(self._embed_text, body.model, text_texts)
                     for idx, res in zip(text_indices, text_results, strict=False):
                         embeddings[idx] = res
 
