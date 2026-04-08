@@ -139,18 +139,11 @@ class VLEmbeddingServer:
         return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
     def _embed_multimodal(
-        self, model_name: str, texts: list[str], image_urls: list[str]
+        self, model_name: str, texts: list[str], images: list[object]
     ) -> list[list[float]]:
         """Embed a batch of image+text pairs with EOS token pooling."""
         import torch
         from qwen_vl_utils import process_vision_info
-
-        from ai_workers.common.utils import is_safe_url
-
-        # Validate URLs before passing to process_vision_info (SSRF protection)
-        for url in image_urls:
-            if not url.startswith("data:") and not is_safe_url(url):
-                raise ValueError(f"URL blocked by SSRF protection: {url}")
 
         model = self.models[model_name]
         processor = self.processors[model_name]
@@ -161,12 +154,12 @@ class VLEmbeddingServer:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": url},
+                        {"type": "image", "image": img},
                         {"type": "text", "text": text},
                     ],
                 },
             ]
-            for text, url in zip(texts, image_urls, strict=False)
+            for text, img in zip(texts, images, strict=False)
         ]
 
         text_inputs = processor.apply_chat_template(
@@ -190,8 +183,17 @@ class VLEmbeddingServer:
 
         return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
+    @staticmethod
+    def _load_image_from_url(url: str):
+        """Load image from URL or base64 data URI with SSRF protection."""
+        from ai_workers.common.utils import load_image_from_url
+
+        return load_image_from_url(url)
+
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, field_validator
@@ -270,25 +272,50 @@ class VLEmbeddingServer:
 
             embeddings: list[list[float]] = []
 
+            # First, extract all image URLs that need fetching
+            image_urls = []
+            if isinstance(body.input, VLEmbeddingInput):
+                if body.input.image_url:
+                    image_urls.append(body.input.image_url)
+            elif isinstance(body.input, list):
+                for item in body.input:
+                    if isinstance(item, VLEmbeddingInput) and item.image_url:
+                        image_urls.append(item.image_url)
+
+            # Pre-fetch all images concurrently if any
+            unique_urls = list(set(image_urls))
+            image_map = {}
+            if unique_urls:
+                try:
+                    fetched_images = await asyncio.gather(
+                        *(asyncio.to_thread(self._load_image_from_url, url) for url in unique_urls)
+                    )
+                    image_map = dict(zip(unique_urls, fetched_images, strict=True))
+                except (ValueError, RuntimeError) as exc:
+                    return JSONResponse(status_code=400, content={"error": str(exc)})
+
             if isinstance(body.input, str):
                 # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, [body.input])
             elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
                 # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
+                embeddings = await asyncio.to_thread(self._embed_text, body.model, body.input)
             elif isinstance(body.input, VLEmbeddingInput):
                 # Single multimodal input
                 if body.input.image_url:
-                    embeddings = self._embed_multimodal(
-                        body.model, [body.input.text], [body.input.image_url]
+                    img = image_map[body.input.image_url]
+                    embeddings = await asyncio.to_thread(
+                        self._embed_multimodal, body.model, [body.input.text], [img]
                     )
                 else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
+                    embeddings = await asyncio.to_thread(
+                        self._embed_text, body.model, [body.input.text]
+                    )
             elif isinstance(body.input, list):
                 # List of multimodal inputs - aggregate for batching
                 mm_indices = []
                 mm_texts = []
-                mm_urls = []
+                mm_images = []
                 text_indices = []
                 text_texts = []
 
@@ -296,7 +323,7 @@ class VLEmbeddingServer:
                     if isinstance(item, VLEmbeddingInput) and item.image_url:
                         mm_indices.append(i)
                         mm_texts.append(item.text)
-                        mm_urls.append(item.image_url)
+                        mm_images.append(image_map[item.image_url])
                     elif isinstance(item, VLEmbeddingInput):
                         text_indices.append(i)
                         text_texts.append(item.text)
@@ -304,12 +331,14 @@ class VLEmbeddingServer:
                 embeddings: list[list[float] | None] = [None] * len(body.input)
 
                 if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                    mm_results = await asyncio.to_thread(
+                        self._embed_multimodal, body.model, mm_texts, mm_images
+                    )
                     for idx, res in zip(mm_indices, mm_results, strict=False):
                         embeddings[idx] = res
 
                 if text_indices:
-                    text_results = self._embed_text(body.model, text_texts)
+                    text_results = await asyncio.to_thread(self._embed_text, body.model, text_texts)
                     for idx, res in zip(text_indices, text_results, strict=False):
                         embeddings[idx] = res
 

@@ -611,24 +611,30 @@ class TestVLEmbeddingComputeMethods:
         server._embed_text.assert_called_once()
 
     def test_embed_multimodal_ssrf_blocked(self):
-        """Line 157: _embed_multimodal blocks unsafe URLs."""
+        """The endpoint blocks unsafe URLs, now done in the _load_image_from_url helper instead of _embed_multimodal."""
+        from fastapi.testclient import TestClient
+
         from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
-        server.models = {"qwen3-vl-embedding-2b": MagicMock()}
-        server.processors = {"qwen3-vl-embedding-2b": MagicMock()}
+        server._embed_multimodal = MagicMock()
 
-        with (
-            patch.dict(
-                "sys.modules",
-                {"qwen_vl_utils": MagicMock()},
-            ),
-            patch("ai_workers.common.utils.is_safe_url", return_value=False),
-            pytest.raises(ValueError, match="SSRF"),
-        ):
-            server._embed_multimodal(
-                "qwen3-vl-embedding-2b", ["text"], ["http://internal.local/img.png"]
-            )
+        with patch.dict(os.environ, {"API_KEY": "k"}):
+            app = server.serve()
+            tc = TestClient(app, raise_server_exceptions=False)
+
+            with patch("ai_workers.common.utils.is_safe_url", return_value=False):
+                resp = tc.post(
+                    "/v1/embeddings",
+                    json={
+                        "model": "qwen3-vl-embedding-2b",
+                        "input": {"text": "describe", "image_url": "http://internal.local/img.png"},
+                    },
+                    headers={"Authorization": "Bearer k"},
+                )
+
+        assert resp.status_code == 400
+        assert "SSRF" in resp.json()["error"]
 
     def test_embed_multimodal_base64_skips_ssrf(self):
         """Line 152: data: URI skips SSRF check (is_safe_url not called)."""
@@ -682,20 +688,23 @@ class TestVLEmbeddingComputeMethods:
         server = VLEmbeddingServer()
         server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch.object(server, "_load_image_from_url", return_value=MagicMock()),
+        ):
             app = server.serve()
 
-        from fastapi.testclient import TestClient
+            from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": {"text": "describe", "image_url": "https://example.com/img.jpg"},
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         server._embed_multimodal.assert_called_once()
@@ -708,23 +717,26 @@ class TestVLEmbeddingComputeMethods:
         server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
         server._embed_text = MagicMock(return_value=[[0.1, 0.2]])
 
-        with patch.dict(os.environ, {"API_KEY": "k"}):
+        with (
+            patch.dict(os.environ, {"API_KEY": "k"}),
+            patch.object(server, "_load_image_from_url", return_value=MagicMock()),
+        ):
             app = server.serve()
 
-        from fastapi.testclient import TestClient
+            from fastapi.testclient import TestClient
 
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/embeddings",
-            json={
-                "model": "qwen3-vl-embedding-2b",
-                "input": [
-                    {"text": "with img", "image_url": "http://example.com/img.jpg"},
-                    {"text": "no image"},
-                ],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
+            tc = TestClient(app, raise_server_exceptions=True)
+            resp = tc.post(
+                "/v1/embeddings",
+                json={
+                    "model": "qwen3-vl-embedding-2b",
+                    "input": [
+                        {"text": "with img", "image_url": "http://example.com/img.jpg"},
+                        {"text": "no image"},
+                    ],
+                },
+                headers={"Authorization": "Bearer k"},
+            )
 
         assert resp.status_code == 200
         assert len(resp.json()["data"]) == 2
