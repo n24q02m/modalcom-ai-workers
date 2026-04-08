@@ -12,6 +12,7 @@ import pytest
 mock_onnx = MagicMock()
 mock_onnx.TensorProto.FLOAT = 1
 mock_onnx.TensorProto.FLOAT16 = 10
+mock_onnx.AttributeProto.GRAPH = 4
 
 mock_ort_quant = MagicMock()
 mock_ort_quant.QuantType.QInt8 = "QInt8"
@@ -169,6 +170,7 @@ def test_onnx_convert_model_success():
         mock_attr = MagicMock()
         mock_attr.name = "to"
         mock_attr.i = 1  # TensorProto.FLOAT
+        mock_attr.type = 2  # INT (for "to" attribute)
         mock_attr.g = None  # No subgraph - prevent isinstance() on MagicMock
         mock_node.attribute = [mock_attr]
         mock_q4f16_model.graph.node = [mock_node]

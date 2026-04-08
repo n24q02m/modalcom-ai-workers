@@ -345,7 +345,12 @@ def _quantize_int8(fp32_path: Path, int8_path: Path, fp32_total_size: float) -> 
 
 
 def _fix_cast_nodes(graph) -> None:
-    """Recursively update Cast(to=FLOAT) -> Cast(to=FLOAT16) in graph and subgraphs."""
+    """Recursively update Cast(to=FLOAT) -> Cast(to=FLOAT16) in graph and subgraphs.
+
+    Fix: convert_float_to_float16 doesn't update Cast op's 'to' attribute.
+    Internal Cast(to=float32) nodes create type mismatches with float16 tensors.
+    Force all Cast(to=float32) -> Cast(to=float16) for type consistency.
+    """
     import onnx
 
     for node in graph.node:
@@ -355,7 +360,7 @@ def _fix_cast_nodes(graph) -> None:
                     attr.i = onnx.TensorProto.FLOAT16
         # Recursively handle subgraphs in If/Loop nodes
         for attr in node.attribute:
-            if attr.g and isinstance(attr.g, onnx.GraphProto):
+            if attr.type == onnx.AttributeProto.GRAPH:
                 _fix_cast_nodes(attr.g)
 
 
