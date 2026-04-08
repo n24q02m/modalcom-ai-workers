@@ -38,6 +38,7 @@ import modal
 from loguru import logger
 
 from ai_workers.common.images import onnx_converter_image
+from ai_workers.common.utils import validate_hf_repo_id
 
 if TYPE_CHECKING:
     import torch
@@ -81,9 +82,6 @@ class OnnxModelConfig:
 
 
 ONNX_MODELS: dict[str, OnnxModelConfig] = {}
-
-
-TRUSTED_ORGS = ["Qwen", "deepseek-ai"]
 
 
 def _register(config: OnnxModelConfig) -> OnnxModelConfig:
@@ -444,11 +442,19 @@ def onnx_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, variants, total_size_mb.
     """
-    if trust_remote_code:
-        org = hf_source.split("/")[0]
-        if org not in TRUSTED_ORGS:
-            msg = f"Untrusted organization '{org}'. trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
-            raise ValueError(msg)
+    validate_hf_repo_id(hf_source, trust_remote_code)
+    validate_hf_repo_id(hf_target, trust_remote_code=False)  # Check for path traversal
+
+    # Validate model class and output attr
+    valid_classes = ["AutoModel", "AutoModelForCausalLM"]
+    if model_class not in valid_classes:
+        msg = f"Invalid model_class '{model_class}'. Must be one of: {valid_classes}"
+        raise ValueError(msg)
+
+    valid_attrs = ["last_hidden_state", "logits", "yesno_logits"]
+    if output_attr not in valid_attrs:
+        msg = f"Invalid output_attr '{output_attr}'. Must be one of: {valid_attrs}"
+        raise ValueError(msg)
 
     from huggingface_hub import repo_exists
     from transformers import AutoConfig

@@ -110,7 +110,7 @@ def test_onnx_convert_model_invalid_class():
     with patch.dict(os.environ, {"HF_TOKEN": "test-token"}):
         mock_hf_hub.repo_exists.return_value = False
 
-        with pytest.raises(ValueError, match="Model class 'InvalidClass' is invalid"):
+        with pytest.raises(ValueError, match="Invalid model_class 'InvalidClass'"):
             onnx_convert_model(
                 model_name="test",
                 hf_source="src",
