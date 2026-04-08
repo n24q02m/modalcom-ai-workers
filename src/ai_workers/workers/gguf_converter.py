@@ -18,6 +18,7 @@ Flow:
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import os
 import re
@@ -170,7 +171,7 @@ def _check_if_gguf_exists(
     from huggingface_hub import list_repo_tree
     from loguru import logger
 
-    try:
+    with contextlib.suppress(Exception):
         existing_files = [f.path for f in list_repo_tree(hf_target, token=hf_token, recursive=True)]
         if gguf_repo_path in existing_files:
             logger.info(
@@ -179,8 +180,6 @@ def _check_if_gguf_exists(
                 hf_target,
             )
             return True
-    except Exception:
-        pass  # Repo does not exist yet, will be created
     return False
 
 
@@ -319,7 +318,7 @@ def _upload_gguf_artifacts(
 
     # Upload tokenizer + config from source for model loading
     for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
-        try:
+        with contextlib.suppress(Exception):
             local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=hf_token)
             api.upload_file(
                 path_or_fileobj=local_cfg,
@@ -328,9 +327,6 @@ def _upload_gguf_artifacts(
                 repo_type="model",
                 commit_message=f"Add {cfg_file}",
             )
-        except Exception:
-            pass  # Some config files may not exist
-
     logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
 
