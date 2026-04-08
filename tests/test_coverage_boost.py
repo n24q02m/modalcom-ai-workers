@@ -18,6 +18,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ai_workers.common.utils import last_token_pool
+from ai_workers.workers.embedding import EmbeddingServer
+from ai_workers.workers.vl_embedding import VLEmbeddingServer
+
 # ===========================================================================
 # utils.py -- uncovered branches
 # ===========================================================================
@@ -185,7 +189,6 @@ class TestEmbeddingComputeMethods:
 
     def test_last_token_pool_left_padding(self):
         """Lines 99-101: left_padding branch (all last tokens non-padded)."""
-        from ai_workers.workers.embedding import EmbeddingServer
 
         # Mock attention_mask where [:, -1].sum() == shape[0] (left padding)
         attention_mask = MagicMock()
@@ -198,13 +201,12 @@ class TestEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Should return hidden[:, -1]
         assert result is last_hidden
 
     def test_last_token_pool_right_padding(self):
         """Lines 102-106: right_padding branch (variable sequence lengths)."""
-        from ai_workers.workers.embedding import EmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -216,13 +218,12 @@ class TestEmbeddingComputeMethods:
         hidden = MagicMock()
         hidden.shape = (2, 5, 8)
 
-        result = EmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         # Returns hidden[arange, sequence_lengths]
         assert result is not None
 
     def test_embed_method_via_endpoint(self):
         """Lines 110-134: _embed called through the API endpoint."""
-        from ai_workers.workers.embedding import EmbeddingServer
 
         server = EmbeddingServer()
 
@@ -554,7 +555,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_last_token_pool_left_padding(self):
         """Lines 99-103: left padding branch."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -566,12 +566,11 @@ class TestVLEmbeddingComputeMethods:
         last_hidden = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=last_hidden)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is last_hidden
 
     def test_last_token_pool_right_padding(self):
         """Lines 104-108: right padding branch."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         attention_mask = MagicMock()
         last_col = MagicMock()
@@ -585,12 +584,11 @@ class TestVLEmbeddingComputeMethods:
         indexed = MagicMock()
         hidden.__getitem__ = MagicMock(return_value=indexed)
 
-        result = VLEmbeddingServer._last_token_pool(hidden, attention_mask)
+        result = last_token_pool(hidden, attention_mask)
         assert result is indexed
 
     def test_embed_text_method(self):
         """Lines 112-145: _embed_text called through endpoint."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
         server._embed_text = MagicMock(return_value=[[0.1, 0.2, 0.3]])
@@ -612,7 +610,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_embed_multimodal_ssrf_blocked(self):
         """Line 157: _embed_multimodal blocks unsafe URLs."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
         server.models = {"qwen3-vl-embedding-2b": MagicMock()}
@@ -632,7 +629,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_embed_multimodal_base64_skips_ssrf(self):
         """Line 152: data: URI skips SSRF check (is_safe_url not called)."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
 
@@ -677,7 +673,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_embed_multimodal_via_endpoint(self):
         """Lines 178-192, 217-221: multimodal input through endpoint."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
         server._embed_multimodal = MagicMock(return_value=[[0.5, 0.6]])
@@ -702,7 +697,6 @@ class TestVLEmbeddingComputeMethods:
 
     def test_list_of_vlinputs_mixed_via_endpoint(self):
         """Lines 287-295: list of VLEmbeddingInput with mixed image/text."""
-        from ai_workers.workers.vl_embedding import VLEmbeddingServer
 
         server = VLEmbeddingServer()
         server._embed_multimodal = MagicMock(return_value=[[0.9, 0.8]])
