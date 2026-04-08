@@ -21,6 +21,7 @@ import modal
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
+from ai_workers.common.utils import load_image_from_url
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 SCALEDOWN_WINDOW = 300
@@ -88,13 +89,6 @@ class OCRServer:
                 url_data = part.get("image_url", {})
                 image_url = url_data.get("url", "")
         return text, image_url
-
-    @staticmethod
-    def _load_image_from_url(url: str):
-        """Load image from URL or base64 data URI with SSRF protection."""
-        from ai_workers.common.utils import load_image_from_url
-
-        return load_image_from_url(url)
 
     def _run_ocr(self, image, prompt: str = "") -> str:
         """Run OCR on an image with optional prompt.
@@ -215,9 +209,7 @@ class OCRServer:
                         text_prompt, image_url = self._process_image_content(msg.content)
                         if image_url:
                             try:
-                                image = await asyncio.to_thread(
-                                    self._load_image_from_url, image_url
-                                )
+                                image = await asyncio.to_thread(load_image_from_url, image_url)
                             except (ValueError, RuntimeError) as exc:
                                 return JSONResponse(status_code=400, content={"error": str(exc)})
                     elif isinstance(msg.content, str):

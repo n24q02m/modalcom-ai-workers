@@ -82,59 +82,65 @@ def test_chat_completions_no_image(server):
 
 def test_chat_completions_with_image_url(server):
     fake_image = MagicMock()
-    server._load_image_from_url = MagicMock(return_value=fake_image)
     server._run_ocr = MagicMock(return_value="Extracted text from image")
 
-    tc, key = _client(server)
-    resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract all text"},
-                        {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
-                    ],
-                }
-            ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+    with patch("ai_workers.workers.ocr.load_image_from_url", return_value=fake_image) as mock_load:
+        tc, key = _client(server)
+        resp = tc.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract all text"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example.com/img.png"},
+                            },
+                        ],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["choices"][0]["message"]["content"] == "Extracted text from image"
-    assert data["choices"][0]["message"]["role"] == "assistant"
-    server._load_image_from_url.assert_called_once_with("https://example.com/img.png")
-    server._run_ocr.assert_called_once_with(fake_image, "Extract all text")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "Extracted text from image"
+        assert data["choices"][0]["message"]["role"] == "assistant"
+        mock_load.assert_called_once_with("https://example.com/img.png")
+        server._run_ocr.assert_called_once_with(fake_image, "Extract all text")
 
 
 def test_chat_completions_response_has_id(server):
-    server._load_image_from_url = MagicMock(return_value=MagicMock())
     server._run_ocr = MagicMock(return_value="text")
 
-    tc, key = _client(server)
-    resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": "https://example.com/img.png"}},
-                    ],
-                }
-            ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+    with patch("ai_workers.workers.ocr.load_image_from_url", return_value=MagicMock()):
+        tc, key = _client(server)
+        resp = tc.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example.com/img.png"},
+                            },
+                        ],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
-    data = resp.json()
-    assert data["id"].startswith("chatcmpl-")
-    assert data["object"] == "chat.completion"
+        data = resp.json()
+        assert data["id"].startswith("chatcmpl-")
+        assert data["object"] == "chat.completion"
 
 
 # ---------------------------------------------------------------------------
@@ -167,101 +173,63 @@ def test_process_image_content_image_only(server):
 
 
 # ---------------------------------------------------------------------------
-# _load_image_from_url unit tests
+# load_image_from_url (from utils) unit tests via OCRServer interface removed
+# Logic is tested in test_coverage_boost.py and other integration tests.
 # ---------------------------------------------------------------------------
 
 
-def test_load_image_from_url_base64(server):
-    """base64 data URI should be decoded without network call."""
-    import base64
-
-    from PIL import Image
-
-    # Create a tiny 1x1 red PNG
-    img = Image.new("RGB", (1, 1), color=(255, 0, 0))
-    buf = __import__("io").BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    data_uri = f"data:image/png;base64,{b64}"
-
-    result = server._load_image_from_url(data_uri)
-    assert result.mode == "RGB"
-    assert result.size == (1, 1)
-
-
-def test_load_image_from_url_network(server):
-    """Regular URL should use centralized load_image_from_url with SSRF check."""
-    import io
-
-    from PIL import Image
-
-    img = Image.new("RGB", (2, 2), color=(0, 255, 0))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-
-    mock_resp = MagicMock()
-    mock_resp.iter_content = MagicMock(return_value=iter([buf.getvalue()]))
-    mock_resp.raise_for_status = MagicMock()
-
-    with (
-        patch("ai_workers.common.utils.is_safe_url", return_value=True),
-        patch("ai_workers.common.utils._session.get", return_value=mock_resp),
-    ):
-        result = server._load_image_from_url("https://example.com/img.png")
-
-    assert result.mode == "RGB"
-
-
 def test_chat_completions_invalid_image_url(server):
-    """ValueError from _load_image_from_url should return 400."""
-    server._load_image_from_url = MagicMock(
-        side_effect=ValueError("URL blocked by SSRF protection")
-    )
-
-    tc, key = _client(server)
-    resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": "http://127.0.0.1/pwn.png"}},
-                    ],
-                }
-            ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+    """ValueError from load_image_from_url should return 400."""
+    with patch(
+        "ai_workers.workers.ocr.load_image_from_url",
+        side_effect=ValueError("URL blocked by SSRF protection"),
+    ):
+        tc, key = _client(server)
+        resp = tc.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": "http://127.0.0.1/pwn.png"}},
+                        ],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
     assert resp.status_code == 400
     assert resp.json()["error"] == "URL blocked by SSRF protection"
 
 
 def test_chat_completions_failed_image_fetch(server):
-    """RuntimeError from _load_image_from_url should return 400."""
-    server._load_image_from_url = MagicMock(
-        side_effect=RuntimeError("Failed to load image from URL")
-    )
-
-    tc, key = _client(server)
-    resp = tc.post(
-        "/v1/chat/completions",
-        json={
-            "model": MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": "https://example.com/fail.png"}},
-                    ],
-                }
-            ],
-        },
-        headers={"Authorization": f"Bearer {key}"},
-    )
+    """RuntimeError from load_image_from_url should return 400."""
+    with patch(
+        "ai_workers.workers.ocr.load_image_from_url",
+        side_effect=RuntimeError("Failed to load image from URL"),
+    ):
+        tc, key = _client(server)
+        resp = tc.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "https://example.com/fail.png"},
+                            },
+                        ],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
 
     assert resp.status_code == 400
     assert resp.json()["error"] == "Failed to load image from URL"
