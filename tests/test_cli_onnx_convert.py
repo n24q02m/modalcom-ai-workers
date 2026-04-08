@@ -323,3 +323,31 @@ def test_onnx_convert_dry_run():
         assert result.exit_code == 0
         assert "dry run -- skipped" in result.output
         mock_model.remote.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# onnx-convert all SystemExit handling
+# ---------------------------------------------------------------------------
+
+
+def test_onnx_convert_all_system_exit_handling():
+    # Covers parity with gguf_convert.py line 65 SystemExit handling
+    mock_models = {"model1": MagicMock(), "model2": MagicMock()}
+
+    with (
+        patch("ai_workers.cli.onnx_convert.ONNX_MODELS", mock_models),
+        patch("ai_workers.cli.onnx_convert._onnx_convert_remote") as mock_remote,
+    ):
+
+        def side_effect(name, **kwargs):
+            if name == "model1":
+                raise SystemExit(1)
+            raise Exception("Failure")
+
+        mock_remote.side_effect = side_effect
+        result = runner.invoke(app, ["all"])
+
+    assert result.exit_code == 1
+    assert "2 model(s) failed" in result.output
+    assert "model1" in result.output
+    assert "model2" in result.output
