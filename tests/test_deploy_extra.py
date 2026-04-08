@@ -9,10 +9,12 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 import typer.testing
 from click.exceptions import Exit as ClickExit
 
 from ai_workers.cli.deploy import _deploy_module, _deploy_single, app
+from ai_workers.common.config import ModelConfig, Task, Tier
 
 
 class TestDeployAllFlag:
@@ -63,19 +65,73 @@ class TestDeployAllFlag:
         result = self._invoke(["--all"])
         assert result.exit_code != 0
 
-    def test_no_worker_no_all_shows_error(self) -> None:
-        """Calling deploy without --all and no worker arg should show error."""
-        result = self._invoke(["--no-all"])
-        # Should show error about specifying model name
-        assert result.exit_code != 0 or "specify" in result.output or "Error" in result.output
+    def test_all_failure_reporting(self):
+        """Test that deploy --all correctly aggregates and reports failures."""
+
+        # Mock models
+        m1 = ModelConfig(
+            name="m1",
+            hf_id="h1",
+            task=Task.EMBEDDING,
+            tier=Tier.LIGHT,
+            worker_module="mod1",
+            modal_app_var="app1",
+        )
+        m2 = ModelConfig(
+            name="m2",
+            hf_id="h2",
+            task=Task.EMBEDDING,
+            tier=Tier.HEAVY,
+            worker_module="mod1",
+            modal_app_var="app1",
+        )
+        m3 = ModelConfig(
+            name="m3",
+            hf_id="h3",
+            task=Task.RERANKER_LLM,
+            tier=Tier.HEAVY,
+            worker_module="mod2",
+            modal_app_var="app2",
+        )
+
+        mock_models = [m1, m2, m3]
+
+        with (
+            patch("ai_workers.cli.deploy.list_models", return_value=mock_models),
+            patch("ai_workers.cli.deploy._deploy_app") as mock_deploy_app,
+        ):
+            # mod1/app1 fails, mod2/app2 succeeds
+            def side_effect(module, app_var, dry_run=False):
+                if module == "mod1" and app_var == "app1":
+                    raise typer.Exit(code=1)
+                return None
+
+            mock_deploy_app.side_effect = side_effect
+
+            result = self._invoke(["--all"])
+
+            assert result.exit_code == 1
+            # The code joins failures with ", "
+            # failures.extend(names) where names = ["m1", "m2"]
+            assert "Deploy FAILED: m1, m2" in result.output
+
+            # Verify both apps were attempted (even if one failed)
+            assert mock_deploy_app.call_count == 2
 
 
 class TestDeployWorkerNone:
-    """Tests for when worker=None and --all is not set (lines 76-79)."""
+    """Tests for when worker=None and --all is not set (lines 60-62)."""
 
     def _invoke(self, args: list[str]):
         runner = typer.testing.CliRunner()
         return runner.invoke(app, args)
+
+    def test_no_worker_no_all_raises_exit(self) -> None:
+        """Calling deploy with an option but no worker/all should raise Exit (lines 61-62)."""
+        # Using --dry-run but NO positional argument and NO --all
+        result = self._invoke(["--dry-run"])
+        assert result.exit_code == 1
+        assert "specify a model name or use --all" in result.output
 
     def test_no_args_shows_help_or_error(self) -> None:
         """Invoking deploy without args — Typer shows help (exit 2) or error (exit 1)."""
