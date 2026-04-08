@@ -328,7 +328,9 @@ class VLRerankerServer:
                     doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
 
             # Score all documents in a single batched call
-            scores = self._score_batch(
+            # Bolt optimization: offload heavy GPU inference to thread pool
+            scores = await asyncio.to_thread(
+                self._score_batch,
                 body.model,
                 body.query,
                 doc_texts,
