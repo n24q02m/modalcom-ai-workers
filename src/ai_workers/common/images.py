@@ -76,6 +76,40 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     ).add_local_python_source("ai_workers")
 
 
+
+def transformers_mm_reranker_image() -> modal.Image:
+    """Build a Modal image for Gemma-4 multimodal reranker serving.
+
+    Includes audio/video processing dependencies (soundfile, av/PyAV, ffmpeg)
+    in addition to standard transformers stack. Models loaded from HF Hub
+    via Xet protocol at container startup.
+    """
+    return (
+        modal.Image.debian_slim(python_version=PYTHON_VERSION)
+        .apt_install("libsndfile1", "ffmpeg")
+        .uv_pip_install(
+            "torch>=2.4",
+            "transformers>=4.47",
+            "safetensors>=0.4",
+            "accelerate>=1.0",
+            "huggingface_hub[hf_xet]",
+            "fastapi>=0.115",
+            "loguru>=0.7",
+            "pydantic>=2.0",
+            "soundfile>=0.12",
+            "numpy>=2.0",
+            "av>=14.0",
+        )
+        .env(
+            {
+                "HF_XET_HIGH_PERFORMANCE": "1",
+                "TORCHINDUCTOR_COMPILE_THREADS": "1",
+            }
+        )
+        .add_local_python_source("ai_workers")
+    )
+
+
 def transformers_tts_image() -> modal.Image:
     """Build a Modal image with qwen-tts for Qwen3-TTS text-to-speech.
 

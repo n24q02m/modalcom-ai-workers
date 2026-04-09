@@ -300,6 +300,33 @@ _ensure_numpy_stub()
 
 
 # ---------------------------------------------------------------------------
+# av (PyAV) stub
+# ---------------------------------------------------------------------------
+
+
+def _ensure_av_stub() -> None:
+    """Inject a minimal av (PyAV) stub if av is not installed."""
+    if "av" in sys.modules:
+        return
+    if importlib.util.find_spec("av") is not None:
+        return
+
+    av_stub = types.ModuleType("av")
+    # av.open() returns a container mock with streams and decode
+    mock_stream = MagicMock()
+    mock_stream.time_base = 1
+    mock_stream.duration = 10  # 10 seconds
+    mock_container = MagicMock()
+    mock_container.streams.video = [mock_stream]
+    mock_container.decode = MagicMock(return_value=iter([MagicMock()]))
+    av_stub.open = MagicMock(return_value=mock_container)
+    sys.modules["av"] = av_stub
+
+
+_ensure_av_stub()
+
+
+# ---------------------------------------------------------------------------
 # Autouse fixture: ensure WORKER_API_KEY is set so auth is enforced by default.
 # Tests that explicitly need dev-mode (no key) override this via patch.dict.
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ class Task(enum.StrEnum):
     RERANKER_LLM = "reranker-llm"
     VL_EMBEDDING = "vl-embedding"
     VL_RERANKER = "vl-reranker"
+    MM_RERANKER = "mm-reranker"
     OCR = "ocr"
     ASR = "automatic-speech-recognition"
     TTS = "text-to-speech"
@@ -290,6 +291,23 @@ _register(
         worker_module="ai_workers.workers.asr",
         modal_app_var="asr_app",
         modal_app_name="ai-workers-qwen3-asr",
+    )
+)
+
+# --- Gemma-4 Multimodal Reranker (text + image + audio + video on single A10G) ---
+_register(
+    ModelConfig(
+        name="gemma4-reranker-v1",
+        hf_id="n24q02m/gemma4-e4b-reranker-v1",
+        task=Task.MM_RERANKER,
+        tier=Tier.HEAVY,
+        precision=Precision.BF16,
+        gpu=GPU.A10G,
+        serving_engine=ServingEngine.CUSTOM_FASTAPI,
+        model_class=ModelClassType.IMAGE_TEXT_TO_TEXT,
+        worker_module="ai_workers.workers.mm_reranker",
+        modal_app_var="mm_reranker_app",
+        modal_app_name="ai-workers-mm-reranker",
     )
 )
 

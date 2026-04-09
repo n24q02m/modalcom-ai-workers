@@ -48,6 +48,8 @@ ALL_MODEL_HF_IDS = [
     # ASR (0.6B + 1.7B)
     "Qwen/Qwen3-ASR-0.6B",
     "Qwen/Qwen3-ASR-1.7B",
+    # Multimodal Reranker (Gemma-4-E4B fine-tuned)
+    "n24q02m/gemma4-e4b-reranker-v1",
 ]
 
 # ---------------------------------------------------------------------------
