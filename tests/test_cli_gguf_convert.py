@@ -41,8 +41,12 @@ def test_gguf_convert_unknown_model_exits_1():
 
 
 def test_gguf_convert_no_model_exits_1():
-    result = runner.invoke(app, [])
-    assert result.exit_code != 0
+    # To hit line 53-56, we need to bypass no_args_is_help=True.
+    # Typer exits with 2 (Usage Error) if no args are passed.
+    # We can pass an optional flag but no positional argument.
+    result = runner.invoke(app, ["--dry-run"])
+    assert result.exit_code == 1
+    assert "Please specify a model" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -77,11 +81,12 @@ def test_gguf_convert_success():
         patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
         patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
     ):
+        mock_modal.exception.AuthError = type("AuthError", (Exception,), {})
         mock_modal.enable_output.return_value = mock_cm
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 0
-    assert "THANH CONG" in result.output or "success" in result.output.lower()
+    assert "SUCCESS" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +118,12 @@ def test_gguf_convert_skipped():
         patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
         patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
     ):
+        mock_modal.exception.AuthError = type("AuthError", (Exception,), {})
         mock_modal.enable_output.return_value = mock_cm
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 0
-    assert "Bo qua" in result.output or "skipped" in result.output.lower()
+    assert "Skipped" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +131,34 @@ def test_gguf_convert_skipped():
 # ---------------------------------------------------------------------------
 
 
-def test_gguf_convert_auth_error():
+def test_gguf_convert_auth_error_from_remote():
+    auth_error_cls = type("AuthError", (Exception,), {})
+
+    mock_remote_fn = MagicMock(side_effect=auth_error_cls("no auth"))
+    mock_gguf_convert_model = MagicMock()
+    mock_gguf_convert_model.remote = mock_remote_fn
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=None)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_gguf_convert_app = MagicMock()
+    mock_gguf_convert_app.run.return_value = mock_cm
+
+    with (
+        patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
+        patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
+        patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+    ):
+        mock_modal.enable_output.return_value = mock_cm
+        mock_modal.exception.AuthError = auth_error_cls
+        result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
+
+    assert result.exit_code == 1
+    assert "Authentication failed" in result.output
+
+
+def test_gguf_convert_auth_error_on_app_run():
     auth_error_cls = type("AuthError", (Exception,), {})
 
     mock_cm = MagicMock()
@@ -144,6 +177,63 @@ def test_gguf_convert_auth_error():
         result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
 
     assert result.exit_code == 1
+    assert "Authentication failed" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Unknown status / General Exception
+# ---------------------------------------------------------------------------
+
+
+def test_gguf_convert_unknown_status():
+    mock_result = {"status": "random"}
+    mock_remote_fn = MagicMock(return_value=mock_result)
+    mock_gguf_convert_model = MagicMock()
+    mock_gguf_convert_model.remote = mock_remote_fn
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=None)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_gguf_convert_app = MagicMock()
+    mock_gguf_convert_app.run.return_value = mock_cm
+
+    with (
+        patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
+        patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
+        patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+    ):
+        mock_modal.exception.AuthError = type("AuthError", (Exception,), {})
+        mock_modal.enable_output.return_value = mock_cm
+        result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
+
+    assert result.exit_code == 1
+    assert "unknown status" in result.output
+
+
+def test_gguf_convert_general_exception():
+    mock_remote_fn = MagicMock(side_effect=Exception("something went wrong"))
+    mock_gguf_convert_model = MagicMock()
+    mock_gguf_convert_model.remote = mock_remote_fn
+
+    mock_cm = MagicMock()
+    mock_cm.__enter__ = MagicMock(return_value=None)
+    mock_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_gguf_convert_app = MagicMock()
+    mock_gguf_convert_app.run.return_value = mock_cm
+
+    with (
+        patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
+        patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
+        patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+    ):
+        mock_modal.exception.AuthError = type("AuthError", (Exception,), {})
+        mock_modal.enable_output.return_value = mock_cm
+        result = runner.invoke(app, ["qwen3-embedding-0.6b-gguf"])
+
+    assert result.exit_code == 1
+    assert "FAILED — something went wrong" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -177,20 +267,19 @@ def test_gguf_convert_all_success():
         patch("ai_workers.cli.gguf_convert.modal") as mock_modal,
         patch("ai_workers.cli.gguf_convert.gguf_convert_app", mock_gguf_convert_app),
         patch("ai_workers.cli.gguf_convert.gguf_convert_model", mock_gguf_convert_model),
+        patch("ai_workers.cli.gguf_convert.GGUF_MODELS", {"test": MagicMock(name="test")}),
     ):
+        mock_modal.exception.AuthError = type("AuthError", (Exception,), {})
         mock_modal.enable_output.return_value = mock_cm
         result = runner.invoke(app, ["all"])
 
     assert result.exit_code == 0
-
-
-# ---------------------------------------------------------------------------
-# gguf-convert all error handling
-# ---------------------------------------------------------------------------
+    assert "All 1 models converted successfully" in result.output
 
 
 def test_gguf_convert_all_error_handling():
-    # Use a small dict to avoid iterating over all real models
+    # Specifically targeting coverage of lines 70-71 (except block in 'all' loop)
+    # The coverage report mentioned 69-71 (but numbering might shift)
     mock_models = {"model1": MagicMock(), "model2": MagicMock()}
 
     with (
@@ -212,6 +301,7 @@ def test_gguf_convert_all_error_handling():
     assert "model2" in result.output
 
 
+# ---------------------------------------------------------------------------
 # dry-run skips remote call
 # ---------------------------------------------------------------------------
 
