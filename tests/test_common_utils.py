@@ -289,3 +289,43 @@ class TestLoadImageFromUrlEdgeCases:
             load_image_from_url("https://example.com/large.png")
 
         mock_resp.close.assert_called_once()
+
+    def test_rejects_ipv6_unspecified(self):
+        """Address :: is unspecified and should be rejected."""
+        unspecified = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::", 0, 0, 0))]
+        with patch("socket.getaddrinfo", return_value=unspecified):
+            assert is_safe_url("http://[::]/image.png") is False
+
+    def test_is_safe_url_unexpected_exception(self):
+        """Test the catch-all Exception block in is_safe_url."""
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Boom")):
+            assert is_safe_url("http://example.com") is False
+
+    def test_pin_hostname_to_ip_nested(self):
+        """Exercise the 'else' block in _pin_hostname_to_ip when pinning same host again."""
+        from ai_workers.common.utils import _pin_hostname_to_ip, _thread_local
+
+        # Clear any existing state
+        if hasattr(_thread_local, "pinned_ips"):
+            _thread_local.pinned_ips.clear()
+
+        with _pin_hostname_to_ip("example.com", "1.1.1.1"):
+            assert _thread_local.pinned_ips["example.com"] == "1.1.1.1"
+            with _pin_hostname_to_ip("example.com", "2.2.2.2"):
+                assert _thread_local.pinned_ips["example.com"] == "2.2.2.2"
+            assert _thread_local.pinned_ips["example.com"] == "1.1.1.1"
+
+    def test_patched_create_connection(self):
+        """Exercise the _patched_create_connection logic."""
+        from ai_workers.common.utils import _patched_create_connection, _pin_hostname_to_ip
+
+        mock_orig = MagicMock()
+        with patch("ai_workers.common.utils._original_create_connection", mock_orig):
+            # 1. No pin
+            _patched_create_connection(("example.com", 80))
+            mock_orig.assert_called_with(("example.com", 80))
+
+            # 2. With pin
+            with _pin_hostname_to_ip("example.com", "1.2.3.4"):
+                _patched_create_connection(("example.com", 80))
+                mock_orig.assert_called_with(("1.2.3.4", 80))
