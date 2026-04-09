@@ -140,6 +140,37 @@ def _make_test_image_bytes(size=(2, 2), color=(0, 255, 0)) -> bytes:
     return buf.getvalue()
 
 
+class TestSSRFIPPinned:
+    """Tests for SSRF IP pinning implementation."""
+
+    def test_patched_create_connection_uses_pinned_ip(self):
+        """Verify _patched_create_connection uses the pinned IP if present."""
+        from ai_workers.common.utils import (
+            _patched_create_connection,
+            _thread_local,
+        )
+
+        host = "pinned.example.com"
+        pinned_ip = "1.2.3.4"
+        address = (host, 80)
+
+        if not hasattr(_thread_local, "pinned_ips"):
+            _thread_local.pinned_ips = {}
+
+        with patch("ai_workers.common.utils._original_create_connection") as mock_orig:
+            # 1. No pin
+            _patched_create_connection(address)
+            mock_orig.assert_called_with(address)
+
+            # 2. With pin
+            _thread_local.pinned_ips[host] = pinned_ip
+            try:
+                _patched_create_connection(address)
+                mock_orig.assert_called_with((pinned_ip, 80))
+            finally:
+                del _thread_local.pinned_ips[host]
+
+
 class TestLoadImageFromUrl:
     """Tests for load_image_from_url."""
 
@@ -237,6 +268,35 @@ class TestLoadImageFromUrl:
         """Test is_safe_url handling of malformed URLs that fail to parse."""
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://[:::1]") is False
+
+    def test_pin_hostname_to_ip_initialization(self):
+        """Test _pin_hostname_to_ip initializes pinned_ips if missing."""
+        from ai_workers.common.utils import _pin_hostname_to_ip, _thread_local
+
+        if hasattr(_thread_local, "pinned_ips"):
+            del _thread_local.pinned_ips
+        with _pin_hostname_to_ip("example.com", "1.1.1.1"):
+            assert _thread_local.pinned_ips["example.com"] == "1.1.1.1"
+
+    def test_pin_hostname_to_ip_nested(self):
+        """Test _pin_hostname_to_ip with nested pinning for the same hostname."""
+        from ai_workers.common.utils import _pin_hostname_to_ip, _thread_local
+
+        hostname = "example.com"
+        with _pin_hostname_to_ip(hostname, "1.1.1.1"):
+            assert _thread_local.pinned_ips[hostname] == "1.1.1.1"
+            with _pin_hostname_to_ip(hostname, "2.2.2.2"):
+                assert _thread_local.pinned_ips[hostname] == "2.2.2.2"
+            # This should restore "1.1.1.1", exercising the else block in finally
+            assert _thread_local.pinned_ips[hostname] == "1.1.1.1"
+        assert hostname not in _thread_local.pinned_ips
+
+    def test_is_safe_url_unexpected_exception(self):
+        """Test is_safe_url handling of unexpected exceptions (not ValueError)."""
+        with patch(
+            "ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Unexpected error")
+        ):
+            assert is_safe_url("http://example.com") is False
 
     def test_rejects_invalid_ip_from_dns(self):
         """Test is_safe_url when DNS returns an invalid IP string."""
