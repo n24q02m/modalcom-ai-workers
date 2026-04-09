@@ -1,0 +1,15 @@
+{
+  "id": "n24q02m/gemma4-data-prep-stage1-script",
+  "title": "Gemma4 Data Prep Stage1 (Script)",
+  "code_file": "kaggle_data_prep_stage1.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
