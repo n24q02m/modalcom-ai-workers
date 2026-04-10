@@ -13,7 +13,10 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+import asyncio
+
 import modal
+from pydantic import BaseModel, field_validator
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
@@ -26,6 +29,7 @@ from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 SCALEDOWN_WINDOW = 300  # 5 minutes
 KEEP_WARM = 0  # Scale to zero when idle
 EMBEDDING_DIM = 1024
+MAX_INPUT_LENGTH = 64
 
 # Official system instruction for Qwen3-VL-Embedding
 DEFAULT_INSTRUCTION = "Represent the user's input."
@@ -40,6 +44,41 @@ vl_embedding_app = modal.App(
     "ai-workers-vl-embedding",
     secrets=[modal.Secret.from_name("worker-api-key")],
 )
+
+
+class VLEmbeddingInput(BaseModel):
+    text: str
+    image_url: str | None = None
+
+
+class VLEmbeddingRequest(BaseModel):
+    model: str = "qwen3-vl-embedding-2b"
+    input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
+    encoding_format: str = "float"
+
+    @field_validator("input")
+    @classmethod
+    def validate_input_length(cls, v):
+        if isinstance(v, list) and len(v) > MAX_INPUT_LENGTH:
+            msg = f"Input list too long ({len(v)} items). Maximum allowed: {MAX_INPUT_LENGTH}."
+            raise ValueError(msg)
+        return v
+
+
+class EmbeddingData(BaseModel):
+    object: str = "embedding"
+    embedding: list[float]
+    index: int
+
+
+class EmbeddingResponse(BaseModel):
+    object: str = "list"
+    data: list[EmbeddingData]
+    model: str
+
+
+# Rebuild to resolve forward references (VLEmbeddingInput used in VLEmbeddingRequest)
+VLEmbeddingRequest.model_rebuild()
 
 
 @vl_embedding_app.cls(
@@ -190,48 +229,67 @@ class VLEmbeddingServer:
 
         return embeddings[:, :EMBEDDING_DIM].cpu().tolist()
 
+    def _do_create_embeddings(self, body: VLEmbeddingRequest) -> EmbeddingResponse:
+        """Core embedding creation logic."""
+        if body.model not in MODEL_CONFIGS:
+            raise ValueError(
+                f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
+            )
+
+        embeddings: list[list[float]] = []
+
+        if isinstance(body.input, str):
+            # Single text input
+            embeddings = self._embed_text(body.model, [body.input])
+        elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
+            # List of text inputs
+            embeddings = self._embed_text(body.model, body.input)
+        elif isinstance(body.input, VLEmbeddingInput):
+            # Single multimodal input
+            if body.input.image_url:
+                embeddings = self._embed_multimodal(
+                    body.model, [body.input.text], [body.input.image_url]
+                )
+            else:
+                embeddings = self._embed_text(body.model, [body.input.text])
+        elif isinstance(body.input, list):
+            # List of multimodal inputs - aggregate for batching
+            mm_indices = []
+            mm_texts = []
+            mm_urls = []
+            text_indices = []
+            text_texts = []
+
+            for i, item in enumerate(body.input):
+                if isinstance(item, VLEmbeddingInput) and item.image_url:
+                    mm_indices.append(i)
+                    mm_texts.append(item.text)
+                    mm_urls.append(item.image_url)
+                elif isinstance(item, VLEmbeddingInput):
+                    text_indices.append(i)
+                    text_texts.append(item.text)
+
+            embeddings: list[list[float] | None] = [None] * len(body.input)
+
+            if mm_indices:
+                mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
+                for idx, res in zip(mm_indices, mm_results, strict=False):
+                    embeddings[idx] = res
+
+            if text_indices:
+                text_results = self._embed_text(body.model, text_texts)
+                for idx, res in zip(text_indices, text_results, strict=False):
+                    embeddings[idx] = res
+
+        data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
+        return EmbeddingResponse(data=data, model=body.model)
+
     @modal.asgi_app()
     def serve(self):
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
-        from pydantic import BaseModel, field_validator
 
         app = FastAPI(title="Qwen3 VL Embedding (Light + Heavy)")
-
-        max_input_length = 64
-
-        class VLEmbeddingInput(BaseModel):
-            text: str
-            image_url: str | None = None
-
-        class VLEmbeddingRequest(BaseModel):
-            model: str = "qwen3-vl-embedding-2b"
-            input: str | list[str] | VLEmbeddingInput | list[VLEmbeddingInput]
-            encoding_format: str = "float"
-
-            @field_validator("input")
-            @classmethod
-            def validate_input_length(cls, v):
-                if isinstance(v, list) and len(v) > max_input_length:
-                    msg = (
-                        f"Input list too long ({len(v)} items). "
-                        f"Maximum allowed: {max_input_length}."
-                    )
-                    raise ValueError(msg)
-                return v
-
-        class EmbeddingData(BaseModel):
-            object: str = "embedding"
-            embedding: list[float]
-            index: int
-
-        class EmbeddingResponse(BaseModel):
-            object: str = "list"
-            data: list[EmbeddingData]
-            model: str
-
-        # Rebuild to resolve forward references (VLEmbeddingInput used in VLEmbeddingRequest)
-        VLEmbeddingRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -259,6 +317,7 @@ class VLEmbeddingServer:
 
         @app.post("/v1/embeddings", response_model=EmbeddingResponse)
         async def create_embeddings(body: VLEmbeddingRequest = Body(...)):
+            # Check model exists before offloading (validation)
             if body.model not in MODEL_CONFIGS:
                 return JSONResponse(
                     status_code=400,
@@ -268,52 +327,7 @@ class VLEmbeddingServer:
                     },
                 )
 
-            embeddings: list[list[float]] = []
-
-            if isinstance(body.input, str):
-                # Single text input
-                embeddings = self._embed_text(body.model, [body.input])
-            elif isinstance(body.input, list) and body.input and isinstance(body.input[0], str):
-                # List of text inputs
-                embeddings = self._embed_text(body.model, body.input)
-            elif isinstance(body.input, VLEmbeddingInput):
-                # Single multimodal input
-                if body.input.image_url:
-                    embeddings = self._embed_multimodal(
-                        body.model, [body.input.text], [body.input.image_url]
-                    )
-                else:
-                    embeddings = self._embed_text(body.model, [body.input.text])
-            elif isinstance(body.input, list):
-                # List of multimodal inputs - aggregate for batching
-                mm_indices = []
-                mm_texts = []
-                mm_urls = []
-                text_indices = []
-                text_texts = []
-
-                for i, item in enumerate(body.input):
-                    if isinstance(item, VLEmbeddingInput) and item.image_url:
-                        mm_indices.append(i)
-                        mm_texts.append(item.text)
-                        mm_urls.append(item.image_url)
-                    elif isinstance(item, VLEmbeddingInput):
-                        text_indices.append(i)
-                        text_texts.append(item.text)
-
-                embeddings: list[list[float] | None] = [None] * len(body.input)
-
-                if mm_indices:
-                    mm_results = self._embed_multimodal(body.model, mm_texts, mm_urls)
-                    for idx, res in zip(mm_indices, mm_results, strict=False):
-                        embeddings[idx] = res
-
-                if text_indices:
-                    text_results = self._embed_text(body.model, text_texts)
-                    for idx, res in zip(text_indices, text_results, strict=False):
-                        embeddings[idx] = res
-
-            data = [EmbeddingData(embedding=emb, index=i) for i, emb in enumerate(embeddings)]
-            return EmbeddingResponse(data=data, model=body.model)
+            # Offload blocking inference to a thread to keep FastAPI responsive
+            return await asyncio.to_thread(self._do_create_embeddings, body)
 
         return app
