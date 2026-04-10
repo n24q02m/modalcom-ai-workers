@@ -334,6 +334,74 @@ def _upload_gguf_artifacts(
     logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
 
+def _get_hf_token_and_validate(gguf_name: str, quant_type: str) -> str:
+    """Validate inputs and retrieve the HuggingFace token."""
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", gguf_name):
+        raise ValueError(f"Invalid gguf_name: {gguf_name}")
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", quant_type):
+        raise ValueError(f"Invalid quant_type: {quant_type}")
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token:
+        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
+        raise ValueError(msg)
+    return hf_token
+
+
+def _execute_gguf_conversion(
+    model_name: str,
+    hf_source: str,
+    hf_target: str,
+    gguf_name: str,
+    gguf_filename: str,
+    gguf_repo_path: str,
+    output_attr: str,
+    quant_type: str,
+    hf_token: str,
+) -> float:
+    """Execute the core GGUF conversion and artifact upload pipeline."""
+    from huggingface_hub import HfApi
+
+    api = HfApi(token=hf_token)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_dir = Path(tmpdir) / "model"
+        output_dir = Path(tmpdir) / "output"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        _download_hf_model(hf_source, model_dir, hf_token)
+
+        f16_path = Path(tmpdir) / f"{gguf_name}-f16.gguf"
+        q4_path = Path(tmpdir) / "output" / gguf_filename
+
+        f16_size = _convert_hf_to_f16_gguf(model_dir, f16_path)
+        gc.collect()
+
+        q4_size = _quantize_f16_to_gguf(f16_path, q4_path, quant_type, f16_size)
+        f16_path.unlink()
+
+        config_obj = GgufModelConfig(
+            name=model_name,
+            hf_source=hf_source,
+            hf_target=hf_target,
+            gguf_name=gguf_name,
+            output_attr=output_attr,
+        )
+        _upload_gguf_artifacts(
+            api=api,
+            hf_target=hf_target,
+            hf_source=hf_source,
+            hf_token=hf_token,
+            q4_path=q4_path,
+            gguf_filename=gguf_filename,
+            gguf_repo_path=gguf_repo_path,
+            quant_type=quant_type,
+            q4_size=q4_size,
+            config_obj=config_obj,
+        )
+    return q4_size
+
+
 @gguf_convert_app.function(
     image=gguf_converter_image(),
     memory=32768,  # 32GB RAM
@@ -368,25 +436,10 @@ def gguf_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, gguf_file, size_mb.
     """
-    from huggingface_hub import HfApi
-
-    if not re.match(r"^[a-zA-Z0-9_.-]+$", gguf_name):
-        raise ValueError(f"Invalid gguf_name: {gguf_name}")
-    if not re.match(r"^[a-zA-Z0-9_.-]+$", quant_type):
-        raise ValueError(f"Invalid quant_type: {quant_type}")
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
-        raise ValueError(msg)
-
-    api = HfApi(token=hf_token)
-
+    hf_token = _get_hf_token_and_validate(gguf_name, quant_type)
     gguf_filename = f"{gguf_name}-{quant_type.lower().replace('_', '-')}.gguf"
-    gguf_repo_path = gguf_filename  # Root level in dedicated GGUF repo
+    gguf_repo_path = gguf_filename
 
-    # ------------------------------------------------------------------
-    # Check if file already exists
-    # ------------------------------------------------------------------
     if not force and _check_if_gguf_exists(hf_target, gguf_repo_path, hf_token):
         return {
             "model_name": model_name,
@@ -395,59 +448,17 @@ def gguf_convert_model(
             "hf_target": hf_target,
         }
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        model_dir = Path(tmpdir) / "model"
-        output_dir = Path(tmpdir) / "output"
-        model_dir.mkdir(parents=True, exist_ok=True)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # ------------------------------------------------------------------
-        # Download model from HuggingFace Hub
-        # ------------------------------------------------------------------
-        _download_hf_model(hf_source, model_dir, hf_token)
-
-        # ------------------------------------------------------------------
-        # Step 1: convert_hf_to_gguf.py -> F16 GGUF
-        # ------------------------------------------------------------------
-        f16_path = Path(tmpdir) / f"{gguf_name}-f16.gguf"
-        q4_path = Path(tmpdir) / "output" / gguf_filename
-
-        f16_size = _convert_hf_to_f16_gguf(model_dir, f16_path)
-
-        # Free RAM
-        gc.collect()
-
-        # ------------------------------------------------------------------
-        # Step 2: llama-quantize -> Q4_K_M
-        # ------------------------------------------------------------------
-        q4_size = _quantize_f16_to_gguf(f16_path, q4_path, quant_type, f16_size)
-
-        # Delete F16 intermediate
-        f16_path.unlink()
-
-        # ------------------------------------------------------------------
-        # Upload GGUF file to HuggingFace Hub
-        # ------------------------------------------------------------------
-        config_obj = GgufModelConfig(
-            name=model_name,
-            hf_source=hf_source,
-            hf_target=hf_target,
-            gguf_name=gguf_name,
-            output_attr=output_attr,
-        )
-        _upload_gguf_artifacts(
-            api=api,
-            hf_target=hf_target,
-            hf_source=hf_source,
-            hf_token=hf_token,
-            q4_path=q4_path,
-            gguf_filename=gguf_filename,
-            gguf_repo_path=gguf_repo_path,
-            quant_type=quant_type,
-            q4_size=q4_size,
-            config_obj=config_obj,
-        )
-
+    q4_size = _execute_gguf_conversion(
+        model_name=model_name,
+        hf_source=hf_source,
+        hf_target=hf_target,
+        gguf_name=gguf_name,
+        gguf_filename=gguf_filename,
+        gguf_repo_path=gguf_repo_path,
+        output_attr=output_attr,
+        quant_type=quant_type,
+        hf_token=hf_token,
+    )
     gc.collect()
 
     return {
