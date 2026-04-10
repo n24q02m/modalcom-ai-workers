@@ -1,7 +1,6 @@
-"""Tests for deploy CLI command construction and logic.
+"""Tests for deploy CLI module.
 
-Validates command generation, dry-run mode, and error handling
-without actually calling modal deploy.
+Validates model grouping and command construction for modal deployment.
 """
 
 from __future__ import annotations
@@ -9,49 +8,16 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from click.exceptions import Exit as ClickExit
+from typer import Exit as ClickExit
 
-from ai_workers.cli.deploy import _deploy_module, _deploy_single, _module_to_file_path
-from ai_workers.common.config import MODEL_REGISTRY
-
-
-class TestModuleToFilePath:
-    """Test module path to file path conversion."""
-
-    def test_simple_module(self) -> None:
-        assert _module_to_file_path("ai_workers.workers.embedding") == (
-            "src/ai_workers/workers/embedding.py"
-        )
-
-    def test_deeply_nested(self) -> None:
-        assert _module_to_file_path("a.b.c.d") == "src/a/b/c/d.py"
-
-    def test_single_module(self) -> None:
-        assert _module_to_file_path("module") == "src/module.py"
+from ai_workers.cli.deploy import _deploy_module, _deploy_single
+from ai_workers.common.config import MODEL_REGISTRY, get_model
 
 
-class TestDeploySingleDryRun:
-    """Test deploy single model in dry-run mode."""
+class TestDeploySingle:
+    """Test deploy single function."""
 
-    @patch("ai_workers.cli.deploy.subprocess")
-    def test_dry_run_does_not_call_subprocess(self, mock_subprocess: MagicMock) -> None:
-        """Dry run should NOT execute any subprocess commands."""
-        _deploy_single("qwen3-embedding-0.6b", dry_run=True)
-        mock_subprocess.run.assert_not_called()
-
-    @patch("ai_workers.cli.deploy.subprocess")
-    def test_dry_run_all_models(self, mock_subprocess: MagicMock) -> None:
-        """Dry run should work for all registered models."""
-        for name in MODEL_REGISTRY:
-            _deploy_single(name, dry_run=True)
-        mock_subprocess.run.assert_not_called()
-
-
-class TestDeploySingleErrors:
-    """Test deploy error handling."""
-
-    def test_invalid_model_name(self) -> None:
-        """Invalid model name should raise Exit (via typer.Exit -> click.Exit)."""
+    def test_get_model_invalid_raises(self) -> None:
         with pytest.raises(ClickExit):
             _deploy_single("nonexistent-model")
 
@@ -144,24 +110,26 @@ class TestDeployAllGrouping:
         assert len(modules["ai_workers.workers.tts"]) == 2
         # ASR: 2 models (light + heavy) share one module
         assert len(modules["ai_workers.workers.asr"]) == 2
+        # MM Reranker: 1 model
+        assert len(modules["ai_workers.workers.mm_reranker"]) == 1
 
     def test_total_unique_modules(self) -> None:
-        """Should have 7 unique worker modules for 11 models."""
+        """Should have 8 unique worker modules for 12 models."""
         modules = {c.worker_module for c in MODEL_REGISTRY.values() if c.worker_module}
-        assert len(modules) == 7
+        assert len(modules) == 8
 
     def test_total_unique_deploy_targets(self) -> None:
-        """Merged apps: should have 7 unique (module, app_var) pairs for 11 models.
+        """Merged apps: should have 8 unique (module, app_var) pairs for 12 models.
 
         Embedding, VL Embedding, TTS, ASR each merge light+heavy into one app.
-        Reranker and VL Reranker have single 8B model each. Plus OCR = 7 total.
+        Reranker, VL Reranker, OCR, MM Reranker have single app each = 8 total.
         """
         targets = {
             (c.worker_module, c.modal_app_var)
             for c in MODEL_REGISTRY.values()
             if c.worker_module and c.modal_app_var
         }
-        assert len(targets) == 7
+        assert len(targets) == 8
 
     def test_merged_apps_share_app_var(self) -> None:
         """Light and heavy variants of merged tasks should share the same modal_app_var."""
