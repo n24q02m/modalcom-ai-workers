@@ -10,11 +10,14 @@ Handles:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 
-from .config import LoraConfig as LoraConfigDC
-from .config import QuantConfig
+if TYPE_CHECKING:
+    from .config import LoraConfig as LoraConfigDC
+    from .config import QuantConfig
 
 
 def make_bnb_config(quant_cfg: QuantConfig):

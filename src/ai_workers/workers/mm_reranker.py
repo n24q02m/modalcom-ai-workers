@@ -213,7 +213,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _ = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +229,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _sr = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
