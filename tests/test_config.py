@@ -30,8 +30,8 @@ class TestModelRegistry:
         assert len(MODEL_REGISTRY) > 0
 
     def test_expected_model_count(self) -> None:
-        """We expect 11 models in the registry."""
-        assert len(MODEL_REGISTRY) == 11
+        """We expect 12 models in the registry."""
+        assert len(MODEL_REGISTRY) == 12
 
     @pytest.mark.parametrize(
         "name",
@@ -84,6 +84,7 @@ class TestModelRegistry:
             "qwen3-tts-1.7b": "ai-workers-tts",
             "qwen3-asr-0.6b": "ai-workers-qwen3-asr",
             "qwen3-asr-1.7b": "ai-workers-qwen3-asr",
+            "gemma4-reranker-v1": "ai-workers-mm-reranker",
         }
         for config in MODEL_REGISTRY.values():
             assert config.modal_app_name == expected_names[config.name], (
@@ -133,7 +134,7 @@ class TestListModels:
 
     def test_list_all(self) -> None:
         models = list_models()
-        assert len(models) == 11
+        assert len(models) == 12
 
     def test_filter_by_task(self) -> None:
         embeddings = list_models(task=Task.EMBEDDING)
@@ -145,7 +146,7 @@ class TestListModels:
         assert all(m.tier == Tier.LIGHT for m in light)
         heavy = list_models(tier=Tier.HEAVY)
         assert all(m.tier == Tier.HEAVY for m in heavy)
-        assert len(light) + len(heavy) == 11
+        assert len(light) + len(heavy) == 12
 
     def test_filter_by_task_and_tier(self) -> None:
         light_embed = list_models(task=Task.EMBEDDING, tier=Tier.LIGHT)
