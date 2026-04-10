@@ -121,6 +121,67 @@ def _get_safe_ips(url: str) -> list[str]:
     return safe_ips
 
 
+def fetch_url_safely(url: str, max_size: int, timeout: int = 30) -> bytes:
+    """Fetch content from a URL or base64 data URI with SSRF protection.
+
+    Args:
+        url: The URL or base64 data URI to fetch.
+        max_size: Maximum allowed size in bytes.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Bytes of the fetched content.
+
+    Raises:
+        ValueError: If the URL is blocked by SSRF protection or exceeds size limit.
+        RuntimeError: If the fetch or decode fails.
+    """
+    if url.startswith("data:"):
+        try:
+            _header, b64_data = url.split(",", 1)
+            if len(b64_data) > (max_size * 4 // 3 + 1024):
+                raise ValueError("Base64 image data exceeds size limit")
+            content = base64.b64decode(b64_data)
+            if len(content) > max_size:
+                raise ValueError("Decoded data exceeds size limit")
+            return content
+        except binascii.Error as e:
+            raise RuntimeError("Failed to decode base64 image data URI") from e
+
+    try:
+        safe_ips = _get_safe_ips(url)
+    except ValueError as e:
+        raise ValueError(f"URL blocked by SSRF protection: {url}") from e
+
+    try:
+        parsed = urlparse(url)
+        with _pin_hostname_to_ip(parsed.hostname, safe_ips[0]):
+            response = _session.get(
+                url,
+                allow_redirects=False,
+                timeout=timeout,
+                stream=True,
+            )
+            response.raise_for_status()
+
+            chunks: list[bytes] = []
+            downloaded = 0
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                downloaded += len(chunk)
+                if downloaded > max_size:
+                    response.close()
+                    raise ValueError(
+                        f"Image from URL exceeds size limit ({max_size} bytes max): {url}"
+                    )
+                chunks.append(chunk)
+
+            return b"".join(chunks)
+    except ValueError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch URL: {url}") from e
+
+
 def is_safe_url(url: str) -> bool:
     """Validate that a URL is safe to fetch (no SSRF).
 
@@ -164,53 +225,18 @@ def load_image_from_url(url: str):
     """
     from PIL import Image, UnidentifiedImageError
 
-    # Handle base64 data URIs (no network call needed)
-    if url.startswith("data:"):
-        _header, b64_data = url.split(",", 1)
-        if len(b64_data) > MAX_BASE64_SIZE:
-            raise ValueError(
-                f"Base64 image data exceeds size limit "
-                f"({len(b64_data)} bytes encoded > {MAX_BASE64_SIZE} bytes max)"
-            )
-        try:
-            image_bytes = base64.b64decode(b64_data)
-            return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        except (binascii.Error, UnidentifiedImageError, OSError) as e:
-            raise RuntimeError("Failed to decode base64 image data URI") from e
-
-    # SSRF check for HTTP URLs and IP pinning
     try:
-        safe_ips = _get_safe_ips(url)
-    except ValueError as e:
-        raise ValueError(f"URL blocked by SSRF protection: {url}") from e
-
-    # Fetch image with safety controls and size limit
-    try:
-        parsed = urlparse(url)
-        # Pin to the first resolved IP
-        with _pin_hostname_to_ip(parsed.hostname, safe_ips[0]):
-            response = _session.get(
-                url,
-                allow_redirects=False,
-                timeout=30,
-                stream=True,
-            )
-            response.raise_for_status()
-
-            # Read response in chunks with size limit to prevent memory exhaustion
-            chunks: list[bytes] = []
-            downloaded = 0
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                downloaded += len(chunk)
-                if downloaded > MAX_IMAGE_SIZE:
-                    response.close()
-                    raise ValueError(
-                        f"Image from URL exceeds size limit ({MAX_IMAGE_SIZE} bytes max): {url}"
-                    )
-                chunks.append(chunk)
-
-            return Image.open(io.BytesIO(b"".join(chunks))).convert("RGB")
+        content = fetch_url_safely(url, max_size=MAX_IMAGE_SIZE, timeout=30)
     except ValueError:
         raise
+    except RuntimeError as e:
+        if "Failed to decode base64 image data URI" in str(e):
+            raise
+        raise RuntimeError(f"Failed to load image from URL: {url}") from e
     except Exception as e:
         raise RuntimeError(f"Failed to load image from URL: {url}") from e
+
+    try:
+        return Image.open(io.BytesIO(content)).convert("RGB")
+    except (UnidentifiedImageError, OSError) as e:
+        raise RuntimeError("Failed to decode base64 image data URI") from e
