@@ -378,9 +378,7 @@ def summarize_pointwise(samples: list[PointwiseSample]) -> dict[str, Any]:
         "modalities": dict(sorted(modality_counter.items())),
         "languages": dict(sorted(language_counter.items())),
         "sources": dict(sorted(source_counter.items())),
-        "teacher_coverage_ratio": (
-            len(teacher_scores) / len(samples) if samples else 0.0
-        ),
+        "teacher_coverage_ratio": (len(teacher_scores) / len(samples) if samples else 0.0),
         "teacher_score_mean": statistics.mean(teacher_scores) if teacher_scores else None,
         "teacher_score_min": min(teacher_scores) if teacher_scores else None,
         "teacher_score_max": max(teacher_scores) if teacher_scores else None,

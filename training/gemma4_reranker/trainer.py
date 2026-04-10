@@ -81,11 +81,7 @@ def compute_loss(
     Returns:
         (loss, metrics_dict) where metrics_dict has loss_ce, loss_kd, etc.
     """
-    model_inputs = {
-        k: v
-        for k, v in inputs.items()
-        if k not in {"labels", "teacher_scores"}
-    }
+    model_inputs = {k: v for k, v in inputs.items() if k not in {"labels", "teacher_scores"}}
     outputs = model(output_hidden_states=True, **model_inputs)
 
     # Extract last hidden state at last non-padding position
@@ -170,10 +166,7 @@ def train_one_epoch(
     for batch_idx, batch in enumerate(train_loader):
         # Move to GPU
         device = next(model.parameters()).device
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         # FP16 AMP forward
         with torch.amp.autocast("cuda", dtype=torch.float16):
@@ -194,9 +187,7 @@ def train_one_epoch(
         # Gradient accumulation step
         if (batch_idx + 1) % config.gradient_accumulation_steps == 0:
             scaler.unscale_(optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), config.max_grad_norm
-            )
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
@@ -213,16 +204,22 @@ def train_one_epoch(
                 vram_reserved = torch.cuda.memory_reserved() / 1e9
 
                 if mlflow_run:
-                    _log_metrics(mlflow_run, {
-                        "train/loss": accum_loss * config.gradient_accumulation_steps,
-                        "train/loss_ce": metrics["loss_ce"],
-                        "train/loss_kd": metrics["loss_kd"],
-                        "train/lr": current_lr,
-                        "train/grad_norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
-                        "train/vram_allocated_gb": vram_alloc,
-                        "train/vram_reserved_gb": vram_reserved,
-                        "train/epoch": epoch,
-                    }, step=global_step)
+                    _log_metrics(
+                        mlflow_run,
+                        {
+                            "train/loss": accum_loss * config.gradient_accumulation_steps,
+                            "train/loss_ce": metrics["loss_ce"],
+                            "train/loss_kd": metrics["loss_kd"],
+                            "train/lr": current_lr,
+                            "train/grad_norm": grad_norm.item()
+                            if isinstance(grad_norm, torch.Tensor)
+                            else grad_norm,
+                            "train/vram_allocated_gb": vram_alloc,
+                            "train/vram_reserved_gb": vram_reserved,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
 
             accum_loss = 0.0
 
@@ -256,10 +253,7 @@ def evaluate(
     device = next(model.parameters()).device
 
     for batch in val_loader:
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         with torch.amp.autocast("cuda", dtype=torch.float16):
             loss, _ = compute_loss(model, batch, yes_id=yes_id, no_id=no_id, lm_head=lm_head)
@@ -337,9 +331,7 @@ def train_stage(
 
     # LR scheduler
     total_steps = (
-        len(train_loader)
-        // train_config.gradient_accumulation_steps
-        * stage_config.num_epochs
+        len(train_loader) // train_config.gradient_accumulation_steps * stage_config.num_epochs
     )
     warmup_steps = int(total_steps * stage_config.warmup_ratio)
 
@@ -369,23 +361,25 @@ def train_stage(
             },
         )
 
-        mlflow.log_params({
-            "stage": stage_config.stage.value,
-            "learning_rate": stage_config.learning_rate,
-            "num_epochs": stage_config.num_epochs,
-            "effective_batch_size": (
-                train_config.per_device_train_batch_size
-                * train_config.gradient_accumulation_steps
-            ),
-            "max_seq_length": train_config.data.max_seq_length,
-            "lora_r": train_config.lora.r,
-            "lora_alpha": train_config.lora.lora_alpha,
-            "replay_ratio": stage_config.replay_ratio,
-            "train_samples": len(train_dataset),
-            "val_samples": len(val_dataset),
-            "yes_token_id": yes_id,
-            "no_token_id": no_id,
-        })
+        mlflow.log_params(
+            {
+                "stage": stage_config.stage.value,
+                "learning_rate": stage_config.learning_rate,
+                "num_epochs": stage_config.num_epochs,
+                "effective_batch_size": (
+                    train_config.per_device_train_batch_size
+                    * train_config.gradient_accumulation_steps
+                ),
+                "max_seq_length": train_config.data.max_seq_length,
+                "lora_r": train_config.lora.r,
+                "lora_alpha": train_config.lora.lora_alpha,
+                "replay_ratio": stage_config.replay_ratio,
+                "train_samples": len(train_dataset),
+                "val_samples": len(val_dataset),
+                "yes_token_id": yes_id,
+                "no_token_id": no_id,
+            }
+        )
 
     # Training loop
     global_step = 0
@@ -415,11 +409,14 @@ def train_stage(
         val_loss = evaluate(model, val_loader, lm_head, yes_id, no_id)
 
         if mlflow_run:
-            mlflow.log_metrics({
-                "eval/val_loss": val_loss,
-                "train/epoch_loss": train_loss,
-                "train/epoch_time_s": epoch_time,
-            }, step=global_step)
+            mlflow.log_metrics(
+                {
+                    "eval/val_loss": val_loss,
+                    "train/epoch_loss": train_loss,
+                    "train/epoch_time_s": epoch_time,
+                },
+                step=global_step,
+            )
 
         # Save best checkpoint
         if val_loss < best_val_loss:

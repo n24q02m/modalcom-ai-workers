@@ -43,7 +43,7 @@ class TestDeployAllFlag:
         assert result.exit_code == 0
         # There are 7 unique deploy targets in the registry
         # (embedding, reranker, vl_embedding, vl_reranker, ocr, tts, asr)
-        assert mock_subprocess.run.call_count == 7
+        assert mock_subprocess.run.call_count == 8
 
     @patch("ai_workers.cli.deploy.subprocess")
     def test_all_partial_failure_exits_nonzero(self, mock_subprocess: MagicMock) -> None:
