@@ -14,6 +14,7 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import modal
@@ -43,6 +44,16 @@ RERANKER_SYSTEM_PROMPT = (
 
 # Default instruction when none provided by caller
 DEFAULT_INSTRUCTION = "Retrieval relevant image or text with user's query"
+
+
+@dataclass(frozen=True)
+class VLRerankBatch:
+    query: str
+    documents: list[str]
+    document_images: list[Any | None]
+    query_image: Any | None = None
+    instruction: str | None = None
+
 
 vl_reranker_app = modal.App(
     "ai-workers-vl-reranker",
@@ -113,17 +124,20 @@ class VLRerankerServer:
     def _score_batch(
         self,
         model_name: str,
-        query: str,
-        documents: list[str],
-        document_images: list[Any | None],
-        query_image: Any | None = None,
-        instruction: str | None = None,
+        batch: VLRerankBatch,
     ) -> list[float]:
         """Score a batch of query-document pairs using optimized chunked inference.
 
         Batched alternative to `_score_pair` to prevent sequential processing bottleneck.
         Processes in chunks (e.g., batch_size=4) with padding.
         Uses left padding (default for Qwen3-VL processor) and extracts the last token hidden state.
+
+        Args:
+            model_name: Name of the model to use for scoring.
+            batch: Batch of query-document pairs and media to score.
+
+        Returns:
+            List of relevance scores (probabilities) for each document.
         """
         import torch
         from torch.nn import functional as fn
@@ -132,13 +146,13 @@ class VLRerankerServer:
         processor = self.processors[model_name]
         yes_no_weight = self.yes_no_weights[model_name]
 
-        instruction = instruction or DEFAULT_INSTRUCTION
+        instruction = batch.instruction or DEFAULT_INSTRUCTION
         all_scores = []
         batch_size = 4  # Small batch size for A10G memory safety with VL models
 
-        for i in range(0, len(documents), batch_size):
-            chunk_docs = documents[i : i + batch_size]
-            chunk_doc_images = document_images[i : i + batch_size]
+        for i in range(0, len(batch.documents), batch_size):
+            chunk_docs = batch.documents[i : i + batch_size]
+            chunk_doc_images = batch.document_images[i : i + batch_size]
 
             chunk_messages = []
             chunk_images = []
@@ -146,11 +160,11 @@ class VLRerankerServer:
             for doc_text, doc_image in zip(chunk_docs, chunk_doc_images, strict=True):
                 content_parts = []
                 images = []
-                if query_image:
-                    content_parts.append({"type": "image", "image": query_image})
-                    images.append(query_image)
+                if batch.query_image:
+                    content_parts.append({"type": "image", "image": batch.query_image})
+                    images.append(batch.query_image)
                 content_parts.append(
-                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
+                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {batch.query}"}
                 )
                 if doc_image:
                     content_parts.append({"type": "image", "image": doc_image})
@@ -220,15 +234,26 @@ class VLRerankerServer:
         """Score a single query-document pair using optimized yes/no logit scoring.
 
         Now a thin wrapper around `_score_batch` for consistency and to reduce duplication.
+
+        Args:
+            model_name: Name of the model to use for scoring.
+            query: The query text.
+            document: The document text.
+            query_image: Optional query image.
+            document_image: Optional document image.
+            instruction: Optional instruction text.
+
+        Returns:
+            Relevance score (probability) for the query-document pair.
         """
-        scores = self._score_batch(
-            model_name,
-            query,
-            [document],
-            [document_image],
+        batch = VLRerankBatch(
+            query=query,
+            documents=[document],
+            document_images=[document_image],
             query_image=query_image,
             instruction=instruction,
         )
+        scores = self._score_batch(model_name, batch)
         if not scores:
             return 0.0
         return scores[0]
@@ -328,13 +353,13 @@ class VLRerankerServer:
                     doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
 
             # Score all documents in a single batched call
-            scores = self._score_batch(
-                body.model,
-                body.query,
-                doc_texts,
-                doc_images,
+            batch = VLRerankBatch(
+                query=body.query,
+                documents=doc_texts,
+                document_images=doc_images,
                 query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
             )
+            scores = self._score_batch(body.model, batch)
 
             # Build results
             results = [

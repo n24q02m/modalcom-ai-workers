@@ -94,8 +94,9 @@ def test_rerank_text_only_docs(server):
     assert len(data["results"]) == 2
     # Verify _score_batch called with text-only (no image URLs)
     call_args = server._score_batch.call_args
-    assert call_args.kwargs.get("query_image") is None
-    assert call_args.args[3] == [None, None]  # document_images
+    batch = call_args.args[1]
+    assert batch.query_image is None
+    assert batch.document_images == [None, None]
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +132,8 @@ def test_rerank_multimodal_docs(server):
     assert len(data["results"]) == 2
     # Verify document_images in call
     call_args = server._score_batch.call_args
-    assert call_args.args[3] == ["mock_img", None]
+    batch = call_args.args[1]
+    assert batch.document_images == ["mock_img", None]
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +223,8 @@ def test_rerank_with_query_image_url(server):
 
     assert resp.status_code == 200
     call_args = server._score_batch.call_args
-    assert call_args.kwargs.get("query_image") == "mock_img"
+    batch = call_args.args[1]
+    assert batch.query_image == "mock_img"
 
 
 # ---------------------------------------------------------------------------
