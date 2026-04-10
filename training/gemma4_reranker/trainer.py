@@ -10,27 +10,41 @@ Implements the core training logic for all 3 stages:
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .config import StageConfig, TrainConfig
 from .dataset import MmRerankDataset, collate_fn
 from .model import find_lm_head
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import StageConfig, TrainConfig
+
+
+@dataclass
+class TrainingContext:
+    """Grouping of related training parameters and objects."""
+
+    model: torch.nn.Module
+    lm_head: torch.nn.Linear
+    yes_id: int
+    no_id: int
+    config: TrainConfig
+    optimizer: Any = None
+    scheduler: Any = None
+    scaler: Any = None
+    mlflow_run: Any = None
+
 
 def compute_loss(
-    model,
+    ctx: TrainingContext,
     inputs: dict,
-    yes_id: int,
-    no_id: int,
-    lm_head: torch.nn.Linear,
-    kd_alpha: float = 0.0,
-    kd_temperature: float = 2.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute training loss with optional knowledge distillation.
 
@@ -38,18 +52,13 @@ def compute_loss(
     (more efficient than full vocab logits for 2-class problem).
 
     Args:
-        model: Gemma4ForConditionalGeneration (PEFT wrapped).
+        ctx: Training context containing model, config, and IDs.
         inputs: Batch dict with input_ids, attention_mask, labels.
-        yes_id: Token ID for "yes".
-        no_id: Token ID for "no".
-        lm_head: lm_head Linear module for logit computation.
-        kd_alpha: Knowledge distillation blend weight (0 = no KD).
-        kd_temperature: KD softmax temperature.
 
     Returns:
         (loss, metrics_dict) where metrics_dict has loss_ce, loss_kd, etc.
     """
-    outputs = model(
+    outputs = ctx.model(
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         output_hidden_states=True,
@@ -61,9 +70,9 @@ def compute_loss(
     last_h = hidden[torch.arange(hidden.size(0)), seq_lengths]  # (B, hidden_dim)
 
     # Compute yes/no logits via lm_head weight
-    logits = F.linear(last_h, lm_head.weight)  # (B, vocab_size)
-    yes_logit = logits[:, yes_id]  # (B,)
-    no_logit = logits[:, no_id]  # (B,)
+    logits = F.linear(last_h, ctx.lm_head.weight)  # (B, vocab_size)
+    yes_logit = logits[:, ctx.yes_id]  # (B,)
+    no_logit = logits[:, ctx.no_id]  # (B,)
     logits_yes_no = torch.stack([yes_logit, no_logit], dim=-1)  # (B, 2)
 
     labels = inputs["labels"]  # (B,) — 0=yes, 1=no
@@ -74,6 +83,9 @@ def compute_loss(
     metrics = {"loss_ce": loss_ce.item()}
 
     # Knowledge distillation (optional)
+    kd_alpha = ctx.config.kd_alpha
+    kd_temperature = ctx.config.kd_temperature
+
     if kd_alpha > 0 and "teacher_scores" in inputs:
         teacher_scores = inputs["teacher_scores"]  # (B,) cosine sim from teacher
         # Convert teacher scores to [yes_prob, no_prob]
@@ -96,100 +108,80 @@ def compute_loss(
 
 
 def train_one_epoch(
-    model,
+    ctx: TrainingContext,
     train_loader: DataLoader,
-    optimizer,
-    scheduler,
-    scaler,
-    lm_head: torch.nn.Linear,
-    yes_id: int,
-    no_id: int,
-    config: TrainConfig,
     global_step: int,
     epoch: int,
-    mlflow_run=None,
 ) -> tuple[int, float]:
     """Train for one epoch.
 
     Args:
-        model: PEFT model.
+        ctx: Training context.
         train_loader: Training DataLoader.
-        optimizer: Optimizer instance.
-        scheduler: LR scheduler.
-        scaler: GradScaler for FP16 AMP.
-        lm_head: lm_head module.
-        yes_id, no_id: Token IDs.
-        config: Training configuration.
         global_step: Current global step counter.
         epoch: Current epoch number.
-        mlflow_run: Optional MLflow run for logging.
 
     Returns:
         (updated_global_step, avg_loss)
     """
-    model.train()
+    ctx.model.train()
     total_loss = 0.0
     num_batches = 0
     accum_loss = 0.0
 
-    optimizer.zero_grad()
+    ctx.optimizer.zero_grad()
 
     for batch_idx, batch in enumerate(train_loader):
         # Move to GPU
-        device = next(model.parameters()).device
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        device = next(ctx.model.parameters()).device
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         # FP16 AMP forward
         with torch.amp.autocast("cuda", dtype=torch.float16):
-            loss, metrics = compute_loss(
-                model,
-                batch,
-                yes_id=yes_id,
-                no_id=no_id,
-                lm_head=lm_head,
-                kd_alpha=config.kd_alpha,
-                kd_temperature=config.kd_temperature,
-            )
-            loss = loss / config.gradient_accumulation_steps
+            loss, metrics = compute_loss(ctx, batch)
+            loss = loss / ctx.config.gradient_accumulation_steps
 
-        scaler.scale(loss).backward()
+        ctx.scaler.scale(loss).backward()
         accum_loss += loss.item()
 
         # Gradient accumulation step
-        if (batch_idx + 1) % config.gradient_accumulation_steps == 0:
-            scaler.unscale_(optimizer)
+        if (batch_idx + 1) % ctx.config.gradient_accumulation_steps == 0:
+            ctx.scaler.unscale_(ctx.optimizer)
             grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), config.max_grad_norm
+                ctx.model.parameters(), ctx.config.max_grad_norm
             )
-            scaler.step(optimizer)
-            scaler.update()
-            scheduler.step()
-            optimizer.zero_grad()
+            ctx.scaler.step(ctx.optimizer)
+            ctx.scaler.update()
+            ctx.scheduler.step()
+            ctx.optimizer.zero_grad()
 
             global_step += 1
-            total_loss += accum_loss * config.gradient_accumulation_steps
+            total_loss += accum_loss * ctx.config.gradient_accumulation_steps
             num_batches += 1
 
             # Log metrics
-            if global_step % config.logging_steps == 0:
-                current_lr = scheduler.get_last_lr()[0]
+            if global_step % ctx.config.logging_steps == 0:
+                current_lr = ctx.scheduler.get_last_lr()[0]
                 vram_alloc = torch.cuda.memory_allocated() / 1e9
                 vram_reserved = torch.cuda.memory_reserved() / 1e9
 
-                if mlflow_run:
-                    _log_metrics(mlflow_run, {
-                        "train/loss": accum_loss * config.gradient_accumulation_steps,
-                        "train/loss_ce": metrics["loss_ce"],
-                        "train/loss_kd": metrics["loss_kd"],
-                        "train/lr": current_lr,
-                        "train/grad_norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
-                        "train/vram_allocated_gb": vram_alloc,
-                        "train/vram_reserved_gb": vram_reserved,
-                        "train/epoch": epoch,
-                    }, step=global_step)
+                if ctx.mlflow_run:
+                    _log_metrics(
+                        ctx.mlflow_run,
+                        {
+                            "train/loss": accum_loss * ctx.config.gradient_accumulation_steps,
+                            "train/loss_ce": metrics["loss_ce"],
+                            "train/loss_kd": metrics["loss_kd"],
+                            "train/lr": current_lr,
+                            "train/grad_norm": grad_norm.item()
+                            if isinstance(grad_norm, torch.Tensor)
+                            else grad_norm,
+                            "train/vram_allocated_gb": vram_alloc,
+                            "train/vram_reserved_gb": vram_reserved,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
 
             accum_loss = 0.0
 
@@ -199,37 +191,29 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(
-    model,
+    ctx: TrainingContext,
     val_loader: DataLoader,
-    lm_head: torch.nn.Linear,
-    yes_id: int,
-    no_id: int,
 ) -> float:
     """Evaluate model on validation set.
 
     Args:
-        model: PEFT model.
+        ctx: Training context.
         val_loader: Validation DataLoader.
-        lm_head: lm_head module.
-        yes_id, no_id: Token IDs.
 
     Returns:
         Average validation loss.
     """
-    model.eval()
+    ctx.model.eval()
     total_loss = 0.0
     num_batches = 0
 
-    device = next(model.parameters()).device
+    device = next(ctx.model.parameters()).device
 
     for batch in val_loader:
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         with torch.amp.autocast("cuda", dtype=torch.float16):
-            loss, _ = compute_loss(model, batch, yes_id=yes_id, no_id=no_id, lm_head=lm_head)
+            loss, _ = compute_loss(ctx, batch)
 
         total_loss += loss.item()
         num_batches += 1
@@ -301,9 +285,7 @@ def train_stage(
 
     # LR scheduler
     total_steps = (
-        len(train_loader)
-        // train_config.gradient_accumulation_steps
-        * stage_config.num_epochs
+        len(train_loader) // train_config.gradient_accumulation_steps * stage_config.num_epochs
     )
     warmup_steps = int(total_steps * stage_config.warmup_ratio)
 
@@ -332,21 +314,35 @@ def train_stage(
     )
 
     # Log config
-    mlflow.log_params({
-        "stage": stage_config.stage.value,
-        "learning_rate": stage_config.learning_rate,
-        "num_epochs": stage_config.num_epochs,
-        "effective_batch_size": (
-            train_config.per_device_train_batch_size
-            * train_config.gradient_accumulation_steps
-        ),
-        "max_seq_length": train_config.data.max_seq_length,
-        "lora_r": train_config.lora.r,
-        "lora_alpha": train_config.lora.lora_alpha,
-        "replay_ratio": stage_config.replay_ratio,
-        "train_samples": len(train_dataset),
-        "val_samples": len(val_dataset),
-    })
+    mlflow.log_params(
+        {
+            "stage": stage_config.stage.value,
+            "learning_rate": stage_config.learning_rate,
+            "num_epochs": stage_config.num_epochs,
+            "effective_batch_size": (
+                train_config.per_device_train_batch_size * train_config.gradient_accumulation_steps
+            ),
+            "max_seq_length": train_config.data.max_seq_length,
+            "lora_r": train_config.lora.r,
+            "lora_alpha": train_config.lora.lora_alpha,
+            "replay_ratio": stage_config.replay_ratio,
+            "train_samples": len(train_dataset),
+            "val_samples": len(val_dataset),
+        }
+    )
+
+    # Setup training context
+    ctx = TrainingContext(
+        model=model,
+        lm_head=lm_head,
+        yes_id=yes_id,
+        no_id=no_id,
+        config=train_config,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        scaler=scaler,
+        mlflow_run=mlflow_run,
+    )
 
     # Training loop
     global_step = 0
@@ -357,29 +353,24 @@ def train_stage(
     for epoch in range(stage_config.num_epochs):
         start_time = time.time()
         global_step, train_loss = train_one_epoch(
-            model=model,
+            ctx=ctx,
             train_loader=train_loader,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            scaler=scaler,
-            lm_head=lm_head,
-            yes_id=yes_id,
-            no_id=no_id,
-            config=train_config,
             global_step=global_step,
             epoch=epoch,
-            mlflow_run=mlflow_run,
         )
         epoch_time = time.time() - start_time
 
         # Evaluate
-        val_loss = evaluate(model, val_loader, lm_head, yes_id, no_id)
+        val_loss = evaluate(ctx, val_loader)
 
-        mlflow.log_metrics({
-            "eval/val_loss": val_loss,
-            "train/epoch_loss": train_loss,
-            "train/epoch_time_s": epoch_time,
-        }, step=global_step)
+        mlflow.log_metrics(
+            {
+                "eval/val_loss": val_loss,
+                "train/epoch_loss": train_loss,
+                "train/epoch_time_s": epoch_time,
+            },
+            step=global_step,
+        )
 
         # Save best checkpoint
         if val_loss < best_val_loss:
