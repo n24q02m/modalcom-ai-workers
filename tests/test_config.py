@@ -30,8 +30,8 @@ class TestModelRegistry:
         assert len(MODEL_REGISTRY) > 0
 
     def test_expected_model_count(self) -> None:
-        """We expect 11 models in the registry."""
-        assert len(MODEL_REGISTRY) == 11
+        """We expect 12 models in the registry."""
+        assert len(MODEL_REGISTRY) == 12
 
     @pytest.mark.parametrize(
         "name",
@@ -47,6 +47,7 @@ class TestModelRegistry:
             "qwen3-tts-1.7b",
             "qwen3-asr-0.6b",
             "qwen3-asr-1.7b",
+            "gemma4-reranker-v1",
         ],
     )
     def test_model_exists(self, name: str) -> None:
@@ -84,6 +85,7 @@ class TestModelRegistry:
             "qwen3-tts-1.7b": "ai-workers-tts",
             "qwen3-asr-0.6b": "ai-workers-qwen3-asr",
             "qwen3-asr-1.7b": "ai-workers-qwen3-asr",
+            "gemma4-reranker-v1": "ai-workers-mm-reranker",
         }
         for config in MODEL_REGISTRY.values():
             assert config.modal_app_name == expected_names[config.name], (
@@ -133,7 +135,7 @@ class TestListModels:
 
     def test_list_all(self) -> None:
         models = list_models()
-        assert len(models) == 11
+        assert len(models) == 12
 
     def test_filter_by_task(self) -> None:
         embeddings = list_models(task=Task.EMBEDDING)
@@ -145,7 +147,7 @@ class TestListModels:
         assert all(m.tier == Tier.LIGHT for m in light)
         heavy = list_models(tier=Tier.HEAVY)
         assert all(m.tier == Tier.HEAVY for m in heavy)
-        assert len(light) + len(heavy) == 11
+        assert len(light) + len(heavy) == 12
 
     def test_filter_by_task_and_tier(self) -> None:
         light_embed = list_models(task=Task.EMBEDDING, tier=Tier.LIGHT)
@@ -209,6 +211,7 @@ class TestWorkerModulePaths:
             (Task.OCR, "ai_workers.workers.ocr"),
             (Task.TTS, "ai_workers.workers.tts"),
             (Task.ASR, "ai_workers.workers.asr"),
+            (Task.MM_RERANKER, "ai_workers.workers.mm_reranker"),
         ],
     )
     def test_task_module_mapping(self, task: Task, expected_module: str) -> None:
@@ -230,6 +233,7 @@ class TestWorkerModulePaths:
             ("qwen3-tts-1.7b", "tts_app"),
             ("qwen3-asr-0.6b", "asr_app"),
             ("qwen3-asr-1.7b", "asr_app"),
+            ("gemma4-reranker-v1", "mm_reranker_app"),
         ],
     )
     def test_modal_app_var_mapping(self, model_name: str, expected_var: str) -> None:
