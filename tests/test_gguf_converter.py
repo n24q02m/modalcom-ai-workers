@@ -190,3 +190,26 @@ def test_gguf_convert_model_repo_not_found_swallows_exception():
     # Verify it continued to create_repo and upload_file
     mock_api_instance.create_repo.assert_called_once()
     mock_api_instance.upload_file.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _check_if_gguf_exists — exception handling
+# ---------------------------------------------------------------------------
+
+
+def test_check_if_gguf_exists_exception_handling():
+    """Verify that _check_if_gguf_exists returns False and swallows Exception."""
+    mock_hf = MagicMock()
+    mock_hf.list_repo_tree.side_effect = Exception("HF Hub Error")
+
+    with patch.dict("sys.modules", {"huggingface_hub": mock_hf}):
+        from ai_workers.workers.gguf_converter import _check_if_gguf_exists
+
+        result = _check_if_gguf_exists(
+            hf_target="org/repo",
+            gguf_repo_path="model.gguf",
+            hf_token="fake-token",
+        )
+
+        assert result is False
+        mock_hf.list_repo_tree.assert_called_with("org/repo", token="fake-token", recursive=True)
