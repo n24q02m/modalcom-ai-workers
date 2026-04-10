@@ -14,14 +14,51 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+import asyncio
 from typing import Any
 
 import modal
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
+from ai_workers.common.auth import verify_api_key
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
 from ai_workers.common.utils import load_image_from_url
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
+
+
+class VLRerankDocument(BaseModel):
+    text: str
+    image_url: str | None = None
+
+
+class VLRerankRequest(BaseModel):
+    model: str = "qwen3-vl-reranker-8b"
+    query: str
+    query_image_url: str | None = None
+    documents: list[str] | list[VLRerankDocument] = Field(max_length=64)
+    top_n: int | None = None
+
+
+class RerankResult(BaseModel):
+    index: int
+    relevance_score: float
+    document: str
+
+
+class RerankResponse(BaseModel):
+    model: str
+    results: list[RerankResult]
+
+
+# Rebuild to resolve forward references (VLRerankDocument used in VLRerankRequest)
+VLRerankRequest.model_rebuild()
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -233,50 +270,79 @@ class VLRerankerServer:
             return 0.0
         return scores[0]
 
+    async def _do_rerank(self, body: VLRerankRequest) -> RerankResponse:
+        """Core reranking logic extracted from the serve() endpoint."""
+        if body.model not in MODEL_CONFIGS:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
+                },
+            )
+
+        # Deduplicate image URLs
+        image_urls = set()
+        if body.query_image_url:
+            image_urls.add(body.query_image_url)
+        for doc in body.documents:
+            if not isinstance(doc, str) and doc.image_url:
+                image_urls.add(doc.image_url)
+
+        # Pre-fetch images concurrently
+        unique_urls = list(image_urls)
+        fetched_images = await asyncio.gather(
+            *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
+        )
+        image_map = dict(zip(unique_urls, fetched_images, strict=True))
+
+        # Prepare inputs for batched scoring
+        doc_texts = []
+        doc_images = []
+        for doc in body.documents:
+            if isinstance(doc, str):
+                doc_texts.append(doc)
+                doc_images.append(None)
+            else:
+                doc_texts.append(doc.text)
+                doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
+
+        # Score all documents in a single batched call
+        scores = self._score_batch(
+            body.model,
+            body.query,
+            doc_texts,
+            doc_images,
+            query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
+        )
+
+        # Build results
+        results = [
+            RerankResult(index=i, relevance_score=score, document=text)
+            for i, (score, text) in enumerate(zip(scores, doc_texts, strict=True))
+        ]
+
+        # Sort by relevance score descending
+        results.sort(key=lambda x: x.relevance_score, reverse=True)
+
+        # Apply top_n if specified
+        if body.top_n is not None:
+            results = results[: body.top_n]
+
+        return RerankResponse(model=body.model, results=results)
+
     @modal.asgi_app()
     def serve(self):
-        import asyncio
-
-        from fastapi import Body, FastAPI, Request
-        from fastapi.responses import JSONResponse
-        from pydantic import BaseModel, Field
 
         app = FastAPI(title="Qwen3 VL Reranker (8B)")
-
-        class VLRerankDocument(BaseModel):
-            text: str
-            image_url: str | None = None
-
-        class VLRerankRequest(BaseModel):
-            model: str = "qwen3-vl-reranker-8b"
-            query: str
-            query_image_url: str | None = None
-            documents: list[str] | list[VLRerankDocument] = Field(max_length=64)
-            top_n: int | None = None
-
-        class RerankResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: str
-
-        class RerankResponse(BaseModel):
-            model: str
-            results: list[RerankResult]
-
-        # Rebuild to resolve forward references (VLRerankDocument used in VLRerankRequest)
-        VLRerankRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
             if request.url.path in ("/health", "/"):
                 return await call_next(request)
-            from fastapi import HTTPException as _HTTPException
-
-            from ai_workers.common.auth import verify_api_key
 
             try:
                 await verify_api_key(request)
-            except _HTTPException as exc:
+            except HTTPException as exc:
                 return JSONResponse(
                     status_code=exc.status_code,
                     content={"detail": exc.detail},
@@ -292,63 +358,6 @@ class VLRerankerServer:
 
         @app.post("/v1/rerank", response_model=RerankResponse)
         async def rerank(body: VLRerankRequest = Body(...)):
-            if body.model not in MODEL_CONFIGS:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": f"Unknown model: {body.model}. "
-                        f"Available: {list(MODEL_CONFIGS.keys())}"
-                    },
-                )
-
-            # Deduplicate image URLs
-            image_urls = set()
-            if body.query_image_url:
-                image_urls.add(body.query_image_url)
-            for doc in body.documents:
-                if not isinstance(doc, str) and doc.image_url:
-                    image_urls.add(doc.image_url)
-
-            # Pre-fetch images concurrently
-            unique_urls = list(image_urls)
-            fetched_images = await asyncio.gather(
-                *(asyncio.to_thread(load_image_from_url, url) for url in unique_urls)
-            )
-            image_map = dict(zip(unique_urls, fetched_images, strict=True))
-
-            # Prepare inputs for batched scoring
-            doc_texts = []
-            doc_images = []
-            for doc in body.documents:
-                if isinstance(doc, str):
-                    doc_texts.append(doc)
-                    doc_images.append(None)
-                else:
-                    doc_texts.append(doc.text)
-                    doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
-
-            # Score all documents in a single batched call
-            scores = self._score_batch(
-                body.model,
-                body.query,
-                doc_texts,
-                doc_images,
-                query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
-            )
-
-            # Build results
-            results = [
-                RerankResult(index=i, relevance_score=score, document=text)
-                for i, (score, text) in enumerate(zip(scores, doc_texts, strict=True))
-            ]
-
-            # Sort by relevance score descending
-            results.sort(key=lambda x: x.relevance_score, reverse=True)
-
-            # Apply top_n if specified
-            if body.top_n is not None:
-                results = results[: body.top_n]
-
-            return RerankResponse(model=body.model, results=results)
+            return await self._do_rerank(body)
 
         return app
