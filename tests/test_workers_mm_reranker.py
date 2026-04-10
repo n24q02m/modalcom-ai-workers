@@ -223,7 +223,7 @@ def test_rerank_with_query_image(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
+    assert call_args.args[1].image_url == "http://example.com/query.jpg"
 
 
 def test_rerank_with_doc_images(server):
@@ -245,8 +245,8 @@ def test_rerank_with_doc_images(server):
 
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
-    assert calls[0].kwargs.get("doc_image_url") == "http://example.com/img1.jpg"
-    assert calls[1].kwargs.get("doc_image_url") is None
+    assert calls[0].args[2].image_url == "http://example.com/img1.jpg"
+    assert calls[1].args[2].image_url is None
 
 
 def test_rerank_doc_images_length_mismatch(server):
@@ -291,7 +291,7 @@ def test_rerank_with_query_audio(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_audio_url") == "http://example.com/query.wav"
+    assert call_args.args[1].audio_url == "http://example.com/query.wav"
 
 
 def test_rerank_with_doc_audios(server):
@@ -313,8 +313,8 @@ def test_rerank_with_doc_audios(server):
 
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
-    assert calls[0].kwargs.get("doc_audio_url") == "http://example.com/a1.wav"
-    assert calls[1].kwargs.get("doc_audio_url") is None
+    assert calls[0].args[2].audio_url == "http://example.com/a1.wav"
+    assert calls[1].args[2].audio_url is None
 
 
 def test_rerank_doc_audios_length_mismatch(server):
@@ -359,7 +359,7 @@ def test_rerank_with_query_video(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_video_url") == "http://example.com/video.mp4"
+    assert call_args.args[1].video_url == "http://example.com/video.mp4"
 
 
 def test_rerank_with_doc_videos(server):
@@ -381,8 +381,8 @@ def test_rerank_with_doc_videos(server):
 
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
-    assert calls[0].kwargs.get("doc_video_url") == "http://example.com/v1.mp4"
-    assert calls[1].kwargs.get("doc_video_url") is None
+    assert calls[0].args[2].video_url == "http://example.com/v1.mp4"
+    assert calls[1].args[2].video_url is None
 
 
 def test_rerank_doc_videos_length_mismatch(server):
@@ -433,12 +433,12 @@ def test_rerank_mixed_modalities(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_image_url") == "http://example.com/qi.jpg"
-    assert call_args.kwargs.get("query_audio_url") == "http://example.com/qa.wav"
-    assert call_args.kwargs.get("query_video_url") == "http://example.com/qv.mp4"
-    assert call_args.kwargs.get("doc_image_url") == "http://example.com/di.jpg"
-    assert call_args.kwargs.get("doc_audio_url") == "http://example.com/da.wav"
-    assert call_args.kwargs.get("doc_video_url") == "http://example.com/dv.mp4"
+    assert call_args.args[1].image_url == "http://example.com/qi.jpg"
+    assert call_args.args[1].audio_url == "http://example.com/qa.wav"
+    assert call_args.args[1].video_url == "http://example.com/qv.mp4"
+    assert call_args.args[2].image_url == "http://example.com/di.jpg"
+    assert call_args.args[2].audio_url == "http://example.com/da.wav"
+    assert call_args.args[2].video_url == "http://example.com/dv.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -471,9 +471,7 @@ def test_rerank_score_pair_value_error(server):
 
 def test_rerank_score_pair_unexpected_error(server):
     """Unexpected errors from _score_pair should return 400 with message."""
-    server._score_pair = MagicMock(
-        side_effect=RuntimeError("CUDA out of memory")
-    )
+    server._score_pair = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
