@@ -14,6 +14,7 @@ for fast cold start (~5-10s instead of >10 minutes).
 import modal
 
 from ai_workers.common.images import transformers_mm_reranker_image
+from ai_workers.common.utils import fetch_url_safely, load_image_from_url
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
@@ -97,31 +98,21 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
-
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        """Load a PIL Image from URL with SSRF protection."""
+        return load_image_from_url(url)
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
-        """Load audio from URL as numpy array @ original sample rate.
-
-        Returns (waveform_np, sample_rate).
-        Raises ValueError if duration > MAX_AUDIO_DURATION_S.
-        """
+        """Load audio from URL with SSRF protection."""
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-
-        # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        # 100MB limit for audio downloads
+        content = fetch_url_safely(
+            url, max_size=100 * 1024 * 1024, timeout=MEDIA_DOWNLOAD_TIMEOUT_S
+        )
+        buf = io.BytesIO(content)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -134,22 +125,19 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_video_frames(url: str) -> list:
-        """Download video and extract uniform frames.
-
-        Returns list of PIL.Image (RGB), max MAX_VIDEO_FRAMES.
-        Raises ValueError if duration > MAX_VIDEO_DURATION_S.
-        """
+        """Download video and extract uniform frames with SSRF protection."""
         import tempfile
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        # 200MB limit for video downloads
+        content = fetch_url_safely(
+            url, max_size=200 * 1024 * 1024, timeout=MEDIA_DOWNLOAD_TIMEOUT_S
+        )
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(content)
             tmp.flush()
 
             container = av.open(tmp.name)
@@ -176,7 +164,6 @@ class MmRerankerServer:
 
         return frames[:MAX_VIDEO_FRAMES]
 
-    # ---------------------------------------------------------------------------
     # Scoring
     # ---------------------------------------------------------------------------
 
@@ -213,7 +200,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _ = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +216,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _ = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
@@ -237,9 +224,7 @@ class MmRerankerServer:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -351,27 +336,14 @@ class MmRerankerServer:
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
             results = []
             for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+                doc_image = body.doc_images[i] if body.doc_images is not None else None
+                doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+                doc_video = body.doc_videos[i] if body.doc_videos is not None else None
 
                 try:
                     score = self._score_pair(
@@ -391,9 +363,7 @@ class MmRerankerServer:
                     from loguru import logger
 
                     logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+                    raise ValueError(f"Failed to score document {i}: {e}") from e
 
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:
