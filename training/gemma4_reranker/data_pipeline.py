@@ -23,11 +23,11 @@ class TrainSample:
     query_image: str | None = None
     query_audio: str | None = None
     query_video: str | None = None
-    
+
     positive_image: str | None = None
     positive_audio: str | None = None
     positive_video: str | None = None
-    
+
     negative_images: list[str | None] = field(default_factory=list)
     negative_audios: list[str | None] = field(default_factory=list)
     negative_videos: list[str | None] = field(default_factory=list)
