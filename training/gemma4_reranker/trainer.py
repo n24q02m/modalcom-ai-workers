@@ -10,27 +10,38 @@ Implements the core training logic for all 3 stages:
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional
 from torch.utils.data import DataLoader
 
-from .config import StageConfig, TrainConfig
 from .dataset import MmRerankDataset, collate_fn
 from .model import find_lm_head
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import StageConfig, TrainConfig
+
+
+@dataclass
+class LossContext:
+    """Context for loss computation to reduce parameter count."""
+
+    yes_id: int
+    no_id: int
+    lm_head: torch.nn.Linear
+    kd_alpha: float = 0.0
+    kd_temperature: float = 2.0
 
 
 def compute_loss(
     model,
     inputs: dict,
-    yes_id: int,
-    no_id: int,
-    lm_head: torch.nn.Linear,
-    kd_alpha: float = 0.0,
-    kd_temperature: float = 2.0,
+    ctx: LossContext,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Compute training loss with optional knowledge distillation.
 
@@ -40,11 +51,7 @@ def compute_loss(
     Args:
         model: Gemma4ForConditionalGeneration (PEFT wrapped).
         inputs: Batch dict with input_ids, attention_mask, labels.
-        yes_id: Token ID for "yes".
-        no_id: Token ID for "no".
-        lm_head: lm_head Linear module for logit computation.
-        kd_alpha: Knowledge distillation blend weight (0 = no KD).
-        kd_temperature: KD softmax temperature.
+        ctx: LossContext containing yes_id, no_id, lm_head, and KD settings.
 
     Returns:
         (loss, metrics_dict) where metrics_dict has loss_ce, loss_kd, etc.
@@ -61,31 +68,35 @@ def compute_loss(
     last_h = hidden[torch.arange(hidden.size(0)), seq_lengths]  # (B, hidden_dim)
 
     # Compute yes/no logits via lm_head weight
-    logits = F.linear(last_h, lm_head.weight)  # (B, vocab_size)
-    yes_logit = logits[:, yes_id]  # (B,)
-    no_logit = logits[:, no_id]  # (B,)
+    logits = torch.nn.functional.linear(last_h, ctx.lm_head.weight)  # (B, vocab_size)
+    yes_logit = logits[:, ctx.yes_id]  # (B,)
+    no_logit = logits[:, ctx.no_id]  # (B,)
     logits_yes_no = torch.stack([yes_logit, no_logit], dim=-1)  # (B, 2)
 
     labels = inputs["labels"]  # (B,) — 0=yes, 1=no
 
     # Cross-entropy loss
-    loss_ce = F.cross_entropy(logits_yes_no, labels)
+    loss_ce = torch.nn.functional.cross_entropy(logits_yes_no, labels)
 
     metrics = {"loss_ce": loss_ce.item()}
 
     # Knowledge distillation (optional)
-    if kd_alpha > 0 and "teacher_scores" in inputs:
+    if ctx.kd_alpha > 0 and "teacher_scores" in inputs:
         teacher_scores = inputs["teacher_scores"]  # (B,) cosine sim from teacher
         # Convert teacher scores to [yes_prob, no_prob]
         teacher_yes = teacher_scores
         teacher_no = 1.0 - teacher_scores
         teacher_logits = torch.stack([teacher_yes, teacher_no], dim=-1)  # (B, 2)
 
-        teacher_probs = F.softmax(teacher_logits / kd_temperature, dim=-1)
-        student_log_probs = F.log_softmax(logits_yes_no / kd_temperature, dim=-1)
-        loss_kd = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean")
+        teacher_probs = torch.nn.functional.softmax(teacher_logits / ctx.kd_temperature, dim=-1)
+        student_log_probs = torch.nn.functional.log_softmax(
+            logits_yes_no / ctx.kd_temperature, dim=-1
+        )
+        loss_kd = torch.nn.functional.kl_div(
+            student_log_probs, teacher_probs, reduction="batchmean"
+        )
 
-        loss = (1 - kd_alpha) * loss_ce + kd_alpha * loss_kd * (kd_temperature**2)
+        loss = (1 - ctx.kd_alpha) * loss_ce + ctx.kd_alpha * loss_kd * (ctx.kd_temperature**2)
         metrics["loss_kd"] = loss_kd.item()
     else:
         loss = loss_ce
@@ -137,21 +148,20 @@ def train_one_epoch(
     for batch_idx, batch in enumerate(train_loader):
         # Move to GPU
         device = next(model.parameters()).device
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         # FP16 AMP forward
         with torch.amp.autocast("cuda", dtype=torch.float16):
             loss, metrics = compute_loss(
                 model,
                 batch,
-                yes_id=yes_id,
-                no_id=no_id,
-                lm_head=lm_head,
-                kd_alpha=config.kd_alpha,
-                kd_temperature=config.kd_temperature,
+                ctx=LossContext(
+                    yes_id=yes_id,
+                    no_id=no_id,
+                    lm_head=lm_head,
+                    kd_alpha=config.kd_alpha,
+                    kd_temperature=config.kd_temperature,
+                ),
             )
             loss = loss / config.gradient_accumulation_steps
 
@@ -161,9 +171,7 @@ def train_one_epoch(
         # Gradient accumulation step
         if (batch_idx + 1) % config.gradient_accumulation_steps == 0:
             scaler.unscale_(optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), config.max_grad_norm
-            )
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
@@ -180,16 +188,22 @@ def train_one_epoch(
                 vram_reserved = torch.cuda.memory_reserved() / 1e9
 
                 if mlflow_run:
-                    _log_metrics(mlflow_run, {
-                        "train/loss": accum_loss * config.gradient_accumulation_steps,
-                        "train/loss_ce": metrics["loss_ce"],
-                        "train/loss_kd": metrics["loss_kd"],
-                        "train/lr": current_lr,
-                        "train/grad_norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
-                        "train/vram_allocated_gb": vram_alloc,
-                        "train/vram_reserved_gb": vram_reserved,
-                        "train/epoch": epoch,
-                    }, step=global_step)
+                    _log_metrics(
+                        mlflow_run,
+                        {
+                            "train/loss": accum_loss * config.gradient_accumulation_steps,
+                            "train/loss_ce": metrics["loss_ce"],
+                            "train/loss_kd": metrics["loss_kd"],
+                            "train/lr": current_lr,
+                            "train/grad_norm": grad_norm.item()
+                            if isinstance(grad_norm, torch.Tensor)
+                            else grad_norm,
+                            "train/vram_allocated_gb": vram_alloc,
+                            "train/vram_reserved_gb": vram_reserved,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
 
             accum_loss = 0.0
 
@@ -223,13 +237,14 @@ def evaluate(
     device = next(model.parameters()).device
 
     for batch in val_loader:
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         with torch.amp.autocast("cuda", dtype=torch.float16):
-            loss, _ = compute_loss(model, batch, yes_id=yes_id, no_id=no_id, lm_head=lm_head)
+            loss, _ = compute_loss(
+                model,
+                batch,
+                ctx=LossContext(yes_id=yes_id, no_id=no_id, lm_head=lm_head),
+            )
 
         total_loss += loss.item()
         num_batches += 1
@@ -301,9 +316,7 @@ def train_stage(
 
     # LR scheduler
     total_steps = (
-        len(train_loader)
-        // train_config.gradient_accumulation_steps
-        * stage_config.num_epochs
+        len(train_loader) // train_config.gradient_accumulation_steps * stage_config.num_epochs
     )
     warmup_steps = int(total_steps * stage_config.warmup_ratio)
 
@@ -332,21 +345,22 @@ def train_stage(
     )
 
     # Log config
-    mlflow.log_params({
-        "stage": stage_config.stage.value,
-        "learning_rate": stage_config.learning_rate,
-        "num_epochs": stage_config.num_epochs,
-        "effective_batch_size": (
-            train_config.per_device_train_batch_size
-            * train_config.gradient_accumulation_steps
-        ),
-        "max_seq_length": train_config.data.max_seq_length,
-        "lora_r": train_config.lora.r,
-        "lora_alpha": train_config.lora.lora_alpha,
-        "replay_ratio": stage_config.replay_ratio,
-        "train_samples": len(train_dataset),
-        "val_samples": len(val_dataset),
-    })
+    mlflow.log_params(
+        {
+            "stage": stage_config.stage.value,
+            "learning_rate": stage_config.learning_rate,
+            "num_epochs": stage_config.num_epochs,
+            "effective_batch_size": (
+                train_config.per_device_train_batch_size * train_config.gradient_accumulation_steps
+            ),
+            "max_seq_length": train_config.data.max_seq_length,
+            "lora_r": train_config.lora.r,
+            "lora_alpha": train_config.lora.lora_alpha,
+            "replay_ratio": stage_config.replay_ratio,
+            "train_samples": len(train_dataset),
+            "val_samples": len(val_dataset),
+        }
+    )
 
     # Training loop
     global_step = 0
@@ -375,11 +389,14 @@ def train_stage(
         # Evaluate
         val_loss = evaluate(model, val_loader, lm_head, yes_id, no_id)
 
-        mlflow.log_metrics({
-            "eval/val_loss": val_loss,
-            "train/epoch_loss": train_loss,
-            "train/epoch_time_s": epoch_time,
-        }, step=global_step)
+        mlflow.log_metrics(
+            {
+                "eval/val_loss": val_loss,
+                "train/epoch_loss": train_loss,
+                "train/epoch_time_s": epoch_time,
+            },
+            step=global_step,
+        )
 
         # Save best checkpoint
         if val_loss < best_val_loss:
