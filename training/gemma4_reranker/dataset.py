@@ -7,14 +7,17 @@ modalities via AutoProcessor.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 from torch.utils.data import Dataset
 
-from .config import DataConfig
 from .data_pipeline import TrainSample, read_jsonl
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import DataConfig
 
 
 class MmRerankDataset(Dataset):
@@ -91,7 +94,7 @@ class MmRerankDataset(Dataset):
             images.append(self._load_image(sample.doc_image))
         if sample.doc_audio:
             content_parts.append({"type": "audio", "audio": sample.doc_audio})
-            audio_data, sr = self._load_audio(sample.doc_audio)
+            audio_data, _sr = self._load_audio(sample.doc_audio)
             audios.append(audio_data)
         if sample.doc_video:
             frames = self._load_video_frames(sample.doc_video)

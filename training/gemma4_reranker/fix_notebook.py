@@ -24,7 +24,7 @@ try:
     kaggle_api = user_secrets.get_secret("GEMINI_API_KEY")
     if not kaggle_api:
         kaggle_api = user_secrets.get_secret("GOOGLE_API_KEY")
-        
+
     if kaggle_api:
         os.environ["GEMINI_API_KEY"] = kaggle_api
         logger.info("Keys injected from Kaggle Secrets")
@@ -42,8 +42,8 @@ genai.configure(api_key=api_key)
 """
 
 code3 = """# --- Configuration ---
-EMBEDDING_MODEL = "models/text-embedding-004" 
-MULTIMODAL_EMBEDDING_MODEL = "models/gemini-embedding-2-preview" 
+EMBEDDING_MODEL = "models/text-embedding-004"
+MULTIMODAL_EMBEDDING_MODEL = "models/gemini-embedding-2-preview"
 TEACHER_MODEL = "models/gemini-3-flash-preview"
 
 class RelevanceOutput(BaseModel):
@@ -52,7 +52,7 @@ class RelevanceOutput(BaseModel):
 class GeminiMiner:
     def __init__(self):
         self.teacher_client = genai.GenerativeModel(TEACHER_MODEL)
-            
+
     @retry(wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(5))
     def embed_content(self, content: str, modality: str = "text") -> np.ndarray:
         model_to_use = MULTIMODAL_EMBEDDING_MODEL if modality != "text" else EMBEDDING_MODEL
@@ -88,7 +88,7 @@ miner = GeminiMiner()
 """
 
 code4 = """# --- Checkpointing & Dataset Loading ---
-RAW_DATASET_PATH = "/kaggle/input/raw-gemma4-dataset/raw_dataset.jsonl" 
+RAW_DATASET_PATH = "/kaggle/input/raw-gemma4-dataset/raw_dataset.jsonl"
 OUTPUT_PATH = "/kaggle/working/stage1_train.jsonl"
 
 def get_processed_count(filepath: str) -> int:
@@ -116,25 +116,25 @@ with open(OUTPUT_PATH, 'a', encoding='utf-8') as out_file:
         positive = item['positive']
         corpus = item['corpus']
         modality = item.get('modality', 'text')
-        
+
         try:
             q_emb = miner.embed_content(query, modality)
-            
+
             corpus_embs = np.array([miner.embed_content(doc, modality) for doc in corpus])
             scores = np.dot(corpus_embs, q_emb)
             ranked_indices = np.argsort(scores)[::-1]
-            
+
             start_idx = min(10, len(ranked_indices))
             end_idx = min(50, len(ranked_indices))
             pool_indices = ranked_indices[start_idx:end_idx] if start_idx != end_idx else ranked_indices
-            
+
             num_neg= min(7, len(pool_indices))
             selected_neg_indices = np.random.choice(pool_indices, size=num_neg, replace=False)
             negatives = [corpus[i] for i in selected_neg_indices]
-            
+
             t_pos_score = miner.get_teacher_score(query, positive, modality)
             t_neg_scores = [miner.get_teacher_score(query, n, modality) for n in negatives]
-            
+
             processed_record = {
                 "query": query,
                 "positive": positive,
@@ -143,10 +143,10 @@ with open(OUTPUT_PATH, 'a', encoding='utf-8') as out_file:
                 "teacher_pos_score": t_pos_score,
                 "teacher_neg_scores": t_neg_scores
             }
-            
+
             out_file.write(json.dumps(processed_record) + "\\n")
-            out_file.flush() 
-            
+            out_file.flush()
+
         except Exception as e:
             logger.error(f"Failed query '{query}': {e}")
             continue

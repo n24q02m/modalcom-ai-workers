@@ -191,6 +191,7 @@ def test_gguf_convert_model_repo_not_found_swallows_exception():
     mock_api_instance.create_repo.assert_called_once()
     mock_api_instance.upload_file.assert_called()
 
+
 # ---------------------------------------------------------------------------
 # _upload_gguf_artifacts
 # ---------------------------------------------------------------------------
@@ -198,6 +199,7 @@ def test_gguf_convert_model_repo_not_found_swallows_exception():
 
 def test_upload_gguf_artifacts_success():
     from pathlib import Path
+
     from ai_workers.workers.gguf_converter import _upload_gguf_artifacts
 
     mock_api = MagicMock()
@@ -210,8 +212,11 @@ def test_upload_gguf_artifacts_success():
     )
 
     with (
-        patch("ai_workers.workers.gguf_converter._generate_gguf_model_card", return_value="card content") as mock_gen_card,
-        patch("huggingface_hub.hf_hub_download", return_value="/tmp/mock_file") as mock_download,
+        patch(
+            "ai_workers.workers.gguf_converter._generate_gguf_model_card",
+            return_value="card content",
+        ) as mock_gen_card,
+        patch("huggingface_hub.hf_hub_download", return_value="/tmp/mock_file"),
     ):
         _upload_gguf_artifacts(
             api=mock_api,
@@ -246,18 +251,19 @@ def test_upload_gguf_artifacts_success():
     mock_gen_card.assert_called_once_with(mock_config, "model.gguf", 100.0)
 
     # Check first upload call (GGUF)
-    args, kwargs = mock_api.upload_file.call_args_list[0]
+    _, kwargs = mock_api.upload_file.call_args_list[0]
     assert "model.gguf" in str(kwargs["path_or_fileobj"])
     assert kwargs["path_in_repo"] == "model.gguf"
 
     # Check second upload call (README)
-    args, kwargs = mock_api.upload_file.call_args_list[1]
+    __, kwargs = mock_api.upload_file.call_args_list[1]
     assert kwargs["path_or_fileobj"] == b"card content"
     assert kwargs["path_in_repo"] == "README.md"
 
 
 def test_upload_gguf_artifacts_swallows_config_errors():
     from pathlib import Path
+
     from ai_workers.workers.gguf_converter import _upload_gguf_artifacts
 
     mock_api = MagicMock()

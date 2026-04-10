@@ -63,6 +63,7 @@ packages = ["src/ai_workers"]
 target-version = "py313"
 line-length = 100
 src = ["src", "tests"]
+exclude = ["training/gemma4_reranker"]
 
 [tool.ruff.lint]
 select = [
@@ -87,6 +88,7 @@ known-first-party = ["ai_workers"]
 
 [tool.ruff.format]
 quote-style = "double"
+exclude = ["training/gemma4_reranker"]
 
 # --- ty ---
 [tool.ty.environment]
