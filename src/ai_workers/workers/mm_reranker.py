@@ -11,6 +11,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.images import transformers_mm_reranker_image
@@ -97,31 +99,35 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
+        """Load a PIL Image from URL with SSRF protection."""
+        import io
+
         from PIL import Image
 
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        from ai_workers.common.utils import MAX_IMAGE_SIZE, fetch_url_safely
+
+        content = fetch_url_safely(
+            url, max_size=MAX_IMAGE_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S, label="Image"
+        )
+        return Image.open(io.BytesIO(content)).convert("RGB")
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
-        """Load audio from URL as numpy array @ original sample rate.
+        """Load audio from URL with SSRF protection.
 
         Returns (waveform_np, sample_rate).
         Raises ValueError if duration > MAX_AUDIO_DURATION_S.
         """
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
 
-        # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        # 50MB max for audio (generous for 30s)
+        content = fetch_url_safely(url, max_size=50 * 1024 * 1024, label="Audio")
+
+        buf = io.BytesIO(content)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -134,7 +140,7 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_video_frames(url: str) -> list:
-        """Download video and extract uniform frames.
+        """Download video and extract uniform frames with SSRF protection.
 
         Returns list of PIL.Image (RGB), max MAX_VIDEO_FRAMES.
         Raises ValueError if duration > MAX_VIDEO_DURATION_S.
@@ -143,13 +149,14 @@ class MmRerankerServer:
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        # 100MB max for video (generous for 60s low res)
+        content = fetch_url_safely(url, max_size=100 * 1024 * 1024, label="Video")
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(content)
             tmp.flush()
 
             container = av.open(tmp.name)
@@ -186,11 +193,17 @@ class MmRerankerServer:
         query: str,
         document: str,
         query_image_url: str | None = None,
+        query_image_data: Any | None = None,
         query_audio_url: str | None = None,
+        query_audio_data: Any | None = None,
         query_video_url: str | None = None,
+        query_video_frames: list | None = None,
         doc_image_url: str | None = None,
+        doc_image_data: Any | None = None,
         doc_audio_url: str | None = None,
+        doc_audio_data: Any | None = None,
         doc_video_url: str | None = None,
+        doc_video_frames: list | None = None,
     ) -> float:
         """Score a single query-document pair using yes/no logit comparison.
 
@@ -210,14 +223,12 @@ class MmRerankerServer:
         # Query media (before text, per Google guidance)
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            images.append(query_image_data)
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
-            audios.append(audio_data)
+            audios.append(query_audio_data[0])
         if query_video_url:
-            frames = self._load_video_frames(query_video_url)
-            for frame in frames:
+            for frame in query_video_frames:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
@@ -226,20 +237,16 @@ class MmRerankerServer:
         # Document media
         if doc_image_url:
             content_parts.append({"type": "image", "image": doc_image_url})
-            images.append(self._load_image(doc_image_url))
+            images.append(doc_image_data)
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
-            audios.append(audio_data)
+            audios.append(doc_audio_data[0])
         if doc_video_url:
-            frames = self._load_video_frames(doc_video_url)
-            for frame in frames:
+            for frame in doc_video_frames:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -282,6 +289,8 @@ class MmRerankerServer:
 
     @modal.asgi_app()
     def serve(self):
+        import asyncio
+
         from fastapi import Body, FastAPI, Request
         from fastapi.responses import JSONResponse
         from pydantic import BaseModel, model_validator
@@ -351,49 +360,99 @@ class MmRerankerServer:
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
+
+            # Pre-fetch all media concurrently
+            image_urls = set()
+            audio_urls = set()
+            video_urls = set()
+
+            if body.query_image:
+                image_urls.add(body.query_image)
+            if body.query_audio:
+                audio_urls.add(body.query_audio)
+            if body.query_video:
+                video_urls.add(body.query_video)
+
+            if body.doc_images:
+                for url in body.doc_images:
+                    if url:
+                        image_urls.add(url)
+            if body.doc_audios:
+                for url in body.doc_audios:
+                    if url:
+                        audio_urls.add(url)
+            if body.doc_videos:
+                for url in body.doc_videos:
+                    if url:
+                        video_urls.add(url)
+
+            # Concurrent downloads
+            unique_images = list(image_urls)
+            unique_audios = list(audio_urls)
+            unique_videos = list(video_urls)
+
+            results_images = await asyncio.gather(
+                *(asyncio.to_thread(self._load_image, url) for url in unique_images),
+                return_exceptions=True,
+            )
+            results_audios = await asyncio.gather(
+                *(asyncio.to_thread(self._load_audio, url) for url in unique_audios),
+                return_exceptions=True,
+            )
+            results_videos = await asyncio.gather(
+                *(asyncio.to_thread(self._load_video_frames, url) for url in unique_videos),
+                return_exceptions=True,
+            )
+
+            # Handle exceptions from downloads
+            def check_results(urls, results):
+                mapping = {}
+                for url, res in zip(urls, results, strict=True):
+                    if isinstance(res, Exception):
+                        raise res
+                    mapping[url] = res
+                return mapping
+
+            try:
+                image_map = check_results(unique_images, results_images)
+                audio_map = check_results(unique_audios, results_audios)
+                video_map = check_results(unique_videos, results_videos)
+            except Exception as e:
+                raise ValueError(str(e)) from e
 
             results = []
             for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+                doc_image_url = body.doc_images[i] if body.doc_images else None
+                doc_audio_url = body.doc_audios[i] if body.doc_audios else None
+                doc_video_url = body.doc_videos[i] if body.doc_videos else None
 
                 try:
-                    score = self._score_pair(
+                    # Offload blocking GPU inference to a thread
+                    score = await asyncio.to_thread(
+                        self._score_pair,
                         body.model,
                         body.query,
                         doc_text,
                         query_image_url=body.query_image,
+                        query_image_data=image_map.get(body.query_image),
                         query_audio_url=body.query_audio,
+                        query_audio_data=audio_map.get(body.query_audio),
                         query_video_url=body.query_video,
-                        doc_image_url=doc_image,
-                        doc_audio_url=doc_audio,
-                        doc_video_url=doc_video,
+                        query_video_frames=video_map.get(body.query_video),
+                        doc_image_url=doc_image_url,
+                        doc_image_data=image_map.get(doc_image_url),
+                        doc_audio_url=doc_audio_url,
+                        doc_audio_data=audio_map.get(doc_audio_url),
+                        doc_video_url=doc_video_url,
+                        doc_video_frames=video_map.get(doc_video_url),
                     )
-                except ValueError as media_err:
-                    raise ValueError(str(media_err)) from media_err
                 except Exception as e:
                     from loguru import logger
 
                     logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+                    raise ValueError(f"Failed to score document {i}: {e}") from e
 
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:

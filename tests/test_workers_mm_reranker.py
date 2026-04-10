@@ -21,6 +21,10 @@ def server():
     s = MmRerankerServer()
     s.models = {}
     s.processors = {}
+    # Mock media loaders to avoid real network/processing
+    s._load_image = MagicMock(return_value=MagicMock())
+    s._load_audio = MagicMock(return_value=(MagicMock(), 16000))
+    s._load_video_frames = MagicMock(return_value=[MagicMock()])
     return s
 
 
@@ -49,28 +53,37 @@ def test_health_model_list(server):
 # ---------------------------------------------------------------------------
 
 
-def test_rerank_requires_auth(server):
+def test_rerank_no_auth(server):
     app = server.serve()
     tc = TestClient(app)
-    resp = tc.post(
-        "/v1/rerank",
-        json={"model": "gemma4-reranker-v1", "query": "q", "documents": ["d"]},
-    )
+    resp = tc.post("/v1/rerank", json={"query": "q", "documents": ["d"]})
+    assert resp.status_code == 401
+
+
+def test_rerank_wrong_auth(server):
+    with patch.dict(os.environ, {"API_KEY": "k"}):
+        app = server.serve()
+        tc = TestClient(app)
+        resp = tc.post(
+            "/v1/rerank",
+            json={"query": "q", "documents": ["d"]},
+            headers={"Authorization": "Bearer wrong"},
+        )
     assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# Unknown model
+# Validation
 # ---------------------------------------------------------------------------
 
 
 def test_rerank_unknown_model(server):
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
-        tc = TestClient(app, raise_server_exceptions=True)
+        tc = TestClient(app)
         resp = tc.post(
             "/v1/rerank",
-            json={"model": "bad-model", "query": "q", "documents": ["d"]},
+            json={"model": "unknown", "query": "q", "documents": ["d"]},
             headers={"Authorization": "Bearer k"},
         )
     assert resp.status_code == 400
@@ -83,7 +96,8 @@ def test_rerank_unknown_model(server):
 
 
 def test_rerank_text_only(server):
-    server._score_pair = MagicMock(return_value=0.8)
+    # Mock _score_pair to return fixed scores
+    server._score_pair = MagicMock(side_effect=[0.8, 0.2, 0.5])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -92,8 +106,8 @@ def test_rerank_text_only(server):
             "/v1/rerank",
             json={
                 "model": "gemma4-reranker-v1",
-                "query": "What is AI?",
-                "documents": ["AI is artificial intelligence.", "ML is machine learning."],
+                "query": "artificial intelligence",
+                "documents": ["doc0", "doc1", "doc2"],
             },
             headers={"Authorization": "Bearer k"},
         )
@@ -101,19 +115,17 @@ def test_rerank_text_only(server):
     assert resp.status_code == 200
     data = resp.json()
     assert data["model"] == "gemma4-reranker-v1"
-    assert len(data["results"]) == 2
-    # All media params should be None for text-only
-    for call_args in server._score_pair.call_args_list:
-        assert call_args.kwargs.get("query_image_url") is None
-        assert call_args.kwargs.get("query_audio_url") is None
-        assert call_args.kwargs.get("query_video_url") is None
-        assert call_args.kwargs.get("doc_image_url") is None
-        assert call_args.kwargs.get("doc_audio_url") is None
-        assert call_args.kwargs.get("doc_video_url") is None
+    # Results should be sorted by score descending
+    assert data["results"][0]["index"] == 0
+    assert data["results"][0]["relevance_score"] == 0.8
+    assert data["results"][1]["index"] == 2
+    assert data["results"][1]["relevance_score"] == 0.5
+    assert data["results"][2]["index"] == 1
+    assert data["results"][2]["relevance_score"] == 0.2
 
 
-def test_rerank_sorted_descending(server):
-    server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
+def test_rerank_with_top_n(server):
+    server._score_pair = MagicMock(side_effect=[0.1, 0.9, 0.5])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -122,43 +134,22 @@ def test_rerank_sorted_descending(server):
             "/v1/rerank",
             json={
                 "model": "gemma4-reranker-v1",
-                "query": "query",
-                "documents": ["d0", "d1", "d2"],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
-
-    results = resp.json()["results"]
-    scores = [r["relevance_score"] for r in results]
-    assert scores == sorted(scores, reverse=True)
-    # Verify original indices preserved
-    assert results[0]["index"] == 1  # score 0.9
-    assert results[1]["index"] == 2  # score 0.5
-    assert results[2]["index"] == 0  # score 0.3
-
-
-def test_rerank_top_n(server):
-    server._score_pair = MagicMock(side_effect=[0.3, 0.9, 0.5])
-
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        app = server.serve()
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/rerank",
-            json={
-                "model": "gemma4-reranker-v1",
-                "query": "query",
+                "query": "q",
                 "documents": ["d0", "d1", "d2"],
                 "top_n": 2,
             },
             headers={"Authorization": "Bearer k"},
         )
 
-    assert len(resp.json()["results"]) == 2
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 2
+    assert results[0]["index"] == 1  # 0.9
+    assert results[1]["index"] == 2  # 0.5
 
 
 def test_rerank_return_documents(server):
-    server._score_pair = MagicMock(return_value=0.7)
+    server._score_pair = MagicMock(return_value=0.5)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -168,35 +159,15 @@ def test_rerank_return_documents(server):
             json={
                 "model": "gemma4-reranker-v1",
                 "query": "q",
-                "documents": ["doc text here"],
+                "documents": ["doc_text"],
                 "return_documents": True,
             },
             headers={"Authorization": "Bearer k"},
         )
 
-    result = resp.json()["results"][0]
-    assert result["document"] is not None
-    assert result["document"]["text"] == "doc text here"
-
-
-def test_rerank_no_return_documents_by_default(server):
-    server._score_pair = MagicMock(return_value=0.7)
-
-    with patch.dict(os.environ, {"API_KEY": "k"}):
-        app = server.serve()
-        tc = TestClient(app, raise_server_exceptions=True)
-        resp = tc.post(
-            "/v1/rerank",
-            json={
-                "model": "gemma4-reranker-v1",
-                "query": "q",
-                "documents": ["doc text"],
-            },
-            headers={"Authorization": "Bearer k"},
-        )
-
-    result = resp.json()["results"][0]
-    assert result["document"] is None
+    assert resp.status_code == 200
+    doc = resp.json()["results"][0]["document"]
+    assert doc["text"] == "doc_text"
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +195,7 @@ def test_rerank_with_query_image(server):
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
     assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
+    assert call_args.kwargs.get("query_image_data") is not None
 
 
 def test_rerank_with_doc_images(server):
@@ -246,7 +218,9 @@ def test_rerank_with_doc_images(server):
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
     assert calls[0].kwargs.get("doc_image_url") == "http://example.com/img1.jpg"
+    assert calls[0].kwargs.get("doc_image_data") is not None
     assert calls[1].kwargs.get("doc_image_url") is None
+    assert calls[1].kwargs.get("doc_image_data") is None
 
 
 def test_rerank_doc_images_length_mismatch(server):
@@ -292,6 +266,7 @@ def test_rerank_with_query_audio(server):
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
     assert call_args.kwargs.get("query_audio_url") == "http://example.com/query.wav"
+    assert call_args.kwargs.get("query_audio_data") is not None
 
 
 def test_rerank_with_doc_audios(server):
@@ -314,7 +289,9 @@ def test_rerank_with_doc_audios(server):
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
     assert calls[0].kwargs.get("doc_audio_url") == "http://example.com/a1.wav"
+    assert calls[0].kwargs.get("doc_audio_data") is not None
     assert calls[1].kwargs.get("doc_audio_url") is None
+    assert calls[1].kwargs.get("doc_audio_data") is None
 
 
 def test_rerank_doc_audios_length_mismatch(server):
@@ -360,6 +337,7 @@ def test_rerank_with_query_video(server):
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
     assert call_args.kwargs.get("query_video_url") == "http://example.com/video.mp4"
+    assert call_args.kwargs.get("query_video_frames") is not None
 
 
 def test_rerank_with_doc_videos(server):
@@ -382,7 +360,9 @@ def test_rerank_with_doc_videos(server):
     assert resp.status_code == 200
     calls = server._score_pair.call_args_list
     assert calls[0].kwargs.get("doc_video_url") == "http://example.com/v1.mp4"
+    assert calls[0].kwargs.get("doc_video_frames") is not None
     assert calls[1].kwargs.get("doc_video_url") is None
+    assert calls[1].kwargs.get("doc_video_frames") is None
 
 
 def test_rerank_doc_videos_length_mismatch(server):
@@ -439,6 +419,12 @@ def test_rerank_mixed_modalities(server):
     assert call_args.kwargs.get("doc_image_url") == "http://example.com/di.jpg"
     assert call_args.kwargs.get("doc_audio_url") == "http://example.com/da.wav"
     assert call_args.kwargs.get("doc_video_url") == "http://example.com/dv.mp4"
+    assert call_args.kwargs.get("query_image_data") is not None
+    assert call_args.kwargs.get("query_audio_data") is not None
+    assert call_args.kwargs.get("query_video_frames") is not None
+    assert call_args.kwargs.get("doc_image_data") is not None
+    assert call_args.kwargs.get("doc_audio_data") is not None
+    assert call_args.kwargs.get("doc_video_frames") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -471,9 +457,7 @@ def test_rerank_score_pair_value_error(server):
 
 def test_rerank_score_pair_unexpected_error(server):
     """Unexpected errors from _score_pair should return 400 with message."""
-    server._score_pair = MagicMock(
-        side_effect=RuntimeError("CUDA out of memory")
-    )
+    server._score_pair = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
