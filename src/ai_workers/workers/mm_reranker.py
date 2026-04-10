@@ -11,8 +11,15 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
-import modal
+from typing import Any
 
+import modal
+from fastapi import Body, FastAPI, Request
+from fastapi.responses import JSONResponse
+from loguru import logger
+from pydantic import BaseModel, model_validator
+
+from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_mm_reranker_image
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
@@ -37,6 +44,47 @@ MAX_VIDEO_DURATION_S = 60.0
 MAX_VIDEO_FRAMES = 8
 MEDIA_DOWNLOAD_TIMEOUT_S = 30
 
+
+class MmRerankRequest(BaseModel):
+    model: str = "gemma4-reranker-v1"
+    query: str
+    query_image: str | None = None
+    query_audio: str | None = None
+    query_video: str | None = None
+    documents: list[str]
+    doc_images: list[str | None] | None = None
+    doc_audios: list[str | None] | None = None
+    doc_videos: list[str | None] | None = None
+    top_n: int | None = None
+    return_documents: bool = False
+
+    @model_validator(mode="after")
+    def check_media_lengths(self):
+        for field_name in ("doc_images", "doc_audios", "doc_videos"):
+            field_val = getattr(self, field_name)
+            if field_val is not None and len(field_val) != len(self.documents):
+                raise ValueError(
+                    f"{field_name} length ({len(field_val)}) "
+                    f"must match documents length ({len(self.documents)})"
+                )
+        return self
+
+
+class RerankResultDocument(BaseModel):
+    text: str
+
+
+class RerankResult(BaseModel):
+    index: int
+    relevance_score: float
+    document: RerankResultDocument | None = None
+
+
+class MmRerankResponse(BaseModel):
+    model: str
+    results: list[RerankResult]
+
+
 mm_reranker_app = modal.App(
     "ai-workers-mm-reranker",
     secrets=[modal.Secret.from_name("worker-api-key")],
@@ -58,106 +106,84 @@ class MmRerankerServer:
     """Multimodal reranker server for Gemma-4-E4B.
 
     Supports text, image, audio, and video inputs.
-    Uses yes/no logit scoring with sigmoid for relevance probability.
     """
 
     @modal.enter(snap=True)
-    def load_model(self) -> None:
-        """Load model at container startup (snapshotted by GPU Memory Snapshot)."""
+    def load_models(self) -> None:
+        """Load reranker model at container startup."""
         import torch
-        from loguru import logger
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
-        self.models: dict[str, object] = {}
-        self.processors: dict[str, object] = {}
+        self.models: dict[str, Any] = {}
+        self.processors: dict[str, Any] = {}
 
         for name, cfg in MODEL_CONFIGS.items():
             hf_id = cfg["hf_id"]
+            registry_cfg = get_model(name)
             logger.info("Loading {} ...", hf_id)
+
             processor = AutoProcessor.from_pretrained(
                 hf_id,
-                trust_remote_code=True,
+                trust_remote_code=registry_cfg.trust_remote_code,
                 cache_dir=HF_CACHE_DIR,
             )
             model = AutoModelForImageTextToText.from_pretrained(
                 hf_id,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
+                torch_dtype=torch.float16,
+                trust_remote_code=registry_cfg.trust_remote_code,
                 device_map="auto",
                 cache_dir=HF_CACHE_DIR,
             )
             model.eval()
+
             self.models[name] = model
             self.processors[name] = processor
             logger.info("Loaded {} successfully", name)
 
     # ---------------------------------------------------------------------------
-    # Media loading helpers
+    # Media handling
     # ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
+    def _load_image(self, url: str):
+        """Load image from URL or base64 data URI."""
+        from ai_workers.common.utils import load_image_from_url
 
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        return load_image_from_url(url)
 
-    @staticmethod
-    def _load_audio(url: str) -> tuple:
-        """Load audio from URL as numpy array @ original sample rate.
-
-        Returns (waveform_np, sample_rate).
-        Raises ValueError if duration > MAX_AUDIO_DURATION_S.
-        """
+    def _load_audio(self, url: str) -> tuple[Any, int]:
+        """Load audio from URL and return (waveform, sample_rate)."""
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
 
-        # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
-        data, sr = sf.read(buf, dtype="float32")
+        data = fetch_url_safely(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
+        audio_data, sr = sf.read(io.BytesIO(data))
 
-        duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
+        duration = len(audio_data) / sr
         if duration > MAX_AUDIO_DURATION_S:
             raise ValueError(
                 f"Audio duration {duration:.1f}s exceeds maximum {MAX_AUDIO_DURATION_S}s"
             )
 
-        return data, sr
+        return audio_data, sr
 
-    @staticmethod
-    def _load_video_frames(url: str) -> list:
-        """Download video and extract uniform frames.
-
-        Returns list of PIL.Image (RGB), max MAX_VIDEO_FRAMES.
-        Raises ValueError if duration > MAX_VIDEO_DURATION_S.
-        """
-        import tempfile
+    def _load_video_frames(self, url: str) -> list[Any]:
+        """Load video from URL and extract sample frames."""
+        import io
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
 
-        with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
-            tmp.flush()
-
-            container = av.open(tmp.name)
+        data = fetch_url_safely(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
+        with av.open(io.BytesIO(data)) as container:
             stream = container.streams.video[0]
             duration = float(stream.duration * stream.time_base)
 
             if duration > MAX_VIDEO_DURATION_S:
-                container.close()
                 raise ValueError(
                     f"Video duration {duration:.1f}s exceeds maximum {MAX_VIDEO_DURATION_S}s"
                 )
@@ -213,7 +239,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _sr = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +255,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _sr = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
@@ -237,9 +263,7 @@ class MmRerankerServer:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -276,53 +300,59 @@ class MmRerankerServer:
 
         return score
 
+    async def _do_rerank(self, body: MmRerankRequest) -> MmRerankResponse:
+        """Internal rerank logic."""
+        if body.model not in MODEL_CONFIGS:
+            raise ValueError(
+                f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
+            )
+
+        results = []
+        for i, doc_text in enumerate(body.documents):
+            doc_image = body.doc_images[i] if body.doc_images is not None else None
+            doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+            doc_video = body.doc_videos[i] if body.doc_videos is not None else None
+
+            try:
+                score = self._score_pair(
+                    body.model,
+                    body.query,
+                    doc_text,
+                    query_image_url=body.query_image,
+                    query_audio_url=body.query_audio,
+                    query_video_url=body.query_video,
+                    doc_image_url=doc_image,
+                    doc_audio_url=doc_audio,
+                    doc_video_url=doc_video,
+                )
+            except ValueError as media_err:
+                raise ValueError(str(media_err)) from media_err
+            except Exception as e:
+                logger.error("Scoring failed for doc {}: {}", i, e)
+                raise ValueError(f"Failed to score document {i}: {e}") from e
+
+            result = RerankResult(index=i, relevance_score=score)
+            if body.return_documents:
+                result.document = RerankResultDocument(text=doc_text)
+            results.append(result)
+
+        # Sort by relevance score descending
+        results.sort(key=lambda x: x.relevance_score, reverse=True)
+
+        # Apply top_n if specified
+        if body.top_n is not None:
+            results = results[: body.top_n]
+
+        return MmRerankResponse(model=body.model, results=results)
+
     # ---------------------------------------------------------------------------
     # FastAPI app
     # ---------------------------------------------------------------------------
 
     @modal.asgi_app()
     def serve(self):
-        from fastapi import Body, FastAPI, Request
-        from fastapi.responses import JSONResponse
-        from pydantic import BaseModel, model_validator
-
+        """FastAPI app for multimodal reranking."""
         app = FastAPI(title="Gemma-4 Multimodal Reranker")
-
-        class MmRerankRequest(BaseModel):
-            model: str = "gemma4-reranker-v1"
-            query: str
-            query_image: str | None = None
-            query_audio: str | None = None
-            query_video: str | None = None
-            documents: list[str]
-            doc_images: list[str | None] | None = None
-            doc_audios: list[str | None] | None = None
-            doc_videos: list[str | None] | None = None
-            top_n: int | None = None
-            return_documents: bool = False
-
-            @model_validator(mode="after")
-            def check_media_lengths(self):
-                for field_name in ("doc_images", "doc_audios", "doc_videos"):
-                    field_val = getattr(self, field_name)
-                    if field_val is not None and len(field_val) != len(self.documents):
-                        raise ValueError(
-                            f"{field_name} length ({len(field_val)}) "
-                            f"must match documents length ({len(self.documents)})"
-                        )
-                return self
-
-        class RerankResultDocument(BaseModel):
-            text: str
-
-        class RerankResult(BaseModel):
-            index: int
-            relevance_score: float
-            document: RerankResultDocument | None = None
-
-        class MmRerankResponse(BaseModel):
-            model: str
-            results: list[RerankResult]
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -348,78 +378,17 @@ class MmRerankerServer:
                 "models": list(MODEL_CONFIGS.keys()),
             }
 
-        async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
-            if body.model not in MODEL_CONFIGS:
-                raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
-                )
-
-            results = []
-            for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
-
-                try:
-                    score = self._score_pair(
-                        body.model,
-                        body.query,
-                        doc_text,
-                        query_image_url=body.query_image,
-                        query_audio_url=body.query_audio,
-                        query_video_url=body.query_video,
-                        doc_image_url=doc_image,
-                        doc_audio_url=doc_audio,
-                        doc_video_url=doc_video,
-                    )
-                except ValueError as media_err:
-                    raise ValueError(str(media_err)) from media_err
-                except Exception as e:
-                    from loguru import logger
-
-                    logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
-
-                result = RerankResult(index=i, relevance_score=score)
-                if body.return_documents:
-                    result.document = RerankResultDocument(text=doc_text)
-                results.append(result)
-
-            # Sort by relevance score descending
-            results.sort(key=lambda x: x.relevance_score, reverse=True)
-
-            # Apply top_n if specified
-            if body.top_n is not None:
-                results = results[: body.top_n]
-
-            return MmRerankResponse(model=body.model, results=results)
-
         @app.post("/v1/rerank", response_model=MmRerankResponse)
         async def rerank_v1(body: MmRerankRequest = Body(...)):
             try:
-                return await _do_rerank(body)
+                return await self._do_rerank(body)
             except ValueError as e:
                 return JSONResponse(status_code=400, content={"error": str(e)})
 
         @app.post("/v2/rerank", response_model=MmRerankResponse)
         async def rerank_v2(body: MmRerankRequest = Body(...)):
             try:
-                return await _do_rerank(body)
+                return await self._do_rerank(body)
             except ValueError as e:
                 return JSONResponse(status_code=400, content={"error": str(e)})
 
