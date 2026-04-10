@@ -204,7 +204,8 @@ def test_rerank_no_return_documents_by_default(server):
 # ---------------------------------------------------------------------------
 
 
-def test_rerank_with_query_image(server):
+@patch.object(MmRerankerServer, '_load_image', return_value='img')
+def test_rerank_with_query_image(mock_load_image, server):
     server._score_pair = MagicMock(return_value=0.7)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -226,7 +227,8 @@ def test_rerank_with_query_image(server):
     assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
 
 
-def test_rerank_with_doc_images(server):
+@patch.object(MmRerankerServer, '_load_image', return_value='img')
+def test_rerank_with_doc_images(mock_load_image, server):
     server._score_pair = MagicMock(side_effect=[0.9, 0.4])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -272,7 +274,8 @@ def test_rerank_doc_images_length_mismatch(server):
 # ---------------------------------------------------------------------------
 
 
-def test_rerank_with_query_audio(server):
+@patch.object(MmRerankerServer, '_load_audio', return_value=('aud', 16000))
+def test_rerank_with_query_audio(mock_load_audio, server):
     server._score_pair = MagicMock(return_value=0.6)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -294,7 +297,8 @@ def test_rerank_with_query_audio(server):
     assert call_args.kwargs.get("query_audio_url") == "http://example.com/query.wav"
 
 
-def test_rerank_with_doc_audios(server):
+@patch.object(MmRerankerServer, '_load_audio', return_value=('aud', 16000))
+def test_rerank_with_doc_audios(mock_load_audio, server):
     server._score_pair = MagicMock(side_effect=[0.8, 0.3])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -340,7 +344,8 @@ def test_rerank_doc_audios_length_mismatch(server):
 # ---------------------------------------------------------------------------
 
 
-def test_rerank_with_query_video(server):
+@patch.object(MmRerankerServer, '_load_video_frames', return_value=['vframe'])
+def test_rerank_with_query_video(mock_load_video, server):
     server._score_pair = MagicMock(return_value=0.5)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -362,7 +367,8 @@ def test_rerank_with_query_video(server):
     assert call_args.kwargs.get("query_video_url") == "http://example.com/video.mp4"
 
 
-def test_rerank_with_doc_videos(server):
+@patch.object(MmRerankerServer, '_load_video_frames', return_value=['vframe'])
+def test_rerank_with_doc_videos(mock_load_video, server):
     server._score_pair = MagicMock(side_effect=[0.7, 0.2])
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -408,7 +414,10 @@ def test_rerank_doc_videos_length_mismatch(server):
 # ---------------------------------------------------------------------------
 
 
-def test_rerank_mixed_modalities(server):
+@patch.object(MmRerankerServer, '_load_image', return_value='img')
+@patch.object(MmRerankerServer, '_load_audio', return_value=('aud', 16000))
+@patch.object(MmRerankerServer, '_load_video_frames', return_value=['vframe'])
+def test_rerank_mixed_modalities(mock_load_video, mock_load_audio, mock_load_image, server):
     """Test request with image, audio, and video together."""
     server._score_pair = MagicMock(return_value=0.85)
 
