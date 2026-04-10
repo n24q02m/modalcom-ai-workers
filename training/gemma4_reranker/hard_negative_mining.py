@@ -3,16 +3,15 @@ Hard Negative Mining & Teacher Scoring utilizing Google Native APIs (Kaggle/Goog
 - Dense Retrieval: Gemini Multimodal Embedding (Native support for Text, Image, Audio, Video)
 - Teacher Scoring: Gemini 3 Flash (SOTA, replacing 1.5)
 """
-import os
 import json
 import logging
-import numpy as np
-import google.generativeai as genai
-from typing import List, Dict, Any, Tuple
-from tenacity import retry, wait_exponential, stop_after_attempt
-from pydantic import BaseModel
+import os
 
+import google.generativeai as genai
+import numpy as np
 from data_pipeline import TrainSample
+from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HardNegativeMining")
@@ -36,16 +35,16 @@ class GeminiMiner:
         if not key:
             raise ValueError("Must provide an API key (GOOGLE_API_KEY or GEMINI_API_KEY) in env vars.")
         genai.configure(api_key=key)
-        
+
         self.teacher_client = genai.GenerativeModel(TEACHER_MODEL)
-        
+
     @retry(wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(5))
     def embed_content(self, content: str, modality: str = "text") -> np.ndarray:
         """Get embeddings using Gemini 2 Multimodal Embeddings."""
         # Note: Depending on modality, you'd pass specific mime types and byte data.
         # For simplicity in this text mock, using text-embedding.
         model_to_use = MULTIMODAL_EMBEDDING_MODEL if modality != "text" else EMBEDDING_MODEL
-        
+
         response = genai.embed_content(
             model=model_to_use,
             content=content,
@@ -83,10 +82,10 @@ Document: {document}
             return 0.0
 
     def process_query_sample(
-        self, 
-        query: str, 
-        positive: str, 
-        corpus: List[str], 
+        self,
+        query: str,
+        positive: str,
+        corpus: list[str],
         corpus_embeddings: np.ndarray = None,
         modality: str = "text"
     ) -> TrainSample:
@@ -101,35 +100,35 @@ Document: {document}
         """
         # 1. Embed Query
         q_emb = self.embed_content(query, modality)
-        
+
         # 2. Dense Retrieval (Cosine Sim)
         if corpus_embeddings is None:
             # Fallback: embed the whole corpus right now (slow for large data, usually pre-computed)
             corpus_embeddings = np.array([self.embed_content(doc, modality) for doc in corpus])
-        
+
         scores = np.dot(corpus_embeddings, q_emb)
         ranked_indices = np.argsort(scores)[::-1]
-        
+
         # 3. Hard Negative Selection (Skip top 10, pick 7 from 10-50)
         # Handle cases where corpus is small
         start_idx = min(10, len(ranked_indices))
         end_idx = min(50, len(ranked_indices))
-        
+
         if start_idx == end_idx:
             # Fallback if corpus < 10
             pool_indices = ranked_indices
         else:
             pool_indices = ranked_indices[start_idx:end_idx]
-            
+
         # Randomly select 7 hard negatives from the pool
         num_negatives = min(7, len(pool_indices))
         selected_neg_indices = np.random.choice(pool_indices, size=num_negatives, replace=False)
         negatives = [corpus[i] for i in selected_neg_indices]
-        
+
         # 4 & 5. Teacher Scoring via Gemini 3 Flash
         teacher_pos_score = self.get_teacher_score(query, positive, modality)
         teacher_neg_scores = [self.get_teacher_score(query, neg, modality) for neg in negatives]
-        
+
         # 6. Construct TrainSample from data_pipeline.py
         return TrainSample(
             query=query,

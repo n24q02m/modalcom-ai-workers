@@ -471,9 +471,7 @@ def test_rerank_score_pair_value_error(server):
 
 def test_rerank_score_pair_unexpected_error(server):
     """Unexpected errors from _score_pair should return 400 with message."""
-    server._score_pair = MagicMock(
-        side_effect=RuntimeError("CUDA out of memory")
-    )
+    server._score_pair = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
