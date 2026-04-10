@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 sys.modules["huggingface_hub"] = MagicMock()
 
 # ruff: noqa: E402
-from ai_workers.workers.gguf_converter import gguf_convert_model
+from ai_workers.workers.gguf_converter import GgufUploadContext, gguf_convert_model
 
 
 @patch("ai_workers.workers.gguf_converter._check_if_gguf_exists")
@@ -50,6 +50,16 @@ def test_gguf_convert_model_orchestration(
     mock_convert.assert_called_once()
     mock_quantize.assert_called_once()
     mock_upload.assert_called_once()
+
+    # Verify refactored call arguments
+    _args, kwargs = mock_upload.call_args
+    assert "api" in kwargs
+    assert "config_obj" in kwargs
+    assert "ctx" in kwargs
+    assert isinstance(kwargs["ctx"], GgufUploadContext)
+    assert kwargs["ctx"].q4_size == 250.0
+    assert kwargs["ctx"].hf_token == "fake-token"
+
     mock_unlink.assert_called_once()
 
     assert result["status"] == "success"

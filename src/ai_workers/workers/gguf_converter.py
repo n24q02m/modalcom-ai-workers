@@ -56,6 +56,16 @@ class GgufModelConfig:
     output_attr: str  # "last_hidden_state" (embedding) or "logits" (reranker)
 
 
+@dataclass(frozen=True)
+class GgufUploadContext:
+    """Context for uploading GGUF artifacts."""
+
+    q4_path: Path
+    q4_size: float
+    quant_type: str
+    hf_token: str
+
+
 GGUF_MODELS: dict[str, GgufModelConfig] = {}
 
 
@@ -276,19 +286,17 @@ def _quantize_f16_to_gguf(
 
 def _upload_gguf_artifacts(
     api: object,
-    hf_target: str,
-    hf_source: str,
-    hf_token: str,
-    q4_path: Path,
-    gguf_filename: str,
-    gguf_repo_path: str,
-    quant_type: str,
-    q4_size: float,
     config_obj: GgufModelConfig,
+    ctx: GgufUploadContext,
 ) -> None:
     """Upload GGUF model file, README, and config files to HuggingFace Hub."""
     from huggingface_hub import hf_hub_download as _hf_download
     from loguru import logger
+
+    hf_target = config_obj.hf_target
+    hf_source = config_obj.hf_source
+    gguf_filename = f"{config_obj.gguf_name}-{ctx.quant_type.lower().replace('_', '-')}.gguf"
+    gguf_repo_path = gguf_filename  # Root level in dedicated GGUF repo
 
     logger.info("Uploading {} to {}...", gguf_repo_path, hf_target)
 
@@ -300,15 +308,15 @@ def _upload_gguf_artifacts(
     )
 
     api.upload_file(
-        path_or_fileobj=str(q4_path.resolve()),
+        path_or_fileobj=str(ctx.q4_path.resolve()),
         path_in_repo=gguf_repo_path,
         repo_id=hf_target,
         repo_type="model",
-        commit_message=f"Add GGUF {quant_type} converted from {hf_source}",
+        commit_message=f"Add GGUF {ctx.quant_type} converted from {hf_source}",
     )
 
     # Upload model card
-    model_card = _generate_gguf_model_card(config_obj, gguf_filename, q4_size)
+    model_card = _generate_gguf_model_card(config_obj, gguf_filename, ctx.q4_size)
     api.upload_file(
         path_or_fileobj=model_card.encode("utf-8"),
         path_in_repo="README.md",
@@ -320,7 +328,7 @@ def _upload_gguf_artifacts(
     # Upload tokenizer + config from source for model loading
     for cfg_file in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
         try:
-            local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=hf_token)
+            local_cfg = _hf_download(repo_id=hf_source, filename=cfg_file, token=ctx.hf_token)
             api.upload_file(
                 path_or_fileobj=local_cfg,
                 path_in_repo=cfg_file,
@@ -437,15 +445,13 @@ def gguf_convert_model(
         )
         _upload_gguf_artifacts(
             api=api,
-            hf_target=hf_target,
-            hf_source=hf_source,
-            hf_token=hf_token,
-            q4_path=q4_path,
-            gguf_filename=gguf_filename,
-            gguf_repo_path=gguf_repo_path,
-            quant_type=quant_type,
-            q4_size=q4_size,
             config_obj=config_obj,
+            ctx=GgufUploadContext(
+                q4_path=q4_path,
+                q4_size=q4_size,
+                quant_type=quant_type,
+                hf_token=hf_token,
+            ),
         )
 
     gc.collect()
