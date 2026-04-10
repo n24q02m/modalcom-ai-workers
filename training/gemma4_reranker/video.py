@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import av
 import numpy as np
-from PIL import Image
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 
 def extract_frames(

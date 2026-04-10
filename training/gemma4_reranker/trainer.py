@@ -10,17 +10,20 @@ Implements the core training logic for all 3 stages:
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .config import StageConfig, TrainConfig
 from .dataset import MmRerankDataset, collate_fn
 from .model import find_lm_head
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import StageConfig, TrainConfig
 
 
 def compute_loss(
