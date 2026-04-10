@@ -36,6 +36,8 @@ MAX_AUDIO_DURATION_S = 30.0
 MAX_VIDEO_DURATION_S = 60.0
 MAX_VIDEO_FRAMES = 8
 MEDIA_DOWNLOAD_TIMEOUT_S = 30
+MAX_AUDIO_SIZE = 20 * 1024 * 1024  # 20 MB
+MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50 MB
 
 mm_reranker_app = modal.App(
     "ai-workers-mm-reranker",
@@ -97,31 +99,28 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
+        """Load a PIL Image from URL with SSRF protection."""
+        from ai_workers.common.utils import load_image_from_url
 
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        return load_image_from_url(url)
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
-        """Load audio from URL as numpy array @ original sample rate.
+        """Load audio from URL with SSRF protection.
 
         Returns (waveform_np, sample_rate).
         Raises ValueError if duration > MAX_AUDIO_DURATION_S.
         """
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        content = fetch_url_safely(url, max_size=MAX_AUDIO_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
 
         # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        buf = io.BytesIO(content)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -134,7 +133,7 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_video_frames(url: str) -> list:
-        """Download video and extract uniform frames.
+        """Download video and extract uniform frames with SSRF protection.
 
         Returns list of PIL.Image (RGB), max MAX_VIDEO_FRAMES.
         Raises ValueError if duration > MAX_VIDEO_DURATION_S.
@@ -143,13 +142,13 @@ class MmRerankerServer:
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        content = fetch_url_safely(url, max_size=MAX_VIDEO_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(content)
             tmp.flush()
 
             container = av.open(tmp.name)
@@ -213,7 +212,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _sr = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +228,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _sr = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
@@ -237,9 +236,7 @@ class MmRerankerServer:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -351,27 +348,14 @@ class MmRerankerServer:
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
             results = []
             for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+                doc_image = body.doc_images[i] if body.doc_images is not None else None
+                doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+                doc_video = body.doc_videos[i] if body.doc_videos is not None else None
 
                 try:
                     score = self._score_pair(
@@ -391,9 +375,7 @@ class MmRerankerServer:
                     from loguru import logger
 
                     logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+                    raise ValueError(f"Failed to score document {i}: {e}") from e
 
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:

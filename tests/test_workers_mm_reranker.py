@@ -471,9 +471,7 @@ def test_rerank_score_pair_value_error(server):
 
 def test_rerank_score_pair_unexpected_error(server):
     """Unexpected errors from _score_pair should return 400 with message."""
-    server._score_pair = MagicMock(
-        side_effect=RuntimeError("CUDA out of memory")
-    )
+    server._score_pair = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
@@ -585,3 +583,85 @@ def test_rerank_multiple_docs_all_scored(server):
     assert resp.status_code == 200
     assert server._score_pair.call_count == 5
     assert len(resp.json()["results"]) == 5
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# SSRF Protection
+# ---------------------------------------------------------------------------
+
+
+def test_rerank_with_blocked_query_image(server):
+    # Mock models and processors to avoid KeyError
+    server.models = {"gemma4-reranker-v1": MagicMock()}
+    server.processors = {"gemma4-reranker-v1": MagicMock()}
+
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch("ai_workers.common.utils._get_safe_ips", side_effect=ValueError("Blocked")),
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/rerank",
+            json={
+                "model": "gemma4-reranker-v1",
+                "query": "q",
+                "query_image": "http://192.168.1.1/img.jpg",
+                "documents": ["d"],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+    assert resp.status_code == 400
+    assert "URL blocked by SSRF protection" in resp.json()["error"]
+
+
+def test_rerank_with_blocked_doc_audio(server):
+    server.models = {"gemma4-reranker-v1": MagicMock()}
+    server.processors = {"gemma4-reranker-v1": MagicMock()}
+
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch("ai_workers.common.utils._get_safe_ips", side_effect=ValueError("Blocked")),
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/rerank",
+            json={
+                "model": "gemma4-reranker-v1",
+                "query": "q",
+                "documents": ["d"],
+                "doc_audios": ["http://127.0.0.1/a.wav"],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+    assert resp.status_code == 400
+    assert "URL blocked by SSRF protection" in resp.json()["error"]
+
+
+def test_rerank_with_blocked_doc_video(server):
+    server.models = {"gemma4-reranker-v1": MagicMock()}
+    server.processors = {"gemma4-reranker-v1": MagicMock()}
+
+    with (
+        patch.dict(os.environ, {"API_KEY": "k"}),
+        patch("ai_workers.common.utils._get_safe_ips", side_effect=ValueError("Blocked")),
+    ):
+        app = server.serve()
+        tc = TestClient(app, raise_server_exceptions=True)
+        resp = tc.post(
+            "/v1/rerank",
+            json={
+                "model": "gemma4-reranker-v1",
+                "query": "q",
+                "documents": ["d"],
+                "doc_videos": ["http://169.254.1.1/v.mp4"],
+            },
+            headers={"Authorization": "Bearer k"},
+        )
+
+    assert resp.status_code == 400
+    assert "URL blocked by SSRF protection" in resp.json()["error"]
