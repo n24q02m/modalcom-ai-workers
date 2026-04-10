@@ -105,9 +105,7 @@ def load_model_for_training(
     model.enable_input_require_grads()
 
     # Enable gradient checkpointing (saves ~40% activation VRAM)
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs={"use_reentrant": False}
-    )
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     return model, processor
 

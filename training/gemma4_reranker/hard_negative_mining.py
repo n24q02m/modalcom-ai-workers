@@ -27,6 +27,7 @@ EMBEDDING_MODEL = "models/text-embedding-004"
 MULTIMODAL_EMBEDDING_MODEL = "models/gemini-embedding-2-preview"
 TEACHER_MODEL = "models/gemini-3-flash-preview"
 
+
 class RelevanceOutput(BaseModel):
     relevance_score: float
 
@@ -35,7 +36,9 @@ class GeminiMiner:
     def __init__(self, api_key: str | None = None):
         key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if not key:
-            raise ValueError("Must provide an API key (GOOGLE_API_KEY or GEMINI_API_KEY) in env vars.")
+            raise ValueError(
+                "Must provide an API key (GOOGLE_API_KEY or GEMINI_API_KEY) in env vars."
+            )
 
         self.client = genai.Client(api_key=key)
 
@@ -75,7 +78,9 @@ Document: {document}
             result = json.loads(response.text)
             return float(result.get("relevance_score", 0.0))
         except Exception as e:
-            logger.warning(f"Failed to parse teacher score: {response.text}, returning 0.0. Error: {e}")
+            logger.warning(
+                f"Failed to parse teacher score: {response.text}, returning 0.0. Error: {e}"
+            )
             return 0.0
 
     def process_query_sample(
@@ -127,4 +132,3 @@ Document: {document}
             teacher_pos_score=teacher_pos_score,
             teacher_neg_scores=teacher_neg_scores,
         )
-

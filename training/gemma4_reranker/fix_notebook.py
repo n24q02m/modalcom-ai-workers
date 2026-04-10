@@ -153,15 +153,17 @@ with open(OUTPUT_PATH, 'a', encoding='utf-8') as out_file:
 
 logger.info(f"Data preparation complete. Output saved to {OUTPUT_PATH}")
 """
-nb['cells'] = [
+nb["cells"] = [
     nbf.v4.new_markdown_cell("# Kaggle Stage 1: Data Preparation"),
     nbf.v4.new_code_cell(code1),
     nbf.v4.new_code_cell(code2),
     nbf.v4.new_code_cell(code3),
     nbf.v4.new_code_cell(code4),
-    nbf.v4.new_code_cell(code5)
+    nbf.v4.new_code_cell(code5),
 ]
 
-with open('/home/nqminh/projects/modalcom-ai-workers/training/gemma4_reranker/deploy_prep/kaggle_data_prep_stage1.ipynb', 'w') as f:
+with open(
+    "/home/nqminh/projects/modalcom-ai-workers/training/gemma4_reranker/deploy_prep/kaggle_data_prep_stage1.ipynb",
+    "w",
+) as f:
     nbf.write(nb, f)
-

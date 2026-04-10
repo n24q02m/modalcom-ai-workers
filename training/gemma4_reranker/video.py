@@ -43,9 +43,7 @@ def extract_frames(
         duration = float(stream.duration * stream.time_base)
 
         if duration > max_duration_s:
-            raise ValueError(
-                f"Video duration {duration:.1f}s exceeds maximum {max_duration_s}s"
-            )
+            raise ValueError(f"Video duration {duration:.1f}s exceeds maximum {max_duration_s}s")
 
         n_frames = min(max_frames, max(1, int(duration)))  # ~1 FPS
         timestamps = np.linspace(0, duration, n_frames, endpoint=False)

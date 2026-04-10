@@ -57,7 +57,9 @@ except Exception as e:
 
 api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if not api_key:
-    raise ValueError("CRITICAL: Missing GOOGLE_API_KEY or GEMINI_API_KEY. Please add to Kaggle Add-ons -> Secrets.")
+    raise ValueError(
+        "CRITICAL: Missing GOOGLE_API_KEY or GEMINI_API_KEY. Please add to Kaggle Add-ons -> Secrets."
+    )
 
 
 # =======================================================
@@ -84,9 +86,13 @@ class GeminiMiner:
         self.client = genai.Client(api_key=self.api_key)
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=30), stop=stop_after_attempt(5))
-    def embed_content(self, contents: str | list[str], modality: str = "text") -> np.ndarray | list[np.ndarray]:
+    def embed_content(
+        self, contents: str | list[str], modality: str = "text"
+    ) -> np.ndarray | list[np.ndarray]:
         model_to_use = (
-            MULTIMODAL_EMBEDDING_MODEL if modality in ["image", "video", "audio"] else EMBEDDING_MODEL
+            MULTIMODAL_EMBEDDING_MODEL
+            if modality in ["image", "video", "audio"]
+            else EMBEDDING_MODEL
         )
         response = self.client.models.embed_content(
             model=model_to_use,
@@ -129,7 +135,9 @@ def get_processed_count(filepath: str) -> int:
 
 if __name__ == "__main__":
     # Install dependencies on the fly if running inside Python script on Kaggle
-    os.system("pip install -q datasets huggingface_hub sentence-transformers pydantic tenacity google-genai")
+    os.system(
+        "pip install -q datasets huggingface_hub sentence-transformers pydantic tenacity google-genai"
+    )
 
     miner = GeminiMiner()
 
@@ -144,7 +152,9 @@ if __name__ == "__main__":
     # 3.a Load MS MARCO (Text Base)
     try:
         logger.info("Loading exact MS MARCO dataset (100k split)...")
-        ds_marco = load_dataset("microsoft/ms_marco", "v2.1", split="train[:100000]", trust_remote_code=True)
+        ds_marco = load_dataset(
+            "microsoft/ms_marco", "v2.1", split="train[:100000]", trust_remote_code=True
+        )
         for row in ds_marco:
             passages = row.get("passages", {})
             if not passages or not passages.get("passage_text"):
@@ -175,7 +185,9 @@ if __name__ == "__main__":
     # 3.b Load VisualNews for text-image correlation (Placeholder standard set)
     try:
         logger.info("Loading sample Visual dataset...")
-        ds_vnews = load_dataset("FuxiaoLiu/VisualNews-Rerank", split="train[:20000]", trust_remote_code=True)
+        ds_vnews = load_dataset(
+            "FuxiaoLiu/VisualNews-Rerank", split="train[:20000]", trust_remote_code=True
+        )
         for row in ds_vnews:
             raw_data.append(
                 {
@@ -233,20 +245,30 @@ if __name__ == "__main__":
                     # Hard negative logic: skip top 2, pick 7 from 2..50
                     start_idx = min(2, len(ranked_indices))
                     end_idx = min(50, len(ranked_indices))
-                    pool_indices = ranked_indices[start_idx:end_idx] if start_idx != end_idx else ranked_indices
+                    pool_indices = (
+                        ranked_indices[start_idx:end_idx]
+                        if start_idx != end_idx
+                        else ranked_indices
+                    )
                     if len(pool_indices) == 0:
                         continue
 
                     num_neg = min(7, len(pool_indices))
-                    selected_neg_indices = np.random.choice(pool_indices, size=num_neg, replace=False)
+                    selected_neg_indices = np.random.choice(
+                        pool_indices, size=num_neg, replace=False
+                    )
                     negatives = [corpus[idx] for idx in selected_neg_indices]
 
                     # THREAD POOL FOR TEACHER SCORES: Evaluating 8 scores in parallel
-                    scoring_tasks = [(query, positive, modality)] + [(query, n, modality) for n in negatives]
+                    scoring_tasks = [(query, positive, modality)] + [
+                        (query, n, modality) for n in negatives
+                    ]
 
                     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                         # Map runs concurrently and preserves order
-                        results = list(executor.map(lambda args: miner.get_teacher_score(*args), scoring_tasks))
+                        results = list(
+                            executor.map(lambda args: miner.get_teacher_score(*args), scoring_tasks)
+                        )
 
                     t_pos_score = results[0]
                     t_neg_scores = results[1:]

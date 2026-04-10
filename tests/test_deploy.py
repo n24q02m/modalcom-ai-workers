@@ -148,7 +148,7 @@ class TestDeployAllGrouping:
     def test_total_unique_modules(self) -> None:
         """Should have 7 unique worker modules for 11 models."""
         modules = {c.worker_module for c in MODEL_REGISTRY.values() if c.worker_module}
-        assert len(modules) == 7
+        assert len(modules) == 8
 
     def test_total_unique_deploy_targets(self) -> None:
         """Merged apps: should have 7 unique (module, app_var) pairs for 11 models.
@@ -161,7 +161,7 @@ class TestDeployAllGrouping:
             for c in MODEL_REGISTRY.values()
             if c.worker_module and c.modal_app_var
         }
-        assert len(targets) == 7
+        assert len(targets) == 8
 
     def test_merged_apps_share_app_var(self) -> None:
         """Light and heavy variants of merged tasks should share the same modal_app_var."""

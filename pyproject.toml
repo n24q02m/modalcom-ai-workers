@@ -3,9 +3,19 @@ name = "ai-workers"
 version = "1.1.1"
 description = "Self-hosted AI model workers on Modal.com with LiteLLM-compatible endpoints"
 readme = "README.md"
-license = { text = "MIT" }
-authors = [{ name = "n24q02m", email = "quangminh2422004@gmail.com" }]
-keywords = ["modal", "gpu-serverless", "embedding", "reranking", "ocr", "asr", "litellm", "ai-workers"]
+authors = [
+    { name = "n24q02m", email = "quangminh2422004@gmail.com" },
+]
+keywords = [
+    "modal",
+    "gpu-serverless",
+    "embedding",
+    "reranking",
+    "ocr",
+    "asr",
+    "litellm",
+    "ai-workers",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -17,11 +27,14 @@ classifiers = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-  "loguru>=0.7",
-  "pydantic>=2.0",
-  "pydantic-settings>=2.0",
-  "fastapi>=0.115",
+    "loguru>=0.7",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "fastapi>=0.115",
 ]
+
+[project.license]
+text = "MIT"
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/modalcom-ai-workers"
@@ -29,88 +42,102 @@ Repository = "https://github.com/n24q02m/modalcom-ai-workers.git"
 Issues = "https://github.com/n24q02m/modalcom-ai-workers/issues"
 
 [project.optional-dependencies]
-# ONNX model conversion (CPU-only, INT8 quantization)
 onnx-convert = [
-  "torch>=2.4",
-  "transformers>=4.47",
-  "safetensors>=0.4",
-  "accelerate>=1.0",
-  "huggingface-hub>=0.26",
-  "onnx>=1.17",
-  "onnxruntime>=1.21",
-  "typer>=0.15",
-  "rich>=13.0",
+    "torch>=2.4",
+    "transformers>=4.47",
+    "safetensors>=0.4",
+    "accelerate>=1.0",
+    "huggingface-hub>=0.26",
+    "onnx>=1.17",
+    "onnxruntime>=1.21",
+    "typer>=0.15",
+    "rich>=13.0",
 ]
-# Modal deployment (local CLI)
 deploy = [
-  "modal>=0.73",
-  "typer>=0.15",
-  "rich>=13.0",
+    "modal>=0.73",
+    "typer>=0.15",
+    "rich>=13.0",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = [
+    "hatchling",
+]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ai_workers"]
+packages = [
+    "src/ai_workers",
+]
 
 [tool.hatch.build.targets.wheel.sources]
-"src" = ""
+src = ""
 
-# --- Ruff ---
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-src = ["src", "tests"]
+src = [
+    "src",
+    "tests",
+]
+exclude = [
+    "training",
+]
 
 [tool.ruff.lint]
 select = [
-  "E",   # pycodestyle errors
-  "W",   # pycodestyle warnings
-  "F",   # pyflakes
-  "I",   # isort
-  "N",   # pep8-naming
-  "UP",  # pyupgrade
-  "B",   # flake8-bugbear
-  "SIM", # flake8-simplify
-  "TCH", # flake8-type-checking
-  "RUF", # ruff-specific
+    "E",
+    "W",
+    "F",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "SIM",
+    "TCH",
+    "RUF",
 ]
 ignore = [
-  "E501",   # line too long (handled by formatter)
-  "B008",   # do not perform function call in argument defaults (typer)
+    "E501",
+    "B008",
+]
+exclude = [
+    "training",
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ai_workers"]
+known-first-party = [
+    "ai_workers",
+]
 
 [tool.ruff.format]
 quote-style = "double"
 
-# --- ty ---
 [tool.ty.environment]
 python-version = "3.13"
 
 [tool.ty.src]
-include = ["src"]
+include = [
+    "src",
+]
 
 [tool.ty.rules]
-# ML deps (modal, torch, transformers, etc.) are runtime-only on Modal GPU containers
-# and not installed in CI/local dev. Suppress cascading errors from unresolved imports.
 unresolved-import = "warn"
 unresolved-attribute = "warn"
 call-non-callable = "warn"
 invalid-argument-type = "warn"
 
-# --- pytest ---
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
+version_toml = [
+    "pyproject.toml:project.version",
+]
 tag_format = "v{version}"
 commit_message = "chore(release): v{version}"
 major_on_zero = false
