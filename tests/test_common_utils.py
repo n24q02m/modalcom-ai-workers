@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from ai_workers.common.utils import is_safe_url, load_image_from_url
+from ai_workers.common.utils import fetch_url_safely, is_safe_url, load_image_from_url
 
 # ---------------------------------------------------------------------------
 # is_safe_url
@@ -289,3 +289,55 @@ class TestLoadImageFromUrlEdgeCases:
             load_image_from_url("https://example.com/large.png")
 
         mock_resp.close.assert_called_once()
+
+
+class TestFetchUrlSafely:
+    """Tests for fetch_url_safely."""
+
+    def test_fetch_http_url_success(self):
+        mock_resp = MagicMock()
+        mock_resp.iter_content = MagicMock(return_value=iter([b"content"]))
+        mock_resp.raise_for_status = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils._get_safe_ips", return_value=["93.184.216.34"]),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp) as mock_get,
+        ):
+            result = fetch_url_safely("https://example.com/file", max_size=1024)
+
+        assert result == b"content"
+        mock_get.assert_called_once()
+
+    def test_fetch_base64_success(self):
+        b64 = base64.b64encode(b"data").decode()
+        data_uri = f"data:application/octet-stream;base64,{b64}"
+        result = fetch_url_safely(data_uri, max_size=1024)
+        assert result == b"data"
+
+    def test_fetch_ssrf_blocked(self):
+        with (
+            patch("ai_workers.common.utils._get_safe_ips", side_effect=ValueError("Private IP")),
+            pytest.raises(ValueError, match="URL blocked by SSRF protection"),
+        ):
+            fetch_url_safely("http://192.168.1.1/file", max_size=1024)
+
+    def test_fetch_size_limit_exceeded(self):
+        mock_resp = MagicMock()
+        mock_resp.iter_content = MagicMock(return_value=iter([b"too much content"]))
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.close = MagicMock()
+
+        with (
+            patch("ai_workers.common.utils._get_safe_ips", return_value=["93.184.216.34"]),
+            patch("ai_workers.common.utils._session.get", return_value=mock_resp),
+            pytest.raises(ValueError, match="Content from URL exceeds size limit"),
+        ):
+            fetch_url_safely("https://example.com/large", max_size=5)
+
+    def test_fetch_failure(self):
+        with (
+            patch("ai_workers.common.utils._get_safe_ips", return_value=["93.184.216.34"]),
+            patch("ai_workers.common.utils._session.get", side_effect=Exception("Error")),
+            pytest.raises(RuntimeError, match="Failed to fetch URL"),
+        ):
+            fetch_url_safely("https://example.com/error", max_size=1024)
