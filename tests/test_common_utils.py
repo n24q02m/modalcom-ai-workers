@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import socket
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
-from ai_workers.common.utils import is_safe_url, load_image_from_url
+from ai_workers.common.utils import (
+    _patched_create_connection,
+    _pin_hostname_to_ip,
+    is_safe_url,
+    load_image_from_url,
+)
 
 # ---------------------------------------------------------------------------
 # is_safe_url
@@ -18,6 +25,9 @@ from ai_workers.common.utils import is_safe_url, load_image_from_url
 
 # Public IPs that should be allowed
 _PUBLIC_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))]
+_PUBLIC_IPV6_ADDRINFO = [
+    (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("2606:4700:4700::1111", 0, 0, 0))
+]
 
 # Private/loopback/link-local/multicast addresses
 _PRIVATE_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 0))]
@@ -39,6 +49,10 @@ class TestIsSafeUrl:
     def test_public_https_url(self):
         with patch("socket.getaddrinfo", return_value=_PUBLIC_ADDRINFO):
             assert is_safe_url("https://example.com/image.png") is True
+
+    def test_public_ipv6_url(self):
+        with patch("socket.getaddrinfo", return_value=_PUBLIC_IPV6_ADDRINFO):
+            assert is_safe_url("https://ipv6.example.com/image.png") is True
 
     def test_rejects_ftp_scheme(self):
         assert is_safe_url("ftp://example.com/file") is False
@@ -126,6 +140,76 @@ class TestIsSafeUrl:
     def test_rejects_parse_failure(self):
         with patch("ai_workers.common.utils.urlparse", side_effect=Exception("Parse error")):
             assert is_safe_url("http://example.com") is False
+
+    def test_is_safe_url_with_mocked_get_safe_ips(self):
+        """Test is_safe_url with mocked _get_safe_ips returning safe IPs."""
+        with patch("ai_workers.common.utils._get_safe_ips", return_value=["93.184.216.34"]):
+            assert is_safe_url("http://example.com") is True
+
+    def test_is_safe_url_unexpected_exception(self):
+        """Test is_safe_url handling of unexpected exceptions."""
+        with patch("ai_workers.common.utils._get_safe_ips", side_effect=RuntimeError("Surprise")):
+            assert is_safe_url("http://example.com") is False
+
+
+class TestSSRFInternal:
+    """Tests for internal SSRF protection mechanisms."""
+
+    def test_patched_create_connection_no_pin(self):
+        """Verify _patched_create_connection calls original when no IP is pinned."""
+        mock_original = MagicMock()
+        with patch("ai_workers.common.utils._original_create_connection", mock_original):
+            _patched_create_connection(("example.com", 80))
+            mock_original.assert_called_once_with(("example.com", 80))
+
+    def test_patched_create_connection_with_pin(self):
+        """Verify _patched_create_connection uses pinned IP when available."""
+        mock_original = MagicMock()
+        with (
+            patch("ai_workers.common.utils._original_create_connection", mock_original),
+            _pin_hostname_to_ip("example.com", "93.184.216.34"),
+        ):
+            _patched_create_connection(("example.com", 80))
+            mock_original.assert_called_once_with(("93.184.216.34", 80))
+
+    def test_pin_hostname_to_ip_nested(self):
+        """Verify _pin_hostname_to_ip correctly restores previous IP when nested."""
+        from ai_workers.common.utils import _thread_local
+
+        # Ensure thread local is clean
+        if hasattr(_thread_local, "pinned_ips"):
+            del _thread_local.pinned_ips
+
+        with _pin_hostname_to_ip("example.com", "1.1.1.1"):
+            assert _thread_local.pinned_ips["example.com"] == "1.1.1.1"
+            with _pin_hostname_to_ip("example.com", "2.2.2.2"):
+                assert _thread_local.pinned_ips["example.com"] == "2.2.2.2"
+            assert _thread_local.pinned_ips["example.com"] == "1.1.1.1"
+        assert "example.com" not in _thread_local.pinned_ips
+
+    def test_urllib3_import_failure(self):
+        """Verify warning is logged when urllib3 is missing."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def mocked_import(name, *args, **kwargs):
+            if name == "urllib3.util":
+                raise ImportError("no urllib3")
+            return real_import(name, *args, **kwargs)
+
+        with (
+            patch("builtins.__import__", side_effect=mocked_import),
+            patch("loguru.logger.warning") as mock_logger_warning,
+        ):
+            # Reload module to trigger the try-except block
+            importlib.reload(sys.modules["ai_workers.common.utils"])
+            mock_logger_warning.assert_any_call(
+                "Could not apply SSRF IP pinning: urllib3 not found"
+            )
+
+        # Restore module state
+        importlib.reload(sys.modules["ai_workers.common.utils"])
 
 
 # load_image_from_url
