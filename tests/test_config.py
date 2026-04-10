@@ -30,8 +30,8 @@ class TestModelRegistry:
         assert len(MODEL_REGISTRY) > 0
 
     def test_expected_model_count(self) -> None:
-        """We expect 11 models in the registry."""
-        assert len(MODEL_REGISTRY) == 11
+        """We expect 12 models in the registry."""
+        assert len(MODEL_REGISTRY) == 12
 
     @pytest.mark.parametrize(
         "name",
@@ -39,6 +39,7 @@ class TestModelRegistry:
             "qwen3-embedding-0.6b",
             "qwen3-embedding-8b",
             "qwen3-reranker-8b",
+            "gemma4-reranker-v1",
             "qwen3-vl-embedding-2b",
             "qwen3-vl-embedding-8b",
             "qwen3-vl-reranker-8b",
@@ -76,6 +77,7 @@ class TestModelRegistry:
             "qwen3-embedding-0.6b": "ai-workers-embedding",
             "qwen3-embedding-8b": "ai-workers-embedding",
             "qwen3-reranker-8b": "ai-workers-reranker",
+            "gemma4-reranker-v1": "ai-workers-mm-reranker",
             "qwen3-vl-embedding-2b": "ai-workers-vl-embedding",
             "qwen3-vl-embedding-8b": "ai-workers-vl-embedding",
             "qwen3-vl-reranker-8b": "ai-workers-vl-reranker",
@@ -133,7 +135,7 @@ class TestListModels:
 
     def test_list_all(self) -> None:
         models = list_models()
-        assert len(models) == 11
+        assert len(models) == 12
 
     def test_filter_by_task(self) -> None:
         embeddings = list_models(task=Task.EMBEDDING)
@@ -145,7 +147,7 @@ class TestListModels:
         assert all(m.tier == Tier.LIGHT for m in light)
         heavy = list_models(tier=Tier.HEAVY)
         assert all(m.tier == Tier.HEAVY for m in heavy)
-        assert len(light) + len(heavy) == 11
+        assert len(light) + len(heavy) == 12
 
     def test_filter_by_task_and_tier(self) -> None:
         light_embed = list_models(task=Task.EMBEDDING, tier=Tier.LIGHT)
@@ -204,6 +206,7 @@ class TestWorkerModulePaths:
         [
             (Task.EMBEDDING, "ai_workers.workers.embedding"),
             (Task.RERANKER_LLM, "ai_workers.workers.reranker"),
+            (Task.MM_RERANKER, "ai_workers.workers.mm_reranker"),
             (Task.VL_EMBEDDING, "ai_workers.workers.vl_embedding"),
             (Task.VL_RERANKER, "ai_workers.workers.vl_reranker"),
             (Task.OCR, "ai_workers.workers.ocr"),
@@ -222,6 +225,7 @@ class TestWorkerModulePaths:
             ("qwen3-embedding-0.6b", "embedding_app"),
             ("qwen3-embedding-8b", "embedding_app"),
             ("qwen3-reranker-8b", "reranker_app"),
+            ("gemma4-reranker-v1", "mm_reranker_app"),
             ("qwen3-vl-embedding-2b", "vl_embedding_app"),
             ("qwen3-vl-embedding-8b", "vl_embedding_app"),
             ("qwen3-vl-reranker-8b", "vl_reranker_app"),
