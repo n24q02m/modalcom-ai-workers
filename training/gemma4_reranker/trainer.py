@@ -10,17 +10,20 @@ Implements the core training logic for all 3 stages:
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional
 from torch.utils.data import DataLoader
 
-from .config import StageConfig, TrainConfig
 from .dataset import MmRerankDataset, collate_fn
 from .model import find_lm_head
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import StageConfig, TrainConfig
 
 
 def compute_loss(
@@ -61,7 +64,7 @@ def compute_loss(
     last_h = hidden[torch.arange(hidden.size(0)), seq_lengths]  # (B, hidden_dim)
 
     # Compute yes/no logits via lm_head weight
-    logits = F.linear(last_h, lm_head.weight)  # (B, vocab_size)
+    logits = torch.nn.functional.linear(last_h, lm_head.weight)  # (B, vocab_size)
     yes_logit = logits[:, yes_id]  # (B,)
     no_logit = logits[:, no_id]  # (B,)
     logits_yes_no = torch.stack([yes_logit, no_logit], dim=-1)  # (B, 2)
@@ -69,7 +72,7 @@ def compute_loss(
     labels = inputs["labels"]  # (B,) — 0=yes, 1=no
 
     # Cross-entropy loss
-    loss_ce = F.cross_entropy(logits_yes_no, labels)
+    loss_ce = torch.nn.functional.cross_entropy(logits_yes_no, labels)
 
     metrics = {"loss_ce": loss_ce.item()}
 
@@ -81,9 +84,11 @@ def compute_loss(
         teacher_no = 1.0 - teacher_scores
         teacher_logits = torch.stack([teacher_yes, teacher_no], dim=-1)  # (B, 2)
 
-        teacher_probs = F.softmax(teacher_logits / kd_temperature, dim=-1)
-        student_log_probs = F.log_softmax(logits_yes_no / kd_temperature, dim=-1)
-        loss_kd = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean")
+        teacher_probs = torch.nn.functional.softmax(teacher_logits / kd_temperature, dim=-1)
+        student_log_probs = torch.nn.functional.log_softmax(logits_yes_no / kd_temperature, dim=-1)
+        loss_kd = torch.nn.functional.kl_div(
+            student_log_probs, teacher_probs, reduction="batchmean"
+        )
 
         loss = (1 - kd_alpha) * loss_ce + kd_alpha * loss_kd * (kd_temperature**2)
         metrics["loss_kd"] = loss_kd.item()
@@ -137,10 +142,7 @@ def train_one_epoch(
     for batch_idx, batch in enumerate(train_loader):
         # Move to GPU
         device = next(model.parameters()).device
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         # FP16 AMP forward
         with torch.amp.autocast("cuda", dtype=torch.float16):
@@ -161,9 +163,7 @@ def train_one_epoch(
         # Gradient accumulation step
         if (batch_idx + 1) % config.gradient_accumulation_steps == 0:
             scaler.unscale_(optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), config.max_grad_norm
-            )
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
@@ -180,16 +180,22 @@ def train_one_epoch(
                 vram_reserved = torch.cuda.memory_reserved() / 1e9
 
                 if mlflow_run:
-                    _log_metrics(mlflow_run, {
-                        "train/loss": accum_loss * config.gradient_accumulation_steps,
-                        "train/loss_ce": metrics["loss_ce"],
-                        "train/loss_kd": metrics["loss_kd"],
-                        "train/lr": current_lr,
-                        "train/grad_norm": grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm,
-                        "train/vram_allocated_gb": vram_alloc,
-                        "train/vram_reserved_gb": vram_reserved,
-                        "train/epoch": epoch,
-                    }, step=global_step)
+                    _log_metrics(
+                        mlflow_run,
+                        {
+                            "train/loss": accum_loss * config.gradient_accumulation_steps,
+                            "train/loss_ce": metrics["loss_ce"],
+                            "train/loss_kd": metrics["loss_kd"],
+                            "train/lr": current_lr,
+                            "train/grad_norm": grad_norm.item()
+                            if isinstance(grad_norm, torch.Tensor)
+                            else grad_norm,
+                            "train/vram_allocated_gb": vram_alloc,
+                            "train/vram_reserved_gb": vram_reserved,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
 
             accum_loss = 0.0
 
@@ -223,10 +229,7 @@ def evaluate(
     device = next(model.parameters()).device
 
     for batch in val_loader:
-        batch = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
-            for k, v in batch.items()
-        }
+        batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         with torch.amp.autocast("cuda", dtype=torch.float16):
             loss, _ = compute_loss(model, batch, yes_id=yes_id, no_id=no_id, lm_head=lm_head)
@@ -273,80 +276,18 @@ def train_stage(
     lm_head = find_lm_head(model)
 
     # DataLoaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=train_config.per_device_train_batch_size,
-        shuffle=True,
-        collate_fn=collate_fn,
-        num_workers=0,  # Kaggle: single worker to avoid memory issues
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=train_config.per_device_train_batch_size,
-        shuffle=False,
-        collate_fn=collate_fn,
-        num_workers=0,
-        pin_memory=True,
-    )
+    train_loader, val_loader = _setup_dataloaders(train_dataset, val_dataset, train_config)
 
-    # Optimizer (paged AdamW 8-bit for VRAM efficiency)
-    import bitsandbytes as bnb
-
-    optimizer = bnb.optim.PagedAdamW8bit(
-        model.parameters(),
-        lr=stage_config.learning_rate,
-        weight_decay=train_config.weight_decay,
-    )
-
-    # LR scheduler
-    total_steps = (
-        len(train_loader)
-        // train_config.gradient_accumulation_steps
-        * stage_config.num_epochs
-    )
-    warmup_steps = int(total_steps * stage_config.warmup_ratio)
-
-    from transformers import get_cosine_schedule_with_warmup
-
-    scheduler = get_cosine_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps,
+    # Optimizer & LR scheduler
+    optimizer, scheduler = _setup_optimizer_and_scheduler(
+        model, train_loader, stage_config, train_config
     )
 
     # FP16 GradScaler
     scaler = torch.amp.GradScaler("cuda")
 
     # MLflow setup
-    if train_config.mlflow_tracking_uri:
-        mlflow.set_tracking_uri(train_config.mlflow_tracking_uri)
-    mlflow.set_experiment(train_config.mlflow_experiment_name)
-    mlflow_run = mlflow.start_run(
-        run_name=f"stage-{stage_config.stage.value}",
-        tags={
-            "stage": str(stage_config.stage.value),
-            "model": train_config.base_model_id,
-            "hardware": "kaggle-t4-16gb",
-        },
-    )
-
-    # Log config
-    mlflow.log_params({
-        "stage": stage_config.stage.value,
-        "learning_rate": stage_config.learning_rate,
-        "num_epochs": stage_config.num_epochs,
-        "effective_batch_size": (
-            train_config.per_device_train_batch_size
-            * train_config.gradient_accumulation_steps
-        ),
-        "max_seq_length": train_config.data.max_seq_length,
-        "lora_r": train_config.lora.r,
-        "lora_alpha": train_config.lora.lora_alpha,
-        "replay_ratio": stage_config.replay_ratio,
-        "train_samples": len(train_dataset),
-        "val_samples": len(val_dataset),
-    })
+    mlflow_run = _init_mlflow(stage_config, train_config, train_dataset, val_dataset)
 
     # Training loop
     global_step = 0
@@ -375,26 +316,26 @@ def train_stage(
         # Evaluate
         val_loss = evaluate(model, val_loader, lm_head, yes_id, no_id)
 
-        mlflow.log_metrics({
-            "eval/val_loss": val_loss,
-            "train/epoch_loss": train_loss,
-            "train/epoch_time_s": epoch_time,
-        }, step=global_step)
+        mlflow.log_metrics(
+            {
+                "eval/val_loss": val_loss,
+                "train/epoch_loss": train_loss,
+                "train/epoch_time_s": epoch_time,
+            },
+            step=global_step,
+        )
 
         # Save best checkpoint
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            best_ckpt_path.mkdir(parents=True, exist_ok=True)
-            model.save_pretrained(str(best_ckpt_path))
-            processor.save_pretrained(str(best_ckpt_path))
+            _save_checkpoint(model, processor, best_ckpt_path)
         else:
             patience_counter += 1
 
         # Save epoch checkpoint
         epoch_ckpt = train_config.output_dir / f"stage{stage_config.stage.value}_epoch{epoch}"
-        epoch_ckpt.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(str(epoch_ckpt))
+        _save_checkpoint(model, processor, epoch_ckpt)
 
         # Early stopping
         if patience_counter >= stage_config.early_stopping_patience:
@@ -405,6 +346,108 @@ def train_stage(
     mlflow.end_run()
 
     return best_ckpt_path
+
+
+def _setup_dataloaders(
+    train_dataset: MmRerankDataset,
+    val_dataset: MmRerankDataset,
+    train_config: TrainConfig,
+) -> tuple[DataLoader, DataLoader]:
+    """Initialize training and validation DataLoaders."""
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=train_config.per_device_train_batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+        num_workers=0,  # Kaggle: single worker to avoid memory issues
+        pin_memory=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=train_config.per_device_train_batch_size,
+        shuffle=False,
+        collate_fn=collate_fn,
+        num_workers=0,
+        pin_memory=True,
+    )
+    return train_loader, val_loader
+
+
+def _setup_optimizer_and_scheduler(
+    model: torch.nn.Module,
+    train_loader: DataLoader,
+    stage_config: StageConfig,
+    train_config: TrainConfig,
+) -> tuple[torch.optim.Optimizer, Any]:
+    """Setup optimizer and cosine LR scheduler."""
+    import bitsandbytes as bnb
+    from transformers import get_cosine_schedule_with_warmup
+
+    optimizer = bnb.optim.PagedAdamW8bit(
+        model.parameters(),
+        lr=stage_config.learning_rate,
+        weight_decay=train_config.weight_decay,
+    )
+
+    total_steps = (
+        len(train_loader) // train_config.gradient_accumulation_steps * stage_config.num_epochs
+    )
+    warmup_steps = int(total_steps * stage_config.warmup_ratio)
+
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps,
+    )
+    return optimizer, scheduler
+
+
+def _init_mlflow(
+    stage_config: StageConfig,
+    train_config: TrainConfig,
+    train_dataset: MmRerankDataset,
+    val_dataset: MmRerankDataset,
+) -> Any:
+    """Initialize MLflow experiment, run, and parameters."""
+    import mlflow
+
+    if train_config.mlflow_tracking_uri:
+        mlflow.set_tracking_uri(train_config.mlflow_tracking_uri)
+    mlflow.set_experiment(train_config.mlflow_experiment_name)
+
+    run = mlflow.start_run(
+        run_name=f"stage-{stage_config.stage.value}",
+        tags={
+            "stage": str(stage_config.stage.value),
+            "model": train_config.base_model_id,
+            "hardware": "kaggle-t4-16gb",
+        },
+    )
+
+    mlflow.log_params(
+        {
+            "stage": stage_config.stage.value,
+            "learning_rate": stage_config.learning_rate,
+            "num_epochs": stage_config.num_epochs,
+            "effective_batch_size": (
+                train_config.per_device_train_batch_size * train_config.gradient_accumulation_steps
+            ),
+            "max_seq_length": train_config.data.max_seq_length,
+            "lora_r": train_config.lora.r,
+            "lora_alpha": train_config.lora.lora_alpha,
+            "replay_ratio": stage_config.replay_ratio,
+            "train_samples": len(train_dataset),
+            "val_samples": len(val_dataset),
+        }
+    )
+    return run
+
+
+def _save_checkpoint(model: Any, processor: Any, path: Path) -> None:
+    """Save PEFT model and processor to disk."""
+    path.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(str(path))
+    processor.save_pretrained(str(path))
 
 
 def _log_metrics(run, metrics: dict, step: int) -> None:
