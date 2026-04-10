@@ -10,17 +10,49 @@ Implements the core training logic for all 3 stages:
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as functional
+from loguru import logger
 from torch.utils.data import DataLoader
 
-from .config import StageConfig, TrainConfig
 from .dataset import MmRerankDataset, collate_fn
 from .model import find_lm_head
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .config import StageConfig, TrainConfig
+
+
+def _resolve_binary_token_ids(tokenizer) -> tuple[int, int]:
+    """Resolve stable token IDs for yes/no scoring.
+
+    Falls back across variants because some tokenizers split plain "yes"/"no"
+    differently depending on leading spaces and normalization rules.
+    """
+    yes_candidates = ["yes", " yes", "Yes", " Yes"]
+    no_candidates = ["no", " no", "No", " No"]
+
+    def _pick(candidates: list[str], name: str) -> int:
+        for text in candidates:
+            ids = tokenizer.encode(text, add_special_tokens=False)
+            if ids:
+                token_id = ids[-1]
+                if len(ids) > 1:
+                    logger.warning(
+                        "Token '{}' for {} splits into {} tokens; using last token id {}",
+                        text,
+                        name,
+                        len(ids),
+                        token_id,
+                    )
+                return token_id
+        raise ValueError(f"Unable to resolve token id for {name}")
+
+    return _pick(yes_candidates, "yes"), _pick(no_candidates, "no")
 
 
 def compute_loss(
@@ -49,11 +81,12 @@ def compute_loss(
     Returns:
         (loss, metrics_dict) where metrics_dict has loss_ce, loss_kd, etc.
     """
-    outputs = model(
-        input_ids=inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-        output_hidden_states=True,
-    )
+    model_inputs = {
+        k: v
+        for k, v in inputs.items()
+        if k not in {"labels", "teacher_scores"}
+    }
+    outputs = model(output_hidden_states=True, **model_inputs)
 
     # Extract last hidden state at last non-padding position
     hidden = outputs.hidden_states[-1]  # (B, seq_len, hidden_dim)
@@ -61,7 +94,7 @@ def compute_loss(
     last_h = hidden[torch.arange(hidden.size(0)), seq_lengths]  # (B, hidden_dim)
 
     # Compute yes/no logits via lm_head weight
-    logits = F.linear(last_h, lm_head.weight)  # (B, vocab_size)
+    logits = functional.linear(last_h, lm_head.weight)  # (B, vocab_size)
     yes_logit = logits[:, yes_id]  # (B,)
     no_logit = logits[:, no_id]  # (B,)
     logits_yes_no = torch.stack([yes_logit, no_logit], dim=-1)  # (B, 2)
@@ -69,7 +102,7 @@ def compute_loss(
     labels = inputs["labels"]  # (B,) — 0=yes, 1=no
 
     # Cross-entropy loss
-    loss_ce = F.cross_entropy(logits_yes_no, labels)
+    loss_ce = functional.cross_entropy(logits_yes_no, labels)
 
     metrics = {"loss_ce": loss_ce.item()}
 
@@ -81,9 +114,9 @@ def compute_loss(
         teacher_no = 1.0 - teacher_scores
         teacher_logits = torch.stack([teacher_yes, teacher_no], dim=-1)  # (B, 2)
 
-        teacher_probs = F.softmax(teacher_logits / kd_temperature, dim=-1)
-        student_log_probs = F.log_softmax(logits_yes_no / kd_temperature, dim=-1)
-        loss_kd = F.kl_div(student_log_probs, teacher_probs, reduction="batchmean")
+        teacher_probs = functional.softmax(teacher_logits / kd_temperature, dim=-1)
+        student_log_probs = functional.log_softmax(logits_yes_no / kd_temperature, dim=-1)
+        loss_kd = functional.kl_div(student_log_probs, teacher_probs, reduction="batchmean")
 
         loss = (1 - kd_alpha) * loss_ce + kd_alpha * loss_kd * (kd_temperature**2)
         metrics["loss_kd"] = loss_kd.item()
@@ -265,11 +298,14 @@ def train_stage(
     Returns:
         Path to best checkpoint directory.
     """
-    import mlflow
+    try:
+        import mlflow  # type: ignore
+    except Exception:
+        mlflow = None
+        logger.warning("MLflow is unavailable; training will continue without MLflow logging")
 
     # Get yes/no token IDs
-    yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
-    no_id = processor.tokenizer.convert_tokens_to_ids("no")
+    yes_id, no_id = _resolve_binary_token_ids(processor.tokenizer)
     lm_head = find_lm_head(model)
 
     # DataLoaders
@@ -318,35 +354,38 @@ def train_stage(
     # FP16 GradScaler
     scaler = torch.amp.GradScaler("cuda")
 
-    # MLflow setup
-    if train_config.mlflow_tracking_uri:
-        mlflow.set_tracking_uri(train_config.mlflow_tracking_uri)
-    mlflow.set_experiment(train_config.mlflow_experiment_name)
-    mlflow_run = mlflow.start_run(
-        run_name=f"stage-{stage_config.stage.value}",
-        tags={
-            "stage": str(stage_config.stage.value),
-            "model": train_config.base_model_id,
-            "hardware": "kaggle-t4-16gb",
-        },
-    )
+    # MLflow setup (optional)
+    mlflow_run = None
+    if mlflow is not None:
+        if train_config.mlflow_tracking_uri:
+            mlflow.set_tracking_uri(train_config.mlflow_tracking_uri)
+        mlflow.set_experiment(train_config.mlflow_experiment_name)
+        mlflow_run = mlflow.start_run(
+            run_name=f"stage-{stage_config.stage.value}",
+            tags={
+                "stage": str(stage_config.stage.value),
+                "model": train_config.base_model_id,
+                "hardware": "kaggle-t4-16gb",
+            },
+        )
 
-    # Log config
-    mlflow.log_params({
-        "stage": stage_config.stage.value,
-        "learning_rate": stage_config.learning_rate,
-        "num_epochs": stage_config.num_epochs,
-        "effective_batch_size": (
-            train_config.per_device_train_batch_size
-            * train_config.gradient_accumulation_steps
-        ),
-        "max_seq_length": train_config.data.max_seq_length,
-        "lora_r": train_config.lora.r,
-        "lora_alpha": train_config.lora.lora_alpha,
-        "replay_ratio": stage_config.replay_ratio,
-        "train_samples": len(train_dataset),
-        "val_samples": len(val_dataset),
-    })
+        mlflow.log_params({
+            "stage": stage_config.stage.value,
+            "learning_rate": stage_config.learning_rate,
+            "num_epochs": stage_config.num_epochs,
+            "effective_batch_size": (
+                train_config.per_device_train_batch_size
+                * train_config.gradient_accumulation_steps
+            ),
+            "max_seq_length": train_config.data.max_seq_length,
+            "lora_r": train_config.lora.r,
+            "lora_alpha": train_config.lora.lora_alpha,
+            "replay_ratio": stage_config.replay_ratio,
+            "train_samples": len(train_dataset),
+            "val_samples": len(val_dataset),
+            "yes_token_id": yes_id,
+            "no_token_id": no_id,
+        })
 
     # Training loop
     global_step = 0
@@ -375,11 +414,12 @@ def train_stage(
         # Evaluate
         val_loss = evaluate(model, val_loader, lm_head, yes_id, no_id)
 
-        mlflow.log_metrics({
-            "eval/val_loss": val_loss,
-            "train/epoch_loss": train_loss,
-            "train/epoch_time_s": epoch_time,
-        }, step=global_step)
+        if mlflow_run:
+            mlflow.log_metrics({
+                "eval/val_loss": val_loss,
+                "train/epoch_loss": train_loss,
+                "train/epoch_time_s": epoch_time,
+            }, step=global_step)
 
         # Save best checkpoint
         if val_loss < best_val_loss:
@@ -398,17 +438,22 @@ def train_stage(
 
         # Early stopping
         if patience_counter >= stage_config.early_stopping_patience:
-            mlflow.log_metric("train/early_stopped_epoch", epoch, step=global_step)
+            if mlflow_run:
+                mlflow.log_metric("train/early_stopped_epoch", epoch, step=global_step)
             break
 
-    mlflow.log_metric("eval/best_val_loss", best_val_loss, step=global_step)
-    mlflow.end_run()
+    if mlflow_run:
+        mlflow.log_metric("eval/best_val_loss", best_val_loss, step=global_step)
+        mlflow.end_run()
 
     return best_ckpt_path
 
 
 def _log_metrics(run, metrics: dict, step: int) -> None:
     """Log metrics to MLflow (safe import)."""
-    import mlflow
+    try:
+        import mlflow  # type: ignore
+    except Exception:
+        return
 
     mlflow.log_metrics(metrics, step=step)
