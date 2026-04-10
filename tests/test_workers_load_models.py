@@ -6,6 +6,8 @@ the container-startup code that cannot be reached via HTTP routes.
 
 from __future__ import annotations
 
+from ai_workers.workers.vl_reranker import VLElement
+
 from unittest.mock import MagicMock, patch
 
 from ai_workers.workers.embedding import EmbeddingServer
@@ -301,7 +303,11 @@ def test_vl_reranker_score_pair_text_only():
     server.processors = {"qwen3-vl-reranker-8b": mock_processor}
     server.yes_no_weights = {"qwen3-vl-reranker-8b": yes_no_weight}
 
-    score = server._score_pair("qwen3-vl-reranker-8b", "query", "document")
+    score = server._score_pair(
+        "qwen3-vl-reranker-8b",
+        VLElement(text="query"),
+        VLElement(text="document"),
+    )
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0
 
@@ -341,10 +347,8 @@ def test_vl_reranker_score_pair_with_images():
     with patch("ai_workers.common.utils.load_image_from_url", return_value=mock_image):
         score = server._score_pair(
             "qwen3-vl-reranker-8b",
-            "query",
-            "document",
-            query_image=mock_image,
-            document_image=mock_image,
+            VLElement(text="query", image=mock_image),
+            VLElement(text="document", image=mock_image),
         )
     assert isinstance(score, float)
     assert 0.0 <= score <= 1.0

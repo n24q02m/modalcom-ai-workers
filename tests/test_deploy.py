@@ -146,22 +146,22 @@ class TestDeployAllGrouping:
         assert len(modules["ai_workers.workers.asr"]) == 2
 
     def test_total_unique_modules(self) -> None:
-        """Should have 7 unique worker modules for 11 models."""
+        """Should have 8 unique worker modules for 12 models."""
         modules = {c.worker_module for c in MODEL_REGISTRY.values() if c.worker_module}
-        assert len(modules) == 7
+        assert len(modules) == 8
 
     def test_total_unique_deploy_targets(self) -> None:
-        """Merged apps: should have 7 unique (module, app_var) pairs for 11 models.
+        """Merged apps: should have 8 unique (module, app_var) pairs for 12 models.
 
         Embedding, VL Embedding, TTS, ASR each merge light+heavy into one app.
-        Reranker and VL Reranker have single 8B model each. Plus OCR = 7 total.
+        Reranker and VL Reranker have single 8B model each. Plus OCR and MM Reranker = 8 total.
         """
         targets = {
             (c.worker_module, c.modal_app_var)
             for c in MODEL_REGISTRY.values()
             if c.worker_module and c.modal_app_var
         }
-        assert len(targets) == 7
+        assert len(targets) == 8
 
     def test_merged_apps_share_app_var(self) -> None:
         """Light and heavy variants of merged tasks should share the same modal_app_var."""

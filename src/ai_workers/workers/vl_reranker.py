@@ -12,8 +12,10 @@ Supports text-only and image+text multimodal query/document pairs.
 
 Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
+
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import modal
@@ -43,6 +45,15 @@ RERANKER_SYSTEM_PROMPT = (
 
 # Default instruction when none provided by caller
 DEFAULT_INSTRUCTION = "Retrieval relevant image or text with user's query"
+
+
+@dataclass
+class VLElement:
+    """Represents a text and optional image for Vision-Language tasks."""
+
+    text: str
+    image: Any | None = None
+
 
 vl_reranker_app = modal.App(
     "ai-workers-vl-reranker",
@@ -113,10 +124,8 @@ class VLRerankerServer:
     def _score_batch(
         self,
         model_name: str,
-        query: str,
-        documents: list[str],
-        document_images: list[Any | None],
-        query_image: Any | None = None,
+        query: VLElement,
+        documents: list[VLElement],
         instruction: str | None = None,
     ) -> list[float]:
         """Score a batch of query-document pairs using optimized chunked inference.
@@ -137,25 +146,24 @@ class VLRerankerServer:
         batch_size = 4  # Small batch size for A10G memory safety with VL models
 
         for i in range(0, len(documents), batch_size):
-            chunk_docs = documents[i : i + batch_size]
-            chunk_doc_images = document_images[i : i + batch_size]
+            chunk = documents[i : i + batch_size]
 
             chunk_messages = []
             chunk_images = []
 
-            for doc_text, doc_image in zip(chunk_docs, chunk_doc_images, strict=True):
+            for doc in chunk:
                 content_parts = []
                 images = []
-                if query_image:
-                    content_parts.append({"type": "image", "image": query_image})
-                    images.append(query_image)
+                if query.image:
+                    content_parts.append({"type": "image", "image": query.image})
+                    images.append(query.image)
                 content_parts.append(
-                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query}"}
+                    {"type": "text", "text": f"<Instruct>: {instruction}\n<Query>: {query.text}"}
                 )
-                if doc_image:
-                    content_parts.append({"type": "image", "image": doc_image})
-                    images.append(doc_image)
-                content_parts.append({"type": "text", "text": f"\n<Document>: {doc_text}"})
+                if doc.image:
+                    content_parts.append({"type": "image", "image": doc.image})
+                    images.append(doc.image)
+                content_parts.append({"type": "text", "text": f"\n<Document>: {doc.text}"})
 
                 messages = [
                     {"role": "system", "content": RERANKER_SYSTEM_PROMPT},
@@ -211,10 +219,8 @@ class VLRerankerServer:
     def _score_pair(
         self,
         model_name: str,
-        query: str,
-        document: str,
-        query_image: Any | None = None,
-        document_image: Any | None = None,
+        query: VLElement,
+        document: VLElement,
         instruction: str | None = None,
     ) -> float:
         """Score a single query-document pair using optimized yes/no logit scoring.
@@ -225,8 +231,6 @@ class VLRerankerServer:
             model_name,
             query,
             [document],
-            [document_image],
-            query_image=query_image,
             instruction=instruction,
         )
         if not scores:
@@ -328,12 +332,18 @@ class VLRerankerServer:
                     doc_images.append(image_map.get(doc.image_url) if doc.image_url else None)
 
             # Score all documents in a single batched call
+            query_elem = VLElement(
+                text=body.query,
+                image=image_map.get(body.query_image_url) if body.query_image_url else None,
+            )
+            doc_elems = [
+                VLElement(text=text, image=image)
+                for text, image in zip(doc_texts, doc_images, strict=True)
+            ]
             scores = self._score_batch(
                 body.model,
-                body.query,
-                doc_texts,
-                doc_images,
-                query_image=image_map.get(body.query_image_url) if body.query_image_url else None,
+                query_elem,
+                doc_elems,
             )
 
             # Build results

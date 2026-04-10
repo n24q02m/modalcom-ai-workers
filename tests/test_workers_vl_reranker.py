@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ai_workers.workers.vl_reranker import MODEL_CONFIGS, VLRerankerServer
+from ai_workers.workers.vl_reranker import MODEL_CONFIGS, VLElement, VLRerankerServer
 
 
 @pytest.fixture()
@@ -94,8 +94,13 @@ def test_rerank_text_only_docs(server):
     assert len(data["results"]) == 2
     # Verify _score_batch called with text-only (no image URLs)
     call_args = server._score_batch.call_args
-    assert call_args.kwargs.get("query_image") is None
-    assert call_args.args[3] == [None, None]  # document_images
+    query_elem = call_args.args[1]
+    doc_elems = call_args.args[2]
+    assert query_elem.text == "What is AI?"
+    assert query_elem.image is None
+    assert len(doc_elems) == 2
+    assert doc_elems[0].text == "AI is artificial intelligence."
+    assert doc_elems[0].image is None
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +136,9 @@ def test_rerank_multimodal_docs(server):
     assert len(data["results"]) == 2
     # Verify document_images in call
     call_args = server._score_batch.call_args
-    assert call_args.args[3] == ["mock_img", None]
+    doc_elems = call_args.args[2]
+    assert doc_elems[0].image == "mock_img"
+    assert doc_elems[1].image is None
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +228,8 @@ def test_rerank_with_query_image_url(server):
 
     assert resp.status_code == 200
     call_args = server._score_batch.call_args
-    assert call_args.kwargs.get("query_image") == "mock_img"
+    query_elem = call_args.args[1]
+    assert query_elem.image == "mock_img"
 
 
 # ---------------------------------------------------------------------------
