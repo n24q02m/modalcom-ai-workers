@@ -11,6 +11,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.images import transformers_mm_reranker_image
@@ -185,9 +187,9 @@ class MmRerankerServer:
         model_name: str,
         query: str,
         document: str,
-        query_image_url: str | None = None,
-        query_audio_url: str | None = None,
-        query_video_url: str | None = None,
+        query_image: Any | None = None,
+        query_audio: Any | None = None,
+        query_video_frames: list[Any] | None = None,
         doc_image_url: str | None = None,
         doc_audio_url: str | None = None,
         doc_video_url: str | None = None,
@@ -208,16 +210,14 @@ class MmRerankerServer:
         audios = []
 
         # Query media (before text, per Google guidance)
-        if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
-        if query_audio_url:
-            content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
-            audios.append(audio_data)
-        if query_video_url:
-            frames = self._load_video_frames(query_video_url)
-            for frame in frames:
+        if query_image:
+            content_parts.append({"type": "image", "image": query_image})
+            images.append(query_image)
+        if query_audio:
+            content_parts.append({"type": "audio", "audio": query_audio})
+            audios.append(query_audio)
+        if query_video_frames:
+            for frame in query_video_frames:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
@@ -229,7 +229,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _ = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
@@ -237,9 +237,7 @@ class MmRerankerServer:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -349,38 +347,44 @@ class MmRerankerServer:
             }
 
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
+            import asyncio
+
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
+                )
+
+            # Cache query media once (before document loop)
+            query_image = None
+            if body.query_image:
+                query_image = await asyncio.to_thread(self._load_image, body.query_image)
+
+            query_audio = None
+            if body.query_audio:
+                # _load_audio returns (data, sr)
+                audio_data, _ = await asyncio.to_thread(self._load_audio, body.query_audio)
+                query_audio = audio_data
+
+            query_video_frames = None
+            if body.query_video:
+                query_video_frames = await asyncio.to_thread(
+                    self._load_video_frames, body.query_video
                 )
 
             results = []
             for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+                doc_image = body.doc_images[i] if body.doc_images is not None else None
+                doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+                doc_video = body.doc_videos[i] if body.doc_videos is not None else None
 
                 try:
                     score = self._score_pair(
                         body.model,
                         body.query,
                         doc_text,
-                        query_image_url=body.query_image,
-                        query_audio_url=body.query_audio,
-                        query_video_url=body.query_video,
+                        query_image=query_image,
+                        query_audio=query_audio,
+                        query_video_frames=query_video_frames,
                         doc_image_url=doc_image,
                         doc_audio_url=doc_audio,
                         doc_video_url=doc_video,
@@ -391,9 +395,7 @@ class MmRerankerServer:
                     from loguru import logger
 
                     logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+                    raise ValueError(f"Failed to score document {i}: {e}") from e
 
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:

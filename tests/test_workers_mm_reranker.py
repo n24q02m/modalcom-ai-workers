@@ -104,9 +104,9 @@ def test_rerank_text_only(server):
     assert len(data["results"]) == 2
     # All media params should be None for text-only
     for call_args in server._score_pair.call_args_list:
-        assert call_args.kwargs.get("query_image_url") is None
-        assert call_args.kwargs.get("query_audio_url") is None
-        assert call_args.kwargs.get("query_video_url") is None
+        assert call_args.kwargs.get("query_image") is None
+        assert call_args.kwargs.get("query_audio") is None
+        assert call_args.kwargs.get("query_video_frames") is None
         assert call_args.kwargs.get("doc_image_url") is None
         assert call_args.kwargs.get("doc_audio_url") is None
         assert call_args.kwargs.get("doc_video_url") is None
@@ -205,6 +205,7 @@ def test_rerank_no_return_documents_by_default(server):
 
 
 def test_rerank_with_query_image(server):
+    server._load_image = MagicMock(return_value=MagicMock())
     server._score_pair = MagicMock(return_value=0.7)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -223,7 +224,7 @@ def test_rerank_with_query_image(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_image_url") == "http://example.com/query.jpg"
+    assert "query_image" in call_args.kwargs
 
 
 def test_rerank_with_doc_images(server):
@@ -273,6 +274,7 @@ def test_rerank_doc_images_length_mismatch(server):
 
 
 def test_rerank_with_query_audio(server):
+    server._load_audio = MagicMock(return_value=(MagicMock(), 16000))
     server._score_pair = MagicMock(return_value=0.6)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -291,7 +293,7 @@ def test_rerank_with_query_audio(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_audio_url") == "http://example.com/query.wav"
+    assert "query_audio" in call_args.kwargs
 
 
 def test_rerank_with_doc_audios(server):
@@ -341,6 +343,7 @@ def test_rerank_doc_audios_length_mismatch(server):
 
 
 def test_rerank_with_query_video(server):
+    server._load_video_frames = MagicMock(return_value=[MagicMock()])
     server._score_pair = MagicMock(return_value=0.5)
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
@@ -359,7 +362,7 @@ def test_rerank_with_query_video(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_video_url") == "http://example.com/video.mp4"
+    assert "query_video_frames" in call_args.kwargs
 
 
 def test_rerank_with_doc_videos(server):
@@ -409,6 +412,9 @@ def test_rerank_doc_videos_length_mismatch(server):
 
 
 def test_rerank_mixed_modalities(server):
+    server._load_image = MagicMock(return_value=MagicMock())
+    server._load_audio = MagicMock(return_value=(MagicMock(), 16000))
+    server._load_video_frames = MagicMock(return_value=[MagicMock()])
     """Test request with image, audio, and video together."""
     server._score_pair = MagicMock(return_value=0.85)
 
@@ -433,9 +439,11 @@ def test_rerank_mixed_modalities(server):
 
     assert resp.status_code == 200
     call_args = server._score_pair.call_args
-    assert call_args.kwargs.get("query_image_url") == "http://example.com/qi.jpg"
-    assert call_args.kwargs.get("query_audio_url") == "http://example.com/qa.wav"
-    assert call_args.kwargs.get("query_video_url") == "http://example.com/qv.mp4"
+    # In updated implementation, query media are pre-loaded and passed as data
+    # We check if _score_pair was called (URLs are no longer passed for query media)
+    assert "query_image" in call_args.kwargs
+    assert "query_audio" in call_args.kwargs
+    assert "query_video_frames" in call_args.kwargs
     assert call_args.kwargs.get("doc_image_url") == "http://example.com/di.jpg"
     assert call_args.kwargs.get("doc_audio_url") == "http://example.com/da.wav"
     assert call_args.kwargs.get("doc_video_url") == "http://example.com/dv.mp4"
