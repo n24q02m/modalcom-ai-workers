@@ -36,6 +36,8 @@ MAX_AUDIO_DURATION_S = 30.0
 MAX_VIDEO_DURATION_S = 60.0
 MAX_VIDEO_FRAMES = 8
 MEDIA_DOWNLOAD_TIMEOUT_S = 30
+MAX_AUDIO_SIZE = 20 * 1024 * 1024
+MAX_VIDEO_SIZE = 50 * 1024 * 1024
 
 mm_reranker_app = modal.App(
     "ai-workers-mm-reranker",
@@ -97,31 +99,30 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
+        """Load a PIL Image from URL with SSRF protection."""
+        from ai_workers.common.utils import load_image_from_url
 
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        return load_image_from_url(url)
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
-        """Load audio from URL as numpy array @ original sample rate.
+        """Load audio from URL as numpy array @ original sample rate with SSRF protection.
 
         Returns (waveform_np, sample_rate).
-        Raises ValueError if duration > MAX_AUDIO_DURATION_S.
+        Raises ValueError if duration > MAX_AUDIO_DURATION_S or fetch fails.
         """
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        audio_bytes = fetch_url_safely(
+            url, max_size=MAX_AUDIO_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S, label="Audio"
+        )
 
         # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        buf = io.BytesIO(audio_bytes)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -134,22 +135,24 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_video_frames(url: str) -> list:
-        """Download video and extract uniform frames.
+        """Download video and extract uniform frames with SSRF protection.
 
         Returns list of PIL.Image (RGB), max MAX_VIDEO_FRAMES.
-        Raises ValueError if duration > MAX_VIDEO_DURATION_S.
+        Raises ValueError if duration > MAX_VIDEO_DURATION_S or fetch fails.
         """
         import tempfile
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        video_bytes = fetch_url_safely(
+            url, max_size=MAX_VIDEO_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S, label="Video"
+        )
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(video_bytes)
             tmp.flush()
 
             container = av.open(tmp.name)
@@ -213,7 +216,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _sr = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +232,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _sr = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)

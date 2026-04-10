@@ -1,6 +1,6 @@
 """Extra tests for cli/deploy.py covering --all flag, list command, and skip cases.
 
-Covers previously uncovered lines: 38-80, 133-138, 153-154, 157-158, 170-192.
+Covers previously uncovered lines: 38-80, 133-138, 153-154, 158-158, 180-192.
 """
 
 from __future__ import annotations
@@ -41,9 +41,9 @@ class TestDeployAllFlag:
         mock_subprocess.run.return_value = MagicMock(returncode=0)
         result = self._invoke(["--all"])
         assert result.exit_code == 0
-        # There are 7 unique deploy targets in the registry
+        # There are 8 unique deploy targets in the registry
         # (embedding, reranker, vl_embedding, vl_reranker, ocr, tts, asr)
-        assert mock_subprocess.run.call_count == 7
+        assert mock_subprocess.run.call_count == 8
 
     @patch("ai_workers.cli.deploy.subprocess")
     def test_all_partial_failure_exits_nonzero(self, mock_subprocess: MagicMock) -> None:
@@ -71,7 +71,7 @@ class TestDeployAllFlag:
 
 
 class TestDeployWorkerNone:
-    """Tests for when worker=None and --all is not set (lines 76-79)."""
+    """Tests for when worker=None and --all is not set (lines 86-89)."""
 
     def _invoke(self, args: list[str]):
         runner = typer.testing.CliRunner()
@@ -158,7 +158,7 @@ class TestDeployModuleErrors:
 
 
 class TestDeployListSubcommand:
-    """Tests for list_workers function (lines 167-192)."""
+    """Tests for list_workers function (lines 168-192)."""
 
     def test_list_shows_table(self) -> None:
         """list_workers should print a Rich table without error."""
