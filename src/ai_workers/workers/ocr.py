@@ -17,7 +17,13 @@ LiteLLM integration:
   api_base: https://<modal-url>
 """
 
+import asyncio
+import uuid
+
 import modal
+from fastapi import Body, FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ai_workers.common.config import get_model
 from ai_workers.common.images import transformers_image
@@ -27,6 +33,43 @@ SCALEDOWN_WINDOW = 300
 KEEP_WARM = 0
 MODEL_NAME = "deepseek-ocr-2"
 HF_ID = "deepseek-ai/DeepSeek-OCR-2"
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str | list[dict]
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str = MODEL_NAME
+    messages: list[ChatMessage]
+    max_tokens: int = 4096
+    temperature: float = 0.0
+
+
+class Choice(BaseModel):
+    index: int = 0
+    message: dict[str, str]
+    finish_reason: str = "stop"
+
+
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    model: str
+    choices: list[Choice]
+    usage: Usage
+
+
+# Rebuild to resolve forward references (list[dict] in ChatMessage.content)
+ChatMessage.model_rebuild()
+ChatCompletionRequest.model_rebuild()
 
 ocr_app = modal.App(
     "ai-workers-deepseek-ocr-2",
@@ -139,46 +182,58 @@ class OCRServer:
             result = self.processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             return result[0] if result else ""
 
+    async def _handle_chat_completions(self, body: ChatCompletionRequest):
+        """Core logic for OpenAI-compatible chat completion OCR requests."""
+        # Extract the last user message with image
+        text_prompt = ""
+        image = None
+
+        for msg in reversed(body.messages):
+            if msg.role == "user":
+                if isinstance(msg.content, list):
+                    text_prompt, image_url = self._process_image_content(msg.content)
+                    if image_url:
+                        try:
+                            image = await asyncio.to_thread(self._load_image_from_url, image_url)
+                        except (ValueError, RuntimeError) as exc:
+                            return JSONResponse(status_code=400, content={"error": str(exc)})
+                elif isinstance(msg.content, str):
+                    text_prompt = msg.content
+                break
+
+        if image is None:
+            return ChatCompletionResponse(
+                id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                model=body.model,
+                choices=[
+                    Choice(
+                        message={
+                            "role": "assistant",
+                            "content": "Error: No image provided. Please send an image for OCR.",
+                        },
+                        finish_reason="stop",
+                    )
+                ],
+                usage=Usage(),
+            )
+
+        result = await asyncio.to_thread(self._run_ocr, image, text_prompt)
+
+        return ChatCompletionResponse(
+            id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            model=body.model,
+            choices=[
+                Choice(
+                    message={"role": "assistant", "content": result},
+                    finish_reason="stop",
+                )
+            ],
+            usage=Usage(),
+        )
+
     @modal.asgi_app()
     def serve(self):
-        import asyncio
-
-        from fastapi import Body, FastAPI, Request
-        from fastapi.responses import JSONResponse
-        from pydantic import BaseModel
-
         app = FastAPI(title="DeepSeek OCR v2")
-
-        class ChatMessage(BaseModel):
-            role: str
-            content: str | list[dict]
-
-        class ChatCompletionRequest(BaseModel):
-            model: str = MODEL_NAME
-            messages: list[ChatMessage]
-            max_tokens: int = 4096
-            temperature: float = 0.0
-
-        class Choice(BaseModel):
-            index: int = 0
-            message: dict[str, str]
-            finish_reason: str = "stop"
-
-        class Usage(BaseModel):
-            prompt_tokens: int = 0
-            completion_tokens: int = 0
-            total_tokens: int = 0
-
-        class ChatCompletionResponse(BaseModel):
-            id: str
-            object: str = "chat.completion"
-            model: str
-            choices: list[Choice]
-            usage: Usage
-
-        # Rebuild to resolve forward references (list[dict] in ChatMessage.content)
-        ChatMessage.model_rebuild()
-        ChatCompletionRequest.model_rebuild()
 
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
@@ -203,55 +258,6 @@ class OCRServer:
 
         @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
         async def chat_completions(body: ChatCompletionRequest = Body(...)):
-            import uuid
-
-            # Extract the last user message with image
-            text_prompt = ""
-            image = None
-
-            for msg in reversed(body.messages):
-                if msg.role == "user":
-                    if isinstance(msg.content, list):
-                        text_prompt, image_url = self._process_image_content(msg.content)
-                        if image_url:
-                            try:
-                                image = await asyncio.to_thread(
-                                    self._load_image_from_url, image_url
-                                )
-                            except (ValueError, RuntimeError) as exc:
-                                return JSONResponse(status_code=400, content={"error": str(exc)})
-                    elif isinstance(msg.content, str):
-                        text_prompt = msg.content
-                    break
-
-            if image is None:
-                return ChatCompletionResponse(
-                    id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                    model=body.model,
-                    choices=[
-                        Choice(
-                            message={
-                                "role": "assistant",
-                                "content": "Error: No image provided. Please send an image for OCR.",
-                            },
-                            finish_reason="stop",
-                        )
-                    ],
-                    usage=Usage(),
-                )
-
-            result = await asyncio.to_thread(self._run_ocr, image, text_prompt)
-
-            return ChatCompletionResponse(
-                id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                model=body.model,
-                choices=[
-                    Choice(
-                        message={"role": "assistant", "content": result},
-                        finish_reason="stop",
-                    )
-                ],
-                usage=Usage(),
-            )
+            return await self._handle_chat_completions(body)
 
         return app
