@@ -60,6 +60,7 @@ packages = ["src/ai_workers"]
 
 # --- Ruff ---
 [tool.ruff]
+exclude = ["training/"]
 target-version = "py313"
 line-length = 100
 src = ["src", "tests"]
