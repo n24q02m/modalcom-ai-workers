@@ -10,11 +10,14 @@ Handles:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 
-from .config import LoraConfig as LoraConfigDC
-from .config import QuantConfig
+if TYPE_CHECKING:
+    from .config import LoraConfig as LoraConfigDC
+    from .config import QuantConfig
 
 
 def make_bnb_config(quant_cfg: QuantConfig):
@@ -105,9 +108,7 @@ def load_model_for_training(
     model.enable_input_require_grads()
 
     # Enable gradient checkpointing (saves ~40% activation VRAM)
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs={"use_reentrant": False}
-    )
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
     return model, processor
 
