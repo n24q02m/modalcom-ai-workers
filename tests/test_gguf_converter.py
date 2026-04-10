@@ -190,3 +190,102 @@ def test_gguf_convert_model_repo_not_found_swallows_exception():
     # Verify it continued to create_repo and upload_file
     mock_api_instance.create_repo.assert_called_once()
     mock_api_instance.upload_file.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# _upload_gguf_artifacts
+# ---------------------------------------------------------------------------
+
+
+def test_upload_gguf_artifacts_success():
+    from pathlib import Path
+
+    from ai_workers.workers.gguf_converter import _upload_gguf_artifacts
+
+    mock_api = MagicMock()
+    mock_config = GgufModelConfig(
+        name="test-model",
+        hf_source="org/source",
+        hf_target="org/target-GGUF",
+        gguf_name="test-model",
+        output_attr="last_hidden_state",
+    )
+
+    with (
+        patch(
+            "ai_workers.workers.gguf_converter._generate_gguf_model_card",
+            return_value="card content",
+        ) as mock_gen_card,
+        patch("huggingface_hub.hf_hub_download", return_value="/tmp/mock_file"),
+    ):
+        _upload_gguf_artifacts(
+            api=mock_api,
+            hf_target="org/target-GGUF",
+            hf_source="org/source",
+            hf_token="fake-token",
+            q4_path=Path("/tmp/model.gguf"),
+            gguf_filename="model.gguf",
+            gguf_repo_path="model.gguf",
+            quant_type="Q4_K_M",
+            q4_size=100.0,
+            config_obj=mock_config,
+        )
+
+    # Verify repo creation
+    mock_api.create_repo.assert_called_once_with(
+        repo_id="org/target-GGUF",
+        repo_type="model",
+        exist_ok=True,
+        private=False,
+    )
+
+    # Verify upload_file calls:
+    # 1. GGUF file
+    # 2. README.md
+    # 3. config.json
+    # 4. tokenizer.json
+    # 5. tokenizer_config.json
+    assert mock_api.upload_file.call_count == 5
+
+    # Check model card generation call
+    mock_gen_card.assert_called_once_with(mock_config, "model.gguf", 100.0)
+
+    # Check first upload call (GGUF)
+    _, kwargs = mock_api.upload_file.call_args_list[0]
+    assert "model.gguf" in str(kwargs["path_or_fileobj"])
+    assert kwargs["path_in_repo"] == "model.gguf"
+
+    # Check second upload call (README)
+    __, kwargs = mock_api.upload_file.call_args_list[1]
+    assert kwargs["path_or_fileobj"] == b"card content"
+    assert kwargs["path_in_repo"] == "README.md"
+
+
+def test_upload_gguf_artifacts_swallows_config_errors():
+    from pathlib import Path
+
+    from ai_workers.workers.gguf_converter import _upload_gguf_artifacts
+
+    mock_api = MagicMock()
+    mock_config = MagicMock(spec=GgufModelConfig)
+
+    # hf_hub_download fails for everything
+    with (
+        patch("ai_workers.workers.gguf_converter._generate_gguf_model_card", return_value="card"),
+        patch("huggingface_hub.hf_hub_download", side_effect=Exception("Not found")),
+    ):
+        _upload_gguf_artifacts(
+            api=mock_api,
+            hf_target="org/target",
+            hf_source="org/source",
+            hf_token="token",
+            q4_path=Path("/tmp/model.gguf"),
+            gguf_filename="model.gguf",
+            gguf_repo_path="model.gguf",
+            quant_type="Q4_K_M",
+            q4_size=100.0,
+            config_obj=mock_config,
+        )
+
+    # Should still upload model and README, but skip 3 configs
+    assert mock_api.upload_file.call_count == 2

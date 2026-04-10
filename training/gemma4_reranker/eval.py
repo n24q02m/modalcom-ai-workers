@@ -12,7 +12,10 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass
@@ -123,12 +126,12 @@ def eval_beir_reranking(
     """
     ndcg_scores = []
 
-    for query, docs, labels in zip(queries, candidate_docs, relevance_labels):
+    for query, docs, labels in zip(queries, candidate_docs, relevance_labels, strict=False):
         scores = rerank_fn(query, docs)
 
         # Sort by score descending, get relevance in new order
         ranked = sorted(
-            zip(scores, labels), key=lambda x: x[0], reverse=True
+            zip(scores, labels, strict=False), key=lambda x: x[0], reverse=True
         )
         ranked_relevances = [r[1] for r in ranked]
 
@@ -167,7 +170,7 @@ def eval_mmeb_reranking(
     """
     p1_scores = []
 
-    for query, docs, rel_idx in zip(queries, candidate_docs, relevant_indices):
+    for query, docs, rel_idx in zip(queries, candidate_docs, relevant_indices, strict=False):
         scores = rerank_fn(query, docs)
 
         # Rank by score descending
