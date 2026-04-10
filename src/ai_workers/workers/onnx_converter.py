@@ -409,6 +409,85 @@ def _push_to_hub(hf_target: str, output_path: Path, hf_source: str, hf_token: st
     logger.info("Successfully pushed to https://huggingface.co/{}", hf_target)
 
 
+def _validate_onnx_request(hf_source: str, trust_remote_code: bool) -> str:
+    """Validate organization trust and retrieve HF_TOKEN."""
+    if trust_remote_code:
+        org = hf_source.split("/")[0]
+        if org not in TRUSTED_ORGS:
+            msg = f"Untrusted organization '{org}'. trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
+            raise ValueError(msg)
+
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token:
+        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
+        raise ValueError(msg)
+    return hf_token
+
+
+def _check_skip_conversion(hf_target: str, hf_token: str, force: bool) -> bool:
+    """Check if conversion should be skipped because repo exists."""
+    from huggingface_hub import repo_exists
+
+    if not force and repo_exists(hf_target, token=hf_token):
+        logger.info(
+            "Repo {} already exists on HF Hub. Skipping. Use force=True to overwrite.",
+            hf_target,
+        )
+        return True
+    return False
+
+
+def _get_fp32_total_size(fp32_path: Path) -> float:
+    """Calculate total FP32 ONNX size including external data."""
+    fp32_size = fp32_path.stat().st_size / (1024**2)
+    fp32_data_path = fp32_path.with_suffix(".onnx.data")
+    total_size = fp32_size
+    if fp32_data_path.exists():
+        total_size += fp32_data_path.stat().st_size / (1024**2)
+        logger.info("ONNX FP32 total size (including external data): {:.2f} MB", total_size)
+    else:
+        logger.info("ONNX FP32 exported: {:.2f} MB", fp32_size)
+    return total_size
+
+
+def _save_artifacts(
+    output_path: Path,
+    tokenizer: PreTrainedTokenizer,
+    hf_source: str,
+    trust_remote_code: bool,
+    config_params: OnnxModelConfig,
+    int8_size: float,
+    q4f16_size: float,
+) -> None:
+    """Save tokenizer, config and model card."""
+    from transformers import AutoConfig
+
+    logger.info("Saving tokenizer + config -> {}", output_path)
+    tokenizer.save_pretrained(str(output_path))
+    config = AutoConfig.from_pretrained(hf_source, trust_remote_code=trust_remote_code)
+    config.save_pretrained(str(output_path))
+
+    model_card = _generate_model_card(
+        config_params,
+        int8_size_mb=int8_size,
+        q4f16_size_mb=q4f16_size,
+    )
+    (output_path / "README.md").write_text(model_card, encoding="utf-8")
+
+
+def _log_and_summarize_files(output_path: Path) -> tuple[float, int]:
+    """Log file sizes and return total size and count."""
+    total_size = 0.0
+    file_count = 0
+    for f in sorted(output_path.rglob("*")):
+        if f.is_file():
+            size_mb = f.stat().st_size / (1024**2)
+            total_size += size_mb
+            file_count += 1
+            logger.info("  {} ({:.2f} MB)", f.relative_to(output_path), size_mb)
+    return total_size, file_count
+
+
 @onnx_convert_app.function(
     image=onnx_converter_image(),
     memory=32768,  # 32GB RAM
@@ -444,28 +523,9 @@ def onnx_convert_model(
     Returns:
         Dict containing results: model_name, status, hf_target, variants, total_size_mb.
     """
-    if trust_remote_code:
-        org = hf_source.split("/")[0]
-        if org not in TRUSTED_ORGS:
-            msg = f"Untrusted organization '{org}'. trust_remote_code=True is only allowed for: {TRUSTED_ORGS}"
-            raise ValueError(msg)
+    hf_token = _validate_onnx_request(hf_source, trust_remote_code)
 
-    from huggingface_hub import repo_exists
-    from transformers import AutoConfig
-
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        msg = "HF_TOKEN is not set. Requires Modal Secret 'hf-token' with key HF_TOKEN."
-        raise ValueError(msg)
-
-    # ------------------------------------------------------------------
-    # Check if repo already exists
-    # ------------------------------------------------------------------
-    if not force and repo_exists(hf_target, token=hf_token):
-        logger.info(
-            "Repo {} already exists on HF Hub. Skipping. Use force=True to overwrite.",
-            hf_target,
-        )
+    if _check_skip_conversion(hf_target, hf_token, force):
         return {
             "model_name": model_name,
             "status": "skipped",
@@ -494,17 +554,7 @@ def onnx_convert_model(
         # 3. Export ONNX FP32
         fp32_path = tmp_path / "model_fp32.onnx"
         _export_fp32(wrapper, tokenizer, fp32_path, output_attr, onnx_output_name, opset_version)
-
-        fp32_size = fp32_path.stat().st_size / (1024**2)
-        fp32_data_path = fp32_path.with_suffix(".onnx.data")
-        fp32_total_size = fp32_size
-        if fp32_data_path.exists():
-            fp32_total_size += fp32_data_path.stat().st_size / (1024**2)
-            logger.info(
-                "ONNX FP32 total size (including external data): {:.2f} MB", fp32_total_size
-            )
-        else:
-            logger.info("ONNX FP32 exported: {:.2f} MB", fp32_size)
+        fp32_total_size = _get_fp32_total_size(fp32_path)
 
         # Free model for quantization RAM
         del model, wrapper
@@ -520,41 +570,33 @@ def onnx_convert_model(
 
         # Cleanup FP32
         fp32_path.unlink()
+        fp32_data_path = fp32_path.with_suffix(".onnx.data")
         if fp32_data_path.exists():
             fp32_data_path.unlink()
 
-        # 6. Save tokenizer + config
-        logger.info("Saving tokenizer + config -> {}", output_path)
-        tokenizer.save_pretrained(str(output_path))
-        config = AutoConfig.from_pretrained(hf_source, trust_remote_code=trust_remote_code)
-        config.save_pretrained(str(output_path))
-
-        # 7. Generate model card
-        model_card = _generate_model_card(
-            OnnxModelConfig(
-                name=model_name,
-                hf_source=hf_source,
-                hf_target=hf_target,
-                model_class=model_class,
-                output_attr=output_attr,
-                trust_remote_code=trust_remote_code,
-            ),
-            int8_size_mb=int8_size,
-            q4f16_size_mb=q4f16_size,
+        # 6. Save artifacts
+        config_params = OnnxModelConfig(
+            name=model_name,
+            hf_source=hf_source,
+            hf_target=hf_target,
+            model_class=model_class,
+            output_attr=output_attr,
+            trust_remote_code=trust_remote_code,
         )
-        (output_path / "README.md").write_text(model_card, encoding="utf-8")
+        _save_artifacts(
+            output_path,
+            tokenizer,
+            hf_source,
+            trust_remote_code,
+            config_params,
+            int8_size,
+            q4f16_size,
+        )
 
-        # 8. File statistics
-        total_size = 0.0
-        file_count = 0
-        for f in sorted(output_path.rglob("*")):
-            if f.is_file():
-                size_mb = f.stat().st_size / (1024**2)
-                total_size += size_mb
-                file_count += 1
-                logger.info("  {} ({:.2f} MB)", f.relative_to(output_path), size_mb)
+        # 7. Log and summarize
+        total_size, file_count = _log_and_summarize_files(output_path)
 
-        # 9. Push to Hub
+        # 8. Push to Hub
         _push_to_hub(hf_target, output_path, hf_source, hf_token)
 
     gc.collect()
