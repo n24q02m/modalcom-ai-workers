@@ -7,7 +7,6 @@ modalities via AutoProcessor.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import torch
@@ -81,9 +80,7 @@ class MmRerankDataset(Dataset):
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"<Query>\n{sample.query}\n</Query>"}
-        )
+        content_parts.append({"type": "text", "text": f"<Query>\n{sample.query}\n</Query>"})
 
         # Document media
         if sample.doc_image:
@@ -149,6 +146,7 @@ class MmRerankDataset(Dataset):
 
         if path_or_url.startswith(("http://", "https://")):
             import requests as http_requests
+
             resp = http_requests.get(path_or_url, stream=True, timeout=30)
             resp.raise_for_status()
             return Image.open(resp.raw).convert("RGB")
@@ -163,6 +161,7 @@ class MmRerankDataset(Dataset):
 
         if path_or_url.startswith(("http://", "https://")):
             import requests as http_requests
+
             resp = http_requests.get(path_or_url, timeout=30)
             resp.raise_for_status()
             buf = io.BytesIO(resp.content)

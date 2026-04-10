@@ -176,8 +176,7 @@ class TrainConfig:
 
     # Reranker prompt
     reranker_prefix: str = (
-        'Judge whether the Document is relevant to the Query. '
-        'Answer only "yes" or "no".'
+        'Judge whether the Document is relevant to the Query. Answer only "yes" or "no".'
     )
 
     # MLflow

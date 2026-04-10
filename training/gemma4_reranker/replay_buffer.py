@@ -62,9 +62,7 @@ class ReplayBuffer:
         # Enforce limits per modality
         for mod in self._buffer:
             if len(self._buffer[mod]) > self._max_per_modality:
-                self._buffer[mod] = self._rng.sample(
-                    self._buffer[mod], self._max_per_modality
-                )
+                self._buffer[mod] = self._rng.sample(self._buffer[mod], self._max_per_modality)
 
         return self.total_size
 
@@ -100,9 +98,7 @@ class ReplayBuffer:
         n = min(n, len(all_samples))
         return self._rng.sample(all_samples, n)
 
-    def get_replay_samples(
-        self, train_size: int, replay_ratio: float
-    ) -> list[TrainSample]:
+    def get_replay_samples(self, train_size: int, replay_ratio: float) -> list[TrainSample]:
         """Get replay samples proportional to training set size.
 
         Args:

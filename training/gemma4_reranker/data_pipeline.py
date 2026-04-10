@@ -1,6 +1,6 @@
 """Data pipeline for preparing training JSONL files.
 
-Converts raw datasets into the unified Grouped JSONL format 
+Converts raw datasets into the unified Grouped JSONL format
 required for Knowledge Distillation and Cross-Entropy loss.
 """
 
@@ -23,11 +23,11 @@ class TrainSample:
     query_image: str | None = None
     query_audio: str | None = None
     query_video: str | None = None
-    
+
     positive_image: str | None = None
     positive_audio: str | None = None
     positive_video: str | None = None
-    
+
     negative_images: list[str | None] = field(default_factory=list)
     negative_audios: list[str | None] = field(default_factory=list)
     negative_videos: list[str | None] = field(default_factory=list)
@@ -54,12 +54,14 @@ def write_jsonl(samples: list[TrainSample], path: Path) -> int:
             f.write("\n")
     return len(samples)
 
+
 def split_train_val(
     samples: list[TrainSample],
     val_ratio: float = 0.05,
     seed: int = 42,
 ) -> tuple[list[TrainSample], list[TrainSample]]:
     import random
+
     rng = random.Random(seed)
     shuffled = list(samples)
     rng.shuffle(shuffled)

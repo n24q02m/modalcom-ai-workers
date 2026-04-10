@@ -76,7 +76,6 @@ def transformers_image(*, flash_attn: bool = False) -> modal.Image:
     ).add_local_python_source("ai_workers")
 
 
-
 def transformers_mm_reranker_image() -> modal.Image:
     """Build a Modal image for Gemma-4 multimodal reranker serving.
 
