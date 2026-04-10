@@ -291,11 +291,12 @@ def _export_fp32(
     tokenizer: PreTrainedTokenizer,
     fp32_path: Path,
     output_attr: str,
-    onnx_output_name: str,
     opset_version: int,
 ) -> None:
     """Export ONNX FP32 model."""
     import torch
+
+    onnx_output_name = "logits" if output_attr == "yesno_logits" else output_attr
 
     dummy = tokenizer("hello world", return_tensors="pt")
     dummy_ids = dummy["input_ids"]
@@ -486,14 +487,12 @@ def onnx_convert_model(
         # 2. Wrap model
         if output_attr == "yesno_logits":
             wrapper = _YesNoWrapper(model)
-            onnx_output_name = "logits"
         else:
             wrapper = _OnnxWrapper(model, output_attr)
-            onnx_output_name = output_attr
 
         # 3. Export ONNX FP32
         fp32_path = tmp_path / "model_fp32.onnx"
-        _export_fp32(wrapper, tokenizer, fp32_path, output_attr, onnx_output_name, opset_version)
+        _export_fp32(wrapper, tokenizer, fp32_path, output_attr, opset_version)
 
         fp32_size = fp32_path.stat().st_size / (1024**2)
         fp32_data_path = fp32_path.with_suffix(".onnx.data")
