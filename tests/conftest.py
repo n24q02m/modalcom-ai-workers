@@ -347,3 +347,20 @@ def _default_worker_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     auth_mod._valid_keys = None  # Reset cached keys before each test
     if not os.environ.get("API_KEY") and not os.environ.get("WORKER_API_KEY"):
         monkeypatch.setenv("WORKER_API_KEY", "k")
+import sys
+import types
+from unittest.mock import MagicMock
+
+def _ensure_hf_hub_stub():
+    if "huggingface_hub" in sys.modules:
+        return
+
+    hf_hub = types.ModuleType("huggingface_hub")
+    hf_hub.hf_hub_download = MagicMock(name="hf_hub_download")
+    hf_hub.HfApi = MagicMock(name="HfApi")
+    hf_hub.list_repo_tree = MagicMock(name="list_repo_tree")
+    hf_hub.snapshot_download = MagicMock(name="snapshot_download")
+
+    sys.modules["huggingface_hub"] = hf_hub
+
+_ensure_hf_hub_stub()
