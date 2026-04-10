@@ -11,6 +11,8 @@ Uses Modal Volume (pre-downloaded weights) + GPU Memory Snapshot
 for fast cold start (~5-10s instead of >10 minutes).
 """
 
+from typing import Any
+
 import modal
 
 from ai_workers.common.images import transformers_mm_reranker_image
@@ -180,6 +182,126 @@ class MmRerankerServer:
     # Scoring
     # ---------------------------------------------------------------------------
 
+    def _score_batch(
+        self,
+        model_name: str,
+        query: str,
+        documents: list[str],
+        query_image: Any | None = None,
+        query_audio: Any | None = None,
+        query_video_frames: list[Any] | None = None,
+        doc_images: list[Any | None] | None = None,
+        doc_audios: list[Any | None] | None = None,
+        doc_video_frames: list[list[Any] | None] | None = None,
+    ) -> list[float]:
+        """Score a batch of query-document pairs using yes/no logit comparison.
+
+        Supports text-only and multimodal (image+audio+video+text) pairs.
+        Scoring: sigmoid(yes_logit - no_logit) -> P(relevant).
+        """
+        import torch
+
+        model = self.models[model_name]
+        processor = self.processors[model_name]
+
+        all_scores = []
+        batch_size = 4  # Small batch size for A10G memory safety with multimodal models
+
+        for chunk_idx in range(0, len(documents), batch_size):
+            chunk_docs = documents[chunk_idx : chunk_idx + batch_size]
+            chunk_doc_images = (
+                doc_images[chunk_idx : chunk_idx + batch_size] if doc_images else None
+            )
+            chunk_doc_audios = (
+                doc_audios[chunk_idx : chunk_idx + batch_size] if doc_audios else None
+            )
+            chunk_doc_videos = (
+                doc_video_frames[chunk_idx : chunk_idx + batch_size] if doc_video_frames else None
+            )
+
+            chunk_messages = []
+            chunk_all_images = []
+            chunk_all_audios = []
+
+            for i, doc_text in enumerate(chunk_docs):
+                content_parts = []
+                images = []
+                audios = []
+
+                # Query media (before text, per Google guidance)
+                if query_image:
+                    content_parts.append({"type": "image", "image": query_image})
+                    images.append(query_image)
+                if query_audio:
+                    content_parts.append({"type": "audio", "audio": query_audio})
+                    audios.append(query_audio)
+                if query_video_frames:
+                    for frame in query_video_frames:
+                        content_parts.append({"type": "image", "image": frame})
+                        images.append(frame)
+
+                content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
+
+                # Document media
+                if chunk_doc_images and chunk_doc_images[i]:
+                    img = chunk_doc_images[i]
+                    content_parts.append({"type": "image", "image": img})
+                    images.append(img)
+                if chunk_doc_audios and chunk_doc_audios[i]:
+                    aud = chunk_doc_audios[i]
+                    content_parts.append({"type": "audio", "audio": aud})
+                    audios.append(aud)
+                if chunk_doc_videos and chunk_doc_videos[i]:
+                    for frame in chunk_doc_videos[i]:
+                        content_parts.append({"type": "image", "image": frame})
+                        images.append(frame)
+
+                content_parts.append(
+                    {"type": "text", "text": f"\n<Document>\n{doc_text}\n</Document>"}
+                )
+
+                messages = [
+                    {"role": "system", "content": RERANKER_PREFIX},
+                    {"role": "user", "content": content_parts},
+                ]
+                chunk_messages.append(messages)
+                chunk_all_images.append(images)
+                chunk_all_audios.append(audios)
+
+            texts = [
+                processor.apply_chat_template(m, tokenize=False, add_generation_prompt=True)
+                for m in chunk_messages
+            ]
+
+            # Build processor kwargs based on available media
+            proc_kwargs = {"text": texts, "return_tensors": "pt", "padding": True}
+
+            # Flatten all images/audios for the processor if any are present
+            if any(chunk_all_images):
+                proc_kwargs["images"] = [img for sub in chunk_all_images for img in sub]
+            if any(chunk_all_audios):
+                proc_kwargs["audios"] = [aud for sub in chunk_all_audios for aud in sub]
+
+            inputs = processor(**proc_kwargs).to(model.device)
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+                # Last token logits for each sequence in batch
+                # (batch_size, seq_len, vocab_size) -> (batch_size, vocab_size)
+                logits = outputs.logits[:, -1, :]
+
+                # Get logits for "yes" and "no" tokens
+                yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
+                no_id = processor.tokenizer.convert_tokens_to_ids("no")
+                yes_logits = logits[:, yes_id].float()
+                no_logits = logits[:, no_id].float()
+
+                # Sigmoid of (yes - no) gives relevance probability
+                scores = torch.sigmoid(yes_logits - no_logits).cpu().tolist()
+                all_scores.extend(scores)
+
+        return all_scores
+
     def _score_pair(
         self,
         model_name: str,
@@ -194,87 +316,31 @@ class MmRerankerServer:
     ) -> float:
         """Score a single query-document pair using yes/no logit comparison.
 
-        Supports text-only and multimodal (image+audio+video+text) pairs.
-        Scoring: sigmoid(yes_logit - no_logit) -> P(relevant).
+        Thin wrapper around `_score_batch` for consistency.
         """
-        import torch
+        # Note: This is now slower than calling _score_batch directly because it
+        # doesn't benefit from concurrent fetching if used in a loop,
+        # but it maintains the legacy interface for tests.
+        q_img = self._load_image(query_image_url) if query_image_url else None
+        q_aud = self._load_audio(query_audio_url)[0] if query_audio_url else None
+        q_vid = self._load_video_frames(query_video_url) if query_video_url else None
 
-        model = self.models[model_name]
-        processor = self.processors[model_name]
+        d_img = self._load_image(doc_image_url) if doc_image_url else None
+        d_aud = self._load_audio(doc_audio_url)[0] if doc_audio_url else None
+        d_vid = self._load_video_frames(doc_video_url) if doc_video_url else None
 
-        # Build user content with optional media
-        content_parts = []
-        images = []
-        audios = []
-
-        # Query media (before text, per Google guidance)
-        if query_image_url:
-            content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
-        if query_audio_url:
-            content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
-            audios.append(audio_data)
-        if query_video_url:
-            frames = self._load_video_frames(query_video_url)
-            for frame in frames:
-                content_parts.append({"type": "image", "image": frame})
-                images.append(frame)
-
-        content_parts.append({"type": "text", "text": f"<Query>\n{query}\n</Query>"})
-
-        # Document media
-        if doc_image_url:
-            content_parts.append({"type": "image", "image": doc_image_url})
-            images.append(self._load_image(doc_image_url))
-        if doc_audio_url:
-            content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
-            audios.append(audio_data)
-        if doc_video_url:
-            frames = self._load_video_frames(doc_video_url)
-            for frame in frames:
-                content_parts.append({"type": "image", "image": frame})
-                images.append(frame)
-
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
+        scores = self._score_batch(
+            model_name,
+            query,
+            [document],
+            query_image=q_img,
+            query_audio=q_aud,
+            query_video_frames=q_vid,
+            doc_images=[d_img],
+            doc_audios=[d_aud],
+            doc_video_frames=[d_vid],
         )
-
-        messages = [
-            {"role": "system", "content": RERANKER_PREFIX},
-            {"role": "user", "content": content_parts},
-        ]
-
-        text = processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-
-        # Build processor kwargs based on available media
-        proc_kwargs = {"text": text, "return_tensors": "pt", "padding": True}
-        if images:
-            proc_kwargs["images"] = images
-        if audios:
-            proc_kwargs["audios"] = audios
-
-        inputs = processor(**proc_kwargs).to(model.device)
-
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits[0, -1, :]  # Last token logits
-
-            # Get logits for "yes" and "no" tokens
-            yes_id = processor.tokenizer.convert_tokens_to_ids("yes")
-            no_id = processor.tokenizer.convert_tokens_to_ids("no")
-            yes_logit = logits[yes_id].float()
-            no_logit = logits[no_id].float()
-
-            # Sigmoid of (yes - no) gives relevance probability
-            score = torch.sigmoid(yes_logit - no_logit).item()
-
-        return score
+        return scores[0]
 
     # ---------------------------------------------------------------------------
     # FastAPI app
@@ -349,56 +415,136 @@ class MmRerankerServer:
             }
 
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
+            import asyncio
+
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
 
-            results = []
-            for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+            # Pre-fetch all media concurrently to avoid sequential network latency
+            urls_to_fetch = set()
+            if body.query_image:
+                urls_to_fetch.add(body.query_image)
+            if body.query_audio:
+                urls_to_fetch.add(body.query_audio)
+            if body.query_video:
+                urls_to_fetch.add(body.query_video)
 
+            if body.doc_images:
+                urls_to_fetch.update(u for u in body.doc_images if u)
+            if body.doc_audios:
+                urls_to_fetch.update(u for u in body.doc_audios if u)
+            if body.doc_videos:
+                urls_to_fetch.update(u for u in body.doc_videos if u)
+
+            # Create mapping for each media type
+
+            # Remaining URLs that didn't match extension - try to guess or just fetch all
+            # For simplicity, we'll just fetch them based on where they appear in the request
+
+            # Better approach: fetch based on usage
+            async def safe_fetch(fetch_func, url):
                 try:
-                    score = self._score_pair(
-                        body.model,
-                        body.query,
-                        doc_text,
-                        query_image_url=body.query_image,
-                        query_audio_url=body.query_audio,
-                        query_video_url=body.query_video,
-                        doc_image_url=doc_image,
-                        doc_audio_url=doc_audio,
-                        doc_video_url=doc_video,
-                    )
-                except ValueError as media_err:
-                    raise ValueError(str(media_err)) from media_err
+                    return await asyncio.to_thread(fetch_func, url)
                 except Exception as e:
-                    from loguru import logger
+                    return e
 
-                    logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+            # Gather all required unique fetches
+            unique_image_urls = set()
+            if body.query_image:
+                unique_image_urls.add(body.query_image)
+            if body.doc_images:
+                unique_image_urls.update(u for u in body.doc_images if u)
 
-                result = RerankResult(index=i, relevance_score=score)
-                if body.return_documents:
-                    result.document = RerankResultDocument(text=doc_text)
-                results.append(result)
+            unique_audio_urls = set()
+            if body.query_audio:
+                unique_audio_urls.add(body.query_audio)
+            if body.doc_audios:
+                unique_audio_urls.update(u for u in body.doc_audios if u)
+
+            unique_video_urls = set()
+            if body.query_video:
+                unique_video_urls.add(body.query_video)
+            if body.doc_videos:
+                unique_video_urls.update(u for u in body.doc_videos if u)
+
+            image_results = await asyncio.gather(
+                *(safe_fetch(self._load_image, u) for u in unique_image_urls)
+            )
+            image_map = dict(zip(unique_image_urls, image_results, strict=True))
+
+            audio_results = await asyncio.gather(
+                *(safe_fetch(self._load_audio, u) for u in unique_audio_urls)
+            )
+            # _load_audio returns (data, sr), we only need data[0]
+            audio_map = {
+                u: (res[0] if not isinstance(res, Exception) else res)
+                for u, res in zip(unique_audio_urls, audio_results, strict=True)
+            }
+
+            video_results = await asyncio.gather(
+                *(safe_fetch(self._load_video_frames, u) for u in unique_video_urls)
+            )
+            video_map = dict(zip(unique_video_urls, video_results, strict=True))
+
+            # Helper to get result or raise
+            def get_media(u, mapping):
+                if u is None:
+                    return None
+                res = mapping.get(u)
+                if isinstance(res, Exception):
+                    raise res
+                return res
+
+            try:
+                q_img = get_media(body.query_image, image_map)
+                q_aud = get_media(body.query_audio, audio_map)
+                q_vid = get_media(body.query_video, video_map)
+
+                d_imgs = [
+                    get_media(u, image_map)
+                    for u in (body.doc_images or [None] * len(body.documents))
+                ]
+                d_auds = [
+                    get_media(u, audio_map)
+                    for u in (body.doc_audios or [None] * len(body.documents))
+                ]
+                d_vids = [
+                    get_media(u, video_map)
+                    for u in (body.doc_videos or [None] * len(body.documents))
+                ]
+            except ValueError as e:
+                raise ValueError(str(e)) from e
+            except Exception as e:
+                raise ValueError(f"Media loading failed: {e}") from e
+
+            # Score all documents in a batched call
+            try:
+                scores = self._score_batch(
+                    body.model,
+                    body.query,
+                    body.documents,
+                    query_image=q_img,
+                    query_audio=q_aud,
+                    query_video_frames=q_vid,
+                    doc_images=d_imgs,
+                    doc_audios=d_auds,
+                    doc_video_frames=d_vids,
+                )
+            except Exception as e:
+                from loguru import logger
+
+                logger.error("Batched scoring failed for model {}: {}", body.model, e)
+                raise ValueError(f"Scoring failed: {e}") from e
+
+            results = [
+                RerankResult(index=i, relevance_score=score) for i, score in enumerate(scores)
+            ]
+
+            if body.return_documents:
+                for i, doc_text in enumerate(body.documents):
+                    results[i].document = RerankResultDocument(text=doc_text)
 
             # Sort by relevance score descending
             results.sort(key=lambda x: x.relevance_score, reverse=True)
