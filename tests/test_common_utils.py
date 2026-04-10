@@ -245,6 +245,18 @@ class TestLoadImageFromUrl:
             assert is_safe_url("http://example.com") is False
 
 
+    def test_unexpected_error(self):
+        """Test is_safe_url handling of unexpected exceptions."""
+        with patch("ai_workers.common.utils.logger") as mock_logger:
+            with patch(
+                "ai_workers.common.utils._get_safe_ips", side_effect=Exception("Unexpected error")
+            ):
+                assert is_safe_url("http://example.com") is False
+                mock_logger.warning.assert_called_once()
+                args, _ = mock_logger.warning.call_args
+                assert "Unexpected error validating URL" in args[0]
+
+
 class TestLoadImageFromUrlEdgeCases:
     """Additional edge case tests for load_image_from_url."""
 
