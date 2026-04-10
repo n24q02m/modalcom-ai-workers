@@ -1,6 +1,6 @@
 """Data pipeline for preparing training JSONL files.
 
-Converts raw datasets into the unified Grouped JSONL format 
+Converts raw datasets into the unified Grouped JSONL format
 required for Knowledge Distillation and Cross-Entropy loss.
 """
 
@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass
@@ -23,11 +26,11 @@ class TrainSample:
     query_image: str | None = None
     query_audio: str | None = None
     query_video: str | None = None
-    
+
     positive_image: str | None = None
     positive_audio: str | None = None
     positive_video: str | None = None
-    
+
     negative_images: list[str | None] = field(default_factory=list)
     negative_audios: list[str | None] = field(default_factory=list)
     negative_videos: list[str | None] = field(default_factory=list)

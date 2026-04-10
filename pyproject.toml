@@ -60,6 +60,7 @@ packages = ["src/ai_workers"]
 
 # --- Ruff ---
 [tool.ruff]
+exclude = ["training/"]
 target-version = "py313"
 line-length = 100
 src = ["src", "tests"]
@@ -78,6 +79,14 @@ select = [
   "RUF", # ruff-specific
 ]
 ignore = [
+  "N812",    # functional as F
+  "B905",    # zip strict
+  "TC",      # type-checking blocks (noisy for ML/notebooks)
+  "E701",    # multiple statements on one line
+  "E402",    # module level import not at top (notebooks)
+  "F841",    # unused variable
+  "W291",    # trailing whitespace
+  "W293",    # blank line contains whitespace
   "E501",   # line too long (handled by formatter)
   "B008",   # do not perform function call in argument defaults (typer)
 ]
@@ -137,3 +146,6 @@ dev = [
     "ruff>=0.9",
     "ty>=0.0.1a6",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"**/*.ipynb" = ["E402", "F401", "F841", "E701", "B905", "N812", "I001"]

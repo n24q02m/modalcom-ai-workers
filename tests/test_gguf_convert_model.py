@@ -13,7 +13,6 @@ import pytest
 mock_hf_mod = MagicMock()
 sys.modules["huggingface_hub"] = mock_hf_mod
 
-# ruff: noqa: E402
 from ai_workers.workers.gguf_converter import gguf_convert_model
 
 

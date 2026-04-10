@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 # Mock huggingface_hub to avoid ModuleNotFoundError in environment
 sys.modules["huggingface_hub"] = MagicMock()
 
-# ruff: noqa: E402
 from ai_workers.workers.gguf_converter import gguf_convert_model
 
 

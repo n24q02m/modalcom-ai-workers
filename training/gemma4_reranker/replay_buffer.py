@@ -9,9 +9,12 @@ Buffer maintains a balanced sample from each completed modality type.
 from __future__ import annotations
 
 import random
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .data_pipeline import TrainSample, read_jsonl
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class ReplayBuffer:
