@@ -90,7 +90,9 @@ def test_build_stage_dataset_from_grouped(tmp_path) -> None:
     assert report["expanded_pointwise_count"] == 18
     assert report["train_count"] + report["val_count"] == 18
 
-    written = read_pointwise_jsonl(train_path, strict=True) + read_pointwise_jsonl(val_path, strict=True)
+    written = read_pointwise_jsonl(train_path, strict=True) + read_pointwise_jsonl(
+        val_path, strict=True
+    )
     assert len(written) == 18
 
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
