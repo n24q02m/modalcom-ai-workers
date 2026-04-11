@@ -191,6 +191,12 @@ class MmRerankerServer:
         doc_image_url: str | None = None,
         doc_audio_url: str | None = None,
         doc_video_url: str | None = None,
+        query_image_data: object | None = None,
+        query_audio_data: tuple | None = None,
+        query_video_frames: list | None = None,
+        doc_image_data: object | None = None,
+        doc_audio_data: tuple | None = None,
+        doc_video_frames: list | None = None,
     ) -> float:
         """Score a single query-document pair using yes/no logit comparison.
 
@@ -210,13 +216,26 @@ class MmRerankerServer:
         # Query media (before text, per Google guidance)
         if query_image_url:
             content_parts.append({"type": "image", "image": query_image_url})
-            images.append(self._load_image(query_image_url))
+            img = (
+                query_image_data
+                if query_image_data is not None
+                else self._load_image(query_image_url)
+            )
+            images.append(img)
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _sr = (
+                query_audio_data
+                if query_audio_data is not None
+                else self._load_audio(query_audio_url)
+            )
             audios.append(audio_data)
         if query_video_url:
-            frames = self._load_video_frames(query_video_url)
+            frames = (
+                query_video_frames
+                if query_video_frames is not None
+                else self._load_video_frames(query_video_url)
+            )
             for frame in frames:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
@@ -226,20 +245,25 @@ class MmRerankerServer:
         # Document media
         if doc_image_url:
             content_parts.append({"type": "image", "image": doc_image_url})
-            images.append(self._load_image(doc_image_url))
+            img = doc_image_data if doc_image_data is not None else self._load_image(doc_image_url)
+            images.append(img)
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _sr = (
+                doc_audio_data if doc_audio_data is not None else self._load_audio(doc_audio_url)
+            )
             audios.append(audio_data)
         if doc_video_url:
-            frames = self._load_video_frames(doc_video_url)
+            frames = (
+                doc_video_frames
+                if doc_video_frames is not None
+                else self._load_video_frames(doc_video_url)
+            )
             for frame in frames:
                 content_parts.append({"type": "image", "image": frame})
                 images.append(frame)
 
-        content_parts.append(
-            {"type": "text", "text": f"\n<Document>\n{document}\n</Document>"}
-        )
+        content_parts.append({"type": "text", "text": f"\n<Document>\n{document}\n</Document>"})
 
         messages = [
             {"role": "system", "content": RERANKER_PREFIX},
@@ -349,32 +373,61 @@ class MmRerankerServer:
             }
 
         async def _do_rerank(body: MmRerankRequest) -> MmRerankResponse:
+            import asyncio
+
             if body.model not in MODEL_CONFIGS:
                 raise ValueError(
-                    f"Unknown model: {body.model}. "
-                    f"Available: {list(MODEL_CONFIGS.keys())}"
+                    f"Unknown model: {body.model}. Available: {list(MODEL_CONFIGS.keys())}"
                 )
+
+            # Concurrent pre-fetching helper
+            async def _safe_fetch(loader_fn, url):
+                if not url:
+                    return None
+                return await asyncio.to_thread(loader_fn, url)
+
+            # Gather all query media
+            query_tasks = [
+                _safe_fetch(self._load_image, body.query_image),
+                _safe_fetch(self._load_audio, body.query_audio),
+                _safe_fetch(self._load_video_frames, body.query_video),
+            ]
+
+            # Gather all document media
+            doc_image_tasks = []
+            doc_audio_tasks = []
+            doc_video_tasks = []
+            for i in range(len(body.documents)):
+                doc_image = body.doc_images[i] if body.doc_images is not None else None
+                doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+                doc_video = body.doc_videos[i] if body.doc_videos is not None else None
+                doc_image_tasks.append(_safe_fetch(self._load_image, doc_image))
+                doc_audio_tasks.append(_safe_fetch(self._load_audio, doc_audio))
+                doc_video_tasks.append(_safe_fetch(self._load_video_frames, doc_video))
+
+            all_tasks = query_tasks + doc_image_tasks + doc_audio_tasks + doc_video_tasks
+            try:
+                all_results = await asyncio.gather(*all_tasks)
+            except ValueError as media_err:
+                raise ValueError(str(media_err)) from media_err
+
+            query_img_data, query_aud_data, query_vid_frames = all_results[:3]
+            offset = 3
+            doc_imgs_data = all_results[offset : offset + len(body.documents)]
+            offset += len(body.documents)
+            doc_auds_data = all_results[offset : offset + len(body.documents)]
+            offset += len(body.documents)
+            doc_vids_frames = all_results[offset : offset + len(body.documents)]
 
             results = []
             for i, doc_text in enumerate(body.documents):
-                doc_image = (
-                    body.doc_images[i]
-                    if body.doc_images is not None
-                    else None
-                )
-                doc_audio = (
-                    body.doc_audios[i]
-                    if body.doc_audios is not None
-                    else None
-                )
-                doc_video = (
-                    body.doc_videos[i]
-                    if body.doc_videos is not None
-                    else None
-                )
+                doc_image = body.doc_images[i] if body.doc_images is not None else None
+                doc_audio = body.doc_audios[i] if body.doc_audios is not None else None
+                doc_video = body.doc_videos[i] if body.doc_videos is not None else None
 
                 try:
-                    score = self._score_pair(
+                    score = await asyncio.to_thread(
+                        self._score_pair,
                         body.model,
                         body.query,
                         doc_text,
@@ -384,16 +437,18 @@ class MmRerankerServer:
                         doc_image_url=doc_image,
                         doc_audio_url=doc_audio,
                         doc_video_url=doc_video,
+                        query_image_data=query_img_data,
+                        query_audio_data=query_aud_data,
+                        query_video_frames=query_vid_frames,
+                        doc_image_data=doc_imgs_data[i],
+                        doc_audio_data=doc_auds_data[i],
+                        doc_video_frames=doc_vids_frames[i],
                     )
-                except ValueError as media_err:
-                    raise ValueError(str(media_err)) from media_err
                 except Exception as e:
                     from loguru import logger
 
                     logger.error("Scoring failed for doc {}: {}", i, e)
-                    raise ValueError(
-                        f"Failed to score document {i}: {e}"
-                    ) from e
+                    raise ValueError(f"Failed to score document {i}: {e}") from e
 
                 result = RerankResult(index=i, relevance_score=score)
                 if body.return_documents:

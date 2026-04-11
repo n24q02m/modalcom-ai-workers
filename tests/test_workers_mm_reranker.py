@@ -21,6 +21,12 @@ def server():
     s = MmRerankerServer()
     s.models = {}
     s.processors = {}
+
+    # Mock media loaders globally since they are now called concurrently inside _do_rerank
+    s._load_image = MagicMock(return_value="mock_image_data")
+    s._load_audio = MagicMock(return_value=("mock_audio_data", 16000))
+    s._load_video_frames = MagicMock(return_value=["mock_frame_1", "mock_frame_2"])
+
     return s
 
 
@@ -471,9 +477,7 @@ def test_rerank_score_pair_value_error(server):
 
 def test_rerank_score_pair_unexpected_error(server):
     """Unexpected errors from _score_pair should return 400 with message."""
-    server._score_pair = MagicMock(
-        side_effect=RuntimeError("CUDA out of memory")
-    )
+    server._score_pair = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
     with patch.dict(os.environ, {"API_KEY": "k"}):
         app = server.serve()
