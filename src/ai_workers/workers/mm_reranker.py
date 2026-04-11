@@ -36,6 +36,8 @@ MAX_AUDIO_DURATION_S = 30.0
 MAX_VIDEO_DURATION_S = 60.0
 MAX_VIDEO_FRAMES = 8
 MEDIA_DOWNLOAD_TIMEOUT_S = 30
+MAX_AUDIO_SIZE = 20 * 1024 * 1024
+MAX_VIDEO_SIZE = 50 * 1024 * 1024
 
 mm_reranker_app = modal.App(
     "ai-workers-mm-reranker",
@@ -98,12 +100,9 @@ class MmRerankerServer:
     @staticmethod
     def _load_image(url: str):
         """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
+        from ai_workers.common.utils import load_image_from_url
 
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        return load_image_from_url(url)
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
@@ -114,14 +113,14 @@ class MmRerankerServer:
         """
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        audio_bytes = fetch_url_safely(url, MAX_AUDIO_SIZE, MEDIA_DOWNLOAD_TIMEOUT_S, "Audio")
 
         # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        buf = io.BytesIO(audio_bytes)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -143,13 +142,13 @@ class MmRerankerServer:
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        from ai_workers.common.utils import fetch_url_safely
+
+        video_bytes = fetch_url_safely(url, MAX_VIDEO_SIZE, MEDIA_DOWNLOAD_TIMEOUT_S, "Video")
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(video_bytes)
             tmp.flush()
 
             container = av.open(tmp.name)
