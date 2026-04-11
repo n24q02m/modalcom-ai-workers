@@ -27,6 +27,7 @@ _MULTICAST_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.1",
 _IPV6_LOOPBACK_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0))]
 _IPV6_PRIVATE_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fd00::1", 0, 0, 0))]
 _RESERVED_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("0.0.0.0", 0))]
+_UNSPECIFIED_IPV6_ADDRINFO = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::", 0, 0, 0))]
 
 
 class TestIsSafeUrl:
@@ -74,6 +75,10 @@ class TestIsSafeUrl:
     def test_rejects_reserved(self):
         with patch("socket.getaddrinfo", return_value=_RESERVED_ADDRINFO):
             assert is_safe_url("http://0.0.0.0/image.png") is False
+
+    def test_rejects_unspecified_ipv6(self):
+        with patch("socket.getaddrinfo", return_value=_UNSPECIFIED_IPV6_ADDRINFO):
+            assert is_safe_url("http://[::]/image.png") is False
 
     def test_rejects_ipv6_loopback(self):
         with patch("socket.getaddrinfo", return_value=_IPV6_LOOPBACK_ADDRINFO):
