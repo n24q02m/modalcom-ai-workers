@@ -14,6 +14,7 @@ for fast cold start (~5-10s instead of >10 minutes).
 import modal
 
 from ai_workers.common.images import transformers_mm_reranker_image
+from ai_workers.common.utils import fetch_url_safely, load_image_from_url
 from ai_workers.common.volumes import HF_CACHE_DIR, hf_cache_vol
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,7 @@ MAX_AUDIO_DURATION_S = 30.0
 MAX_VIDEO_DURATION_S = 60.0
 MAX_VIDEO_FRAMES = 8
 MEDIA_DOWNLOAD_TIMEOUT_S = 30
+MAX_MEDIA_SIZE = 50 * 1024 * 1024 # 50 MB for audio/video
 
 mm_reranker_app = modal.App(
     "ai-workers-mm-reranker",
@@ -97,13 +99,8 @@ class MmRerankerServer:
 
     @staticmethod
     def _load_image(url: str):
-        """Load a PIL Image from URL. Timeout 30s."""
-        import requests as http_requests
-        from PIL import Image
-
-        resp = http_requests.get(url, stream=True, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
-        return Image.open(resp.raw).convert("RGB")
+        """Load a PIL Image from URL with SSRF protection."""
+        return load_image_from_url(url)
 
     @staticmethod
     def _load_audio(url: str) -> tuple:
@@ -114,14 +111,12 @@ class MmRerankerServer:
         """
         import io
 
-        import requests as http_requests
         import soundfile as sf
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        content = fetch_url_safely(url, max_size=MAX_MEDIA_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
 
         # soundfile needs a seekable file-like object
-        buf = io.BytesIO(resp.content)
+        buf = io.BytesIO(content)
         data, sr = sf.read(buf, dtype="float32")
 
         duration = len(data) / sr if data.ndim == 1 else data.shape[0] / sr
@@ -143,13 +138,11 @@ class MmRerankerServer:
 
         import av
         import numpy as np
-        import requests as http_requests
 
-        resp = http_requests.get(url, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
-        resp.raise_for_status()
+        content = fetch_url_safely(url, max_size=MAX_MEDIA_SIZE, timeout=MEDIA_DOWNLOAD_TIMEOUT_S)
 
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tmp:
-            tmp.write(resp.content)
+            tmp.write(content)
             tmp.flush()
 
             container = av.open(tmp.name)
@@ -157,7 +150,6 @@ class MmRerankerServer:
             duration = float(stream.duration * stream.time_base)
 
             if duration > MAX_VIDEO_DURATION_S:
-                container.close()
                 raise ValueError(
                     f"Video duration {duration:.1f}s exceeds maximum {MAX_VIDEO_DURATION_S}s"
                 )
@@ -213,7 +205,7 @@ class MmRerankerServer:
             images.append(self._load_image(query_image_url))
         if query_audio_url:
             content_parts.append({"type": "audio", "audio": query_audio_url})
-            audio_data, sr = self._load_audio(query_audio_url)
+            audio_data, _ = self._load_audio(query_audio_url)
             audios.append(audio_data)
         if query_video_url:
             frames = self._load_video_frames(query_video_url)
@@ -229,7 +221,7 @@ class MmRerankerServer:
             images.append(self._load_image(doc_image_url))
         if doc_audio_url:
             content_parts.append({"type": "audio", "audio": doc_audio_url})
-            audio_data, sr = self._load_audio(doc_audio_url)
+            audio_data, _ = self._load_audio(doc_audio_url)
             audios.append(audio_data)
         if doc_video_url:
             frames = self._load_video_frames(doc_video_url)
