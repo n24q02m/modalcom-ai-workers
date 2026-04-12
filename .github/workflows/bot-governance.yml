@@ -33,7 +33,7 @@ jobs:
           if echo "$BRANCH" | grep -qE \
               '^(bolt[-/]|palette-ux-|fix/web-scraper-|jules[-/])'; then
             IS_BOT_PR=true
-          elif echo "$BRANCH" | grep -qE \
+          elif echo "$BRANCH" | grep -qE -- \
               '-[0-9]{14,}$'; then
             IS_BOT_PR=true
           fi
